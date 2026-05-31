@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>c;cpp;cxx;cc</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\beacon.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_attr.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_exec.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_filebrowser.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_fs.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_net.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_process.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_screenshot.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_zip.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\dispatcher.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\context.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\crypto.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\outbox.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\packet.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\profile.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\runtime.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\sleep.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\sysinfo.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\loader\reflective_loader.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\tunnel.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\transfer.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\jobs.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\transport\http.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_beacon_api.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_bof.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\api.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\beacon.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_agent.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_commands.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_common.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_context.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_crypto.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_outbox.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_packet.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_profile.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_sysinfo.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_transfer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_tunnel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_transport.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_jobs.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_reflective_loader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_runtime.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_sleep.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_api.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_bof.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

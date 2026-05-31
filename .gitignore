@@ -1,0 +1,60 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vs/
+.idea/
+.vscode/
+
+# Local runtime data
+release-assets/
+client/
+server/
+server/teamserver.db*
+server/logs/
+server/static/upload/
+server/static/download/
+server/static/screenshot/
+server/static/stages/
+server/static/listeners/
+
+# Local TLS material
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Visual Studio / MSBuild local state
+*.vcxproj.user
+*.obj
+*.pdb
+*.ilk
+*.tlog
+*.recipe
+*.lastbuildstate
+*.FileListAbsolute.txt
+*.Build.CppClean.log
+C-Beacon/x64/
+C-Beacon/x86/
+stager_shellcode/x64/
+stager_shellcode/x86/
+stager_shellcode/stager_shellcode/x64/
+stager_shellcode/stager_shellcode/x86/
+
+# Generated helper binaries; source is kept next to them.
+C-Beacon/tools/**/*.exe
+stager_shellcode/tools/**/*.exe
+
+# Release packages are uploaded through GitHub Releases.
+client/Irisclient-v*
+client/*.AppImage
+client/*.deb
+client/*.dmg
+client/*.exe
+client/*.app/
+server/TeamServer-v*
