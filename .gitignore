@@ -57,3 +57,4 @@ client/*.dmg
 client/*.exe
 client/*.app/
 server/TeamServer-v*
+.claude/
