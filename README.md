@@ -10,14 +10,17 @@ IrisC2 是一个面向授权安全测试、红队演练、攻防实验和内部�
 
 ```text
 IrisC2/
-├── C-Beacon/           Beacon 源码、构建脚本和 reflective stub patch 工具
+├── C-Beacon/           C 语言 Beacon 源码、构建脚本和 reflective stub patch 工具
+├── Go-Beacon/          Go 语言跨平台 Beacon 源码（Windows / Linux / macOS）
+├── client/             Client 源码（Wails 3：Go + Vue/TypeScript 前端）
 ├── stager_shellcode/   Windows x64/x86 stager 源码、构建脚本和 patch 工具
 ├── images/             README 演示图片与视频
+├── CHANGELOG.md
 ├── README.md
 └── README.en.md
 ```
 
-Client 与 Server 只通过 GitHub Releases 以发布包形式提供，源码和本地运行目录不包含在仓库中。Beacon 与 stager 相关源码包含在本仓库中，可按各自目录下的 README 构建和更新模板。
+Client 源码位于 `client/`，基于 Wails 3 构建（Go + Vue/TypeScript）。Server 通过 GitHub Releases 以发布包形式提供，源码不包含在仓库中。Beacon 与 stager 相关源码包含在本仓库中，可按各自目录下的 README 构建和更新模板。
 
 ## 工作方式
 
@@ -52,14 +55,9 @@ GitHub 仓库页面可能不会直接预览较大的 LFS 视频。可以直接�
 - 支持将插件目录中的 `plugin.json` 与工件文件自动组织为可执行动作。
 - 支持常见任务参数表单，例如字符串、下拉选项和必填字段。
 
-Client 成品通过 GitHub Releases 发布，插件会随各平台 Client zip 包一起提供：
+Client 源码位于 `client/`，基于 Wails 3 构建，后端使用 Go，前端使用 Vue + TypeScript。需要自行从源码构建，详见 [client/README.md](client/README.md)。
 
-```text
-Iris-Client-v0.0.1-windows-x64.zip
-Iris-Client-v0.0.1-linux-x64.zip
-Iris-Client-v0.0.1-macos-arm64.zip
-Irisclient-v0.0.1-arm-Mac.dmg
-```
+构建产物中会包含插件目录：
 
 ### Server
 
@@ -78,9 +76,8 @@ Irisclient-v0.0.1-arm-Mac.dmg
 Server 成品通过 GitHub Releases 发布。每个平台包内都会包含运行所需的 `config.yaml`、`c2profile/` 和 `static/`：
 
 ```text
-Iris-Server-v0.0.1-windows-x64.zip
-Iris-Server-v0.0.1-linux-x64.tar.gz
-Iris-Server-v0.0.1-macos-arm64.tar.gz
+Iris-Server-v0.1.0-windows-x64.zip
+Iris-Server-v0.1.0-linux-x64.tar.gz
 ```
 
 ### Beacon
@@ -104,22 +101,39 @@ Beacon 源码位于 `C-Beacon/`。当前 Beacon 侧能力包括：
 - 截图：Screenshot。
 - 隧道：SOCKS/端口转发类 tunnel start、control、data、close。
 - 扩展执行：BOF/OBJ 加载、重定位、执行、输出回传和任务取消。
+- 级联传输：支持 TCP 和 SMB（命名管道）两种 internal beacon，父 Beacon 可通过 `connect` 或 `link` 命令建立级联链路，支持多级跳转（如 HTTP → TCP → SMB）。断开后 internal beacon 自动回到监听状态。
 
-Beacon 构建产物部署到：
+Beacon 构建产物部署到 `server/static/beacon_templates/C-Beacon/`：
 
 ```text
-server/static/beacon_templates/
-├── beacon_windows_amd64.dll
-├── beacon_windows_amd64.exe
-├── beacon_windows_x86.dll
-└── beacon_windows_x86.exe
+beacon_windows_amd64.dll          # x64 reflective DLL（需 patch）
+beacon_windows_amd64.exe          # x64 HTTP/HTTPS EXE
+beacon_windows_x86.dll            # x86 reflective DLL（需 patch）
+beacon_windows_x86.exe            # x86 HTTP/HTTPS EXE
+beacon_tcp_internal_amd64.exe     # x64 TCP 级联 Beacon
+beacon_tcp_internal_x86.exe       # x86 TCP 级联 Beacon
+beacon_smb_internal_amd64.exe     # x64 SMB 级联 Beacon
+beacon_smb_internal_x86.exe       # x86 SMB 级联 Beacon
 ```
 
-### 高级能力边界
+### Go-Beacon
 
-除上述公开能力外，IrisC2 还规划或保留了一类对抗深度更高、误用风险更大的高级能力，例如 Dump LSASS、浏览器凭据提取、RunPE、Shellcode 注入、VNC、AMSI Bypass、ETW Bypass、系统调用、调用栈欺骗、反调试、反沙箱、BeaconGate、级联、横向移动、权限维持、权限提升等。
+Go-Beacon 源码位于 `Go-Beacon/`，使用 Go 语言实现，支持 Windows、Linux、macOS 三平台。
 
-这些能力涉及更深的攻防对抗细节，当前不在公开版本和公开文档中提供，也不会在 README 中展开实现细节、调用方式或绕过策略。后续如果分享，会以授权研究、技术分析或防御建设文章的形式进行说明。
+- HTTP/HTTPS C2 通信。
+- 支持 Windows x64、Linux x64、macOS ARM 三端构建。
+- Windows 和 Linux 支持 BOF loader，可使用 Client 自带的插件执行 BOF。
+  - Windows x64：COFF 格式，VirtualAlloc + NtCreateThreadEx，含 VEH 崩溃恢复。
+  - Linux x64：ELF 格式，mmap + 直接调用，含 GOT/trampoline 外部符号解析。
+- 配置通过 TSCF v2 TLV 格式写入，支持 `tools/patch_profile.go` 工具。
+
+Go-Beacon 构建产物部署到 `server/static/beacon_templates/Go-Beacon/`：
+
+```text
+beacon_windows_amd64.exe
+beacon_linux_amd64.elf
+beacon_mac_arm.macho
+```
 
 ### Stager
 
@@ -147,9 +161,9 @@ server/static/stager_templates/
 
 ### 1. 获取项目或发布包
 
-如果只是运行 IrisC2，优先从 [GitHub Releases](https://github.com/onedays12/Iris/releases) 下载对应平台的 Server 和 Client 发布包。
+Server 发布包可从 [GitHub Releases](https://github.com/onedays12/Iris/releases) 下载。Client 需要从源码构建，克隆仓库后按 [client/README.md](client/README.md) 说明操作，需要安装 Go、Node.js 和 Wails 3 CLI。
 
-如果需要查看源码、构建 Beacon/Stager 或修改插件，再克隆仓库。仓库使用 Git LFS 管理演示视频等大文件，首次克隆前建议先安装并启用 Git LFS：
+仓库使用 Git LFS 管理演示视频等大文件，首次克隆前建议先安装并启用 Git LFS：
 
 ```bash
 git lfs install
@@ -165,7 +179,7 @@ git lfs pull
 解压 Server 发布包后进入目录，例如：
 
 ```bash
-cd Iris-Server-v0.0.1-<platform>
+cd Iris-Server-v0.1.0-<platform>
 ```
 
 编辑 `config.yaml`，重点检查：
@@ -194,21 +208,14 @@ database:
 Windows：
 
 ```powershell
-.\TeamServer-v0.0.1-x64-Windows.exe
+.\TeamServer.exe
 ```
 
 Linux：
 
 ```bash
-chmod +x ./TeamServer-v0.0.1-x64-Linux
-./TeamServer-v0.0.1-x64-Linux
-```
-
-macOS：
-
-```bash
-chmod +x ./TeamServer-v0.0.1-arm-Mac
-./TeamServer-v0.0.1-arm-Mac
+chmod +x ./TeamServer
+./TeamServer
 ```
 
 默认服务地址按 `config.yaml` 中的 `host` 和 `port` 决定，例如：
@@ -219,48 +226,28 @@ https://127.0.0.1:8080
 
 ### 4. 启动 Client
 
+从源码构建 Client 后，产物位于 `client/bin/` 目录。构建命令详见 [client/README.md](client/README.md)。
+
 Windows：
 
 ```powershell
-cd Iris-Client-v0.0.1-windows-x64
-.\Irisclient-v0.0.1-x64-Windows.exe
+cd client\bin
+.\client.exe
 ```
 
-Linux AppImage：
-
-图形桌面环境下可以直接双击运行：
-
-```text
-Iris-Client-v0.0.1-linux-x64/Irisclient-v0.0.1-x64-Linux.AppImage
-```
-
-也可以在终端中运行：
+Linux：
 
 ```bash
-cd Iris-Client-v0.0.1-linux-x64
-chmod +x ./Irisclient-v0.0.1-x64-Linux.AppImage
-./Irisclient-v0.0.1-x64-Linux.AppImage
-```
-
-Debian/Ubuntu：
-
-```bash
-cd Iris-Client-v0.0.1-linux-x64
-sudo dpkg -i ./Irisclient-v0.0.1-x64-Linux.deb
-client
-```
-
-安装包会将可执行文件安装到 `/usr/local/bin/client`，也会注册桌面入口。若 `dpkg` 提示依赖缺失，先执行：
-
-```bash
-sudo apt-get install -f
-client
+cd client/bin
+chmod +x ./client
+./client
 ```
 
 macOS：
 
-```text
-打开 Irisclient-v0.0.1-arm-Mac.dmg，或解压 Iris-Client-v0.0.1-macos-arm64.zip 后运行其中的 .app
+```bash
+cd client/bin
+open client.app
 ```
 
 在 Client 中填写 Server 地址、用户名和密码登录。默认账号以 `server/config.yaml` 为准。
@@ -442,21 +429,66 @@ cd C-Beacon
 build_all.bat
 ```
 
-常见产物：
+`build_all.bat` 构建全部 8 个产物：
 
 ```text
 C-Beacon/x64/Release/Beacon_amd64.dll
 C-Beacon/x64/ReleaseExe/beacon_windows_amd64.exe
+C-Beacon/x64/ReleaseExeTcpInternal/beacon_tcp_internal_amd64.exe
+C-Beacon/x64/ReleaseExeSmbInternal/beacon_smb_internal_amd64.exe
 C-Beacon/x86/Release/Beacon_x86.dll
 C-Beacon/x86/ReleaseExe/beacon_windows_x86.exe
+C-Beacon/x86/ReleaseExeTcpInternal/beacon_tcp_internal_x86.exe
+C-Beacon/x86/ReleaseExeSmbInternal/beacon_smb_internal_x86.exe
 ```
 
-DLL 需要经过 reflective stub patch 后再部署到解压后的 Server 模板目录。详细命令见 [C-Beacon/README.md](C-Beacon/README.md)。
+DLL 需要经过 reflective stub patch 后再部署。可使用 `sync_teamserver_templates.bat` 一键完成构建、patch 和部署，或手动操作，详见 [C-Beacon/README.md](C-Beacon/README.md)。
 
 部署目标位于 Server 发布包内：
 
 ```text
-server/static/beacon_templates/
+server/static/beacon_templates/C-Beacon/
+```
+
+## 构建 Go-Beacon 模板
+
+进入 Go-Beacon 源码目录：
+
+Windows：
+
+```bat
+cd Go-Beacon
+build_windows.bat
+```
+
+Linux：
+
+```bash
+cd Go-Beacon
+chmod +x build_linux.sh
+./build_linux.sh
+```
+
+macOS (ARM)：
+
+```bash
+cd Go-Beacon
+chmod +x build_mac.sh
+./build_mac.sh
+```
+
+产物位于 `Go-Beacon/bin/`：
+
+```text
+Go-Beacon/bin/beacon_windows_amd64.exe
+Go-Beacon/bin/beacon_linux_amd64.elf
+Go-Beacon/bin/beacon_mac_arm.macho
+```
+
+部署目标位于 Server 发布包内：
+
+```text
+server/static/beacon_templates/Go-Beacon/
 ```
 
 ## 构建 Stager 模板

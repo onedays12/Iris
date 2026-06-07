@@ -170,7 +170,7 @@ INT BbU8(ByteBuf* b, UINT8 v)
     return BbAppend(b, &v, 1);
 }
 
-/* 追加 UINT16（小端序） */
+/* 追加 UINT16（大端序） */
 INT BbU16(ByteBuf* b, UINT16 v)
 {
     BYTE8 d[2];
@@ -179,7 +179,7 @@ INT BbU16(ByteBuf* b, UINT16 v)
     return BbAppend(b, d, sizeof(d));
 }
 
-/* 追加 UINT32（小端序） */
+/* 追加 UINT32（大端序） */
 INT BbU32(ByteBuf* b, UINT32 v)
 {
     BYTE8 d[4];
@@ -190,7 +190,7 @@ INT BbU32(ByteBuf* b, UINT32 v)
     return BbAppend(b, d, sizeof(d));
 }
 
-/* 追加 UINT64（小端序） */
+/* 追加 UINT64（大端序） */
 INT BbU64(ByteBuf* b, UINT64 v)
 {
     BYTE8 d[8];

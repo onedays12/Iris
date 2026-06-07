@@ -1,0 +1,101 @@
+{
+  "name": "execution-injection",
+  "display_name": "执行与注入 (Execution & Injection)",
+  "version": "1.0.0",
+  "description": "将常用 BOF / OBJ 工件按树状动作快速暴露给 Beacon 右键菜单",
+  "actions": [
+    {
+      "id": "adduserbysamr",
+      "label": "SAMR 添加用户",
+      "description": "通过 SAMR 创建指定用户名和密码的用户",
+      "os": ["windows"],
+      "arch": ["amd64"],
+      "artifact": "bin/adduserbysamr.x64.o",
+      "requires_input": true,
+      "fields": [
+        {
+          "name": "username",
+          "label": "用户名",
+          "type": "string",
+          "placeholder": "alice",
+          "default": "",
+          "required": true
+        },
+        {
+          "name": "password",
+          "label": "密码",
+          "type": "string",
+          "placeholder": "P@ssw0rd!",
+          "default": "",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "askcreds",
+      "label": "Askcreds",
+      "description": "执行 Askcreds BOF，收集可用凭据",
+      "os": ["windows"],
+      "arch": ["amd64"],
+      "artifact": "bin/Askcreds.x64.o",
+      "requires_input": false
+    },
+    {
+      "id": "com_fileop",
+      "label": "COM 文件操作",
+      "description": "通过 COM 执行文件复制/移动，或先注册计划任务再执行文件操作",
+      "os": ["windows"],
+      "arch": ["amd64", "x86"],
+      "artifact_by_arch": {
+        "amd64": "bin/com_fileop.v3.x64.o",
+        "x86": "bin/com_fileop.v3.x86.o"
+      },
+      "requires_input": true,
+      "fields": [
+        {
+          "name": "op",
+          "label": "操作",
+          "type": "select",
+          "options": ["cp", "mv", "taskcp", "taskmv"],
+          "default": "cp",
+          "required": true,
+          "help": "cp=复制，mv=移动，taskcp/taskmv=先注册计划任务再执行复制/移动"
+        },
+        {
+          "name": "src",
+          "label": "源路径",
+          "type": "string",
+          "placeholder": "C:\\Users\\Administrator\\Desktop\\a.txt",
+          "default": "",
+          "required": true
+        },
+        {
+          "name": "dst",
+          "label": "目标路径",
+          "type": "string",
+          "placeholder": "C:\\Users\\Administrator\\Desktop\\b.txt",
+          "default": "",
+          "required": true
+        },
+        {
+          "name": "task_name",
+          "label": "任务名",
+          "type": "string",
+          "placeholder": "ComFileOp_b.txt",
+          "default": "",
+          "required": false,
+          "help": "仅 taskcp/taskmv 使用；留空时 BOF 默认使用 ComFileOp_<dst文件名>"
+        }
+      ]
+    },
+    {
+      "id": "whoami",
+      "label": "Whoami",
+      "description": "获取当前 Beacon 会话的身份信息",
+      "os": ["windows"],
+      "arch": ["amd64"],
+      "artifact": "bin/whoami.x64.o",
+      "requires_input": false
+    }
+  ]
+}

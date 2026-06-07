@@ -83,6 +83,9 @@
     <ClCompile Include="src\managers\jobs.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\managers\cascade.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\transport\http.c">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -152,6 +155,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_bof.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_cascade.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

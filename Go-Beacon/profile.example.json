@@ -1,0 +1,16 @@
+{
+  "sleep_time": 5000,
+  "jitter": 20,
+  "http": {
+    "callback_host": "127.0.0.1:9999",
+    "uri": "/index.php",
+    "reconnect_count": 3,
+    "reconnect_time": 3000,
+    "ssl": false,
+    "method": "GET",
+    "hb_header": "Cookie",
+    "hb_prefix": "SESSIONID=",
+    "encrypt_key": "194f7b83023fdd7c6fdfd70a4e6b9cfe",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+  }
+}

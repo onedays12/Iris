@@ -1,0 +1,26 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:dev": "vite build --minify false --mode development",
+    "build": "vite build --mode production",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@wailsio/runtime": "3.0.0-alpha.79",
+    "pinia": "3.0.4",
+    "vue": "3.5.32",
+    "vue-router": "4.6.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "4.6.2",
+    "vite": "5.4.21"
+  },
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "0.21.5",
+    "@rollup/rollup-linux-x64-gnu": "4.60.1"
+  }
+}

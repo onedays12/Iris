@@ -10,14 +10,17 @@ IrisC2 is a C2 framework for authorized security testing, red team exercises, at
 
 ```text
 IrisC2/
-├── C-Beacon/           Beacon source code, build scripts, and reflective stub patch tooling
+├── C-Beacon/           C Beacon source code, build scripts, and reflective stub patch tooling
+├── Go-Beacon/          Go cross-platform Beacon source code (Windows / Linux / macOS)
+├── client/             Client source code (Wails 3: Go + Vue/TypeScript frontend)
 ├── stager_shellcode/   Windows x64/x86 stager source code, build scripts, and patch tooling
 ├── images/             README demo images and video
+├── CHANGELOG.md
 ├── README.md
 └── README.en.md
 ```
 
-Client and Server are distributed only through GitHub Releases. Their source code and local runtime directories are not included in this repository. Beacon and stager-related source code are included here and can be built or used to update templates by following the README files in their respective directories.
+Client source code is located in `client/`, built with Wails 3 (Go + Vue/TypeScript). Server is distributed only through GitHub Releases; its source code is not included in this repository. Beacon and stager-related source code are included here and can be built or used to update templates by following the README files in their respective directories.
 
 ## How It Works
 
@@ -52,14 +55,9 @@ GitHub may not preview the large LFS-backed demo video directly on the repositor
 - Organizes `plugin.json` and artifact files into executable plugin actions.
 - Supports common task parameter forms, such as strings, select fields, and required inputs.
 
-Client binaries are published through GitHub Releases. Plugins are bundled with each platform-specific Client zip package:
+Client source code is located in `client/`, built with Wails 3 with a Go backend and Vue + TypeScript frontend. You need to build it from source. See [client/README.md](client/README.md) for details.
 
-```text
-Iris-Client-v0.0.1-windows-x64.zip
-Iris-Client-v0.0.1-linux-x64.zip
-Iris-Client-v0.0.1-macos-arm64.zip
-Irisclient-v0.0.1-arm-Mac.dmg
-```
+Build output includes the plugin directory:
 
 ### Server
 
@@ -78,9 +76,8 @@ Irisclient-v0.0.1-arm-Mac.dmg
 Server binaries are published through GitHub Releases. Each platform package includes the required `config.yaml`, `c2profile/`, and `static/` runtime files:
 
 ```text
-Iris-Server-v0.0.1-windows-x64.zip
-Iris-Server-v0.0.1-linux-x64.tar.gz
-Iris-Server-v0.0.1-macos-arm64.tar.gz
+Iris-Server-v0.1.0-windows-x64.zip
+Iris-Server-v0.1.0-linux-x64.tar.gz
 ```
 
 ### Beacon
@@ -104,22 +101,39 @@ Beacon source code is located in `C-Beacon/`. Current Beacon-side capabilities i
 - Screenshot capture: Screenshot.
 - Tunneling: SOCKS / port-forward-style tunnel start, control, data, and close.
 - Extension execution: BOF/OBJ loading, relocation, execution, output collection, and task cancellation.
+- Cascade transport: supports TCP and SMB (named pipe) internal beacons. Parent beacons establish cascade links via `connect` or `link` commands, with multi-hop support (e.g. HTTP → TCP → SMB). Internal beacons automatically return to listen state when disconnected from parent.
 
-Beacon build artifacts should be deployed to:
+Beacon build artifacts should be deployed to `server/static/beacon_templates/C-Beacon/`:
 
 ```text
-server/static/beacon_templates/
-├── beacon_windows_amd64.dll
-├── beacon_windows_amd64.exe
-├── beacon_windows_x86.dll
-└── beacon_windows_x86.exe
+beacon_windows_amd64.dll          # x64 reflective DLL (requires patching)
+beacon_windows_amd64.exe          # x64 HTTP/HTTPS EXE
+beacon_windows_x86.dll            # x86 reflective DLL (requires patching)
+beacon_windows_x86.exe            # x86 HTTP/HTTPS EXE
+beacon_tcp_internal_amd64.exe     # x64 TCP cascade beacon
+beacon_tcp_internal_x86.exe       # x86 TCP cascade beacon
+beacon_smb_internal_amd64.exe     # x64 SMB cascade beacon
+beacon_smb_internal_x86.exe       # x86 SMB cascade beacon
 ```
 
-### Advanced Capability Boundary
+### Go-Beacon
 
-In addition to the public capabilities above, IrisC2 also plans or reserves a set of advanced capabilities with deeper adversarial depth and higher misuse risk, such as Dump LSASS, browser credential extraction, RunPE, shellcode injection, VNC, AMSI bypass, ETW bypass, system calls, call stack spoofing, anti-debugging, anti-sandboxing, BeaconGate, cascading, lateral movement, persistence, privilege escalation, and similar topics.
+Go-Beacon source code is located in `Go-Beacon/`, implemented in Go, and supports Windows, Linux, and macOS.
 
-These capabilities involve deeper attack-defense details and are not included in the public release or public documentation. This README will not provide implementation details, invocation methods, or bypass strategies. If they are discussed in the future, they will be presented as authorized research, technical analysis, or defense-oriented writeups.
+- HTTP/HTTPS C2 communication.
+- Supports Windows x64, Linux x64, and macOS ARM builds.
+- Windows and Linux support BOF loader, compatible with Client-bundled plugins.
+  - Windows x64: COFF format, VirtualAlloc + NtCreateThreadEx, with VEH crash recovery.
+  - Linux x64: ELF format, mmap + direct call, with GOT/trampoline external symbol resolution.
+- Configuration is written in TSCF v2 TLV format, using the `tools/patch_profile.go` tool.
+
+Go-Beacon build artifacts should be deployed to `server/static/beacon_templates/Go-Beacon/`:
+
+```text
+beacon_windows_amd64.exe
+beacon_linux_amd64.elf
+beacon_mac_arm.macho
+```
 
 ### Stager
 
@@ -147,9 +161,9 @@ Keep the `stager_windows_*` prefix consistent. Server reads 32-bit stager templa
 
 ### 1. Get The Project Or Release Packages
 
-If you only want to run IrisC2, download the Server and Client packages for your platform from [GitHub Releases](https://github.com/onedays12/Iris/releases).
+Server packages are available from [GitHub Releases](https://github.com/onedays12/Iris/releases). Client must be built from source — clone the repository and follow [client/README.md](client/README.md). You will need Go, Node.js, and the Wails 3 CLI.
 
-Clone the repository only if you want to inspect the source, build Beacon/Stager, or modify plugins. This repository uses Git LFS for large files such as the demo video. Before cloning for the first time, install and enable Git LFS:
+This repository uses Git LFS for large files such as the demo video. Before cloning for the first time, install and enable Git LFS:
 
 ```bash
 git lfs install
@@ -165,7 +179,7 @@ If you clone a private repository over HTTPS, make sure the current account or t
 Extract the Server release package and enter the extracted directory, for example:
 
 ```bash
-cd Iris-Server-v0.0.1-<platform>
+cd Iris-Server-v0.1.0-<platform>
 ```
 
 Edit `config.yaml` and review the following values:
@@ -194,21 +208,14 @@ Start Server from inside the `server/` directory so relative paths can correctly
 Windows:
 
 ```powershell
-.\TeamServer-v0.0.1-x64-Windows.exe
+.\TeamServer.exe
 ```
 
 Linux:
 
 ```bash
-chmod +x ./TeamServer-v0.0.1-x64-Linux
-./TeamServer-v0.0.1-x64-Linux
-```
-
-macOS:
-
-```bash
-chmod +x ./TeamServer-v0.0.1-arm-Mac
-./TeamServer-v0.0.1-arm-Mac
+chmod +x ./TeamServer
+./TeamServer
 ```
 
 The default service address is determined by `host` and `port` in `config.yaml`, for example:
@@ -219,48 +226,28 @@ https://127.0.0.1:8080
 
 ### 4. Start Client
 
+After building Client from source, the build output is in the `client/bin/` directory. See [client/README.md](client/README.md) for build commands.
+
 Windows:
 
 ```powershell
-cd Iris-Client-v0.0.1-windows-x64
-.\Irisclient-v0.0.1-x64-Windows.exe
+cd client\bin
+.\client.exe
 ```
 
-Linux AppImage:
-
-In a graphical desktop environment, you can run it by double-clicking:
-
-```text
-Iris-Client-v0.0.1-linux-x64/Irisclient-v0.0.1-x64-Linux.AppImage
-```
-
-You can also run it from a terminal:
+Linux:
 
 ```bash
-cd Iris-Client-v0.0.1-linux-x64
-chmod +x ./Irisclient-v0.0.1-x64-Linux.AppImage
-./Irisclient-v0.0.1-x64-Linux.AppImage
-```
-
-Debian/Ubuntu:
-
-```bash
-cd Iris-Client-v0.0.1-linux-x64
-sudo dpkg -i ./Irisclient-v0.0.1-x64-Linux.deb
-client
-```
-
-The package installs the executable to `/usr/local/bin/client` and registers a desktop entry. If `dpkg` reports missing dependencies, run:
-
-```bash
-sudo apt-get install -f
-client
+cd client/bin
+chmod +x ./client
+./client
 ```
 
 macOS:
 
-```text
-Open Irisclient-v0.0.1-arm-Mac.dmg, or extract Iris-Client-v0.0.1-macos-arm64.zip and run the .app inside it.
+```bash
+cd client/bin
+open client.app
 ```
 
 In Client, enter the Server address, username, and password to log in. The default accounts are defined in `server/config.yaml`.
@@ -442,21 +429,66 @@ cd C-Beacon
 build_all.bat
 ```
 
-Common artifacts:
+`build_all.bat` produces all 8 artifacts:
 
 ```text
 C-Beacon/x64/Release/Beacon_amd64.dll
 C-Beacon/x64/ReleaseExe/beacon_windows_amd64.exe
+C-Beacon/x64/ReleaseExeTcpInternal/beacon_tcp_internal_amd64.exe
+C-Beacon/x64/ReleaseExeSmbInternal/beacon_smb_internal_amd64.exe
 C-Beacon/x86/Release/Beacon_x86.dll
 C-Beacon/x86/ReleaseExe/beacon_windows_x86.exe
+C-Beacon/x86/ReleaseExeTcpInternal/beacon_tcp_internal_x86.exe
+C-Beacon/x86/ReleaseExeSmbInternal/beacon_smb_internal_x86.exe
 ```
 
-DLLs must be processed with reflective stub patching before deployment to the extracted Server template directory. For detailed commands, see [C-Beacon/README.en.md](C-Beacon/README.en.md).
+DLLs must be processed with reflective stub patching before deployment. Use `sync_teamserver_templates.bat` for a one-step build, patch, and deploy, or follow the manual steps in [C-Beacon/README.md](C-Beacon/README.md).
 
 Deployment target inside the Server release package:
 
 ```text
-server/static/beacon_templates/
+server/static/beacon_templates/C-Beacon/
+```
+
+## Build Go-Beacon Templates
+
+Enter the Go-Beacon source directory:
+
+Windows:
+
+```bat
+cd Go-Beacon
+build_windows.bat
+```
+
+Linux:
+
+```bash
+cd Go-Beacon
+chmod +x build_linux.sh
+./build_linux.sh
+```
+
+macOS (ARM):
+
+```bash
+cd Go-Beacon
+chmod +x build_mac.sh
+./build_mac.sh
+```
+
+Artifacts are in `Go-Beacon/bin/`:
+
+```text
+Go-Beacon/bin/beacon_windows_amd64.exe
+Go-Beacon/bin/beacon_linux_amd64.elf
+Go-Beacon/bin/beacon_mac_arm.macho
+```
+
+Deployment target inside the Server release package:
+
+```text
+server/static/beacon_templates/Go-Beacon/
 ```
 
 ## Build Stager Templates

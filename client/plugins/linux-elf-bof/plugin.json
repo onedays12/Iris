@@ -1,0 +1,58 @@
+{
+  "name": "linux-elf-bof",
+  "display_name": "Linux ELF BOF",
+  "version": "1.0.0",
+  "description": "Linux amd64 ELF BOF 插件",
+  "actions": [
+    {
+      "id": "hello",
+      "label": "Hello",
+      "description": "执行 hello.o，基础功能测试",
+      "os": ["linux"],
+      "arch": ["amd64"],
+      "artifact": "bin/hello.o",
+      "requires_input": false
+    },
+    {
+      "id": "global_common",
+      "label": "Global Common",
+      "description": "执行 global_common.o，全局符号测试",
+      "os": ["linux"],
+      "arch": ["amd64"],
+      "artifact": "bin/global_common.o",
+      "requires_input": false
+    },
+    {
+      "id": "global_common_nocommon",
+      "label": "Global Common (No Common)",
+      "description": "执行 global_common_nocommon.o，全局符号无 common 段测试",
+      "os": ["linux"],
+      "arch": ["amd64"],
+      "artifact": "bin/global_common_nocommon.o",
+      "requires_input": false
+    },
+    {
+      "id": "sleep_loop",
+      "label": "Sleep Loop",
+      "description": "执行 sleep_loop.o，循环休眠测试",
+      "os": ["linux"],
+      "arch": ["amd64"],
+      "artifact": "bin/sleep_loop.o",
+      "requires_input": false
+    },
+    {
+      "id": "loader_stress",
+      "label": "Loader Stress 参数解析",
+      "description": "执行 loader_stress.o，参数解析压测（int32/short/string）",
+      "os": ["linux"],
+      "arch": ["amd64"],
+      "artifact": "bin/loader_stress.o",
+      "requires_input": false,
+      "args": [
+        { "kind": "int32", "value": 1234 },
+        { "kind": "short", "value": 77 },
+        { "kind": "string", "value": "hello-elf-bof" }
+      ]
+    }
+  ]
+}

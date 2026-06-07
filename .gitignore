@@ -9,7 +9,6 @@ Thumbs.db
 
 # Local runtime data
 release-assets/
-client/
 server/
 server/teamserver.db*
 server/logs/

@@ -25,6 +25,7 @@ VOID ContextInit(BeaconContext* ctx)
     JobInit(&ctx->jobs);
     TransferInit(&ctx->transfers, ctx);
     TunnelInit(&ctx->tunnels, ctx);
+    CascadeInit(&ctx->cascade, ctx);
 }
 
 /*
@@ -33,6 +34,7 @@ VOID ContextInit(BeaconContext* ctx)
 VOID ContextFree(BeaconContext* ctx)
 {
     JobFree(&ctx->jobs);
+    CascadeFree(&ctx->cascade);
     TunnelFree(&ctx->tunnels);
     TransferFree(&ctx->transfers);
     OutboxFree(&ctx->outbox);

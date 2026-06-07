@@ -6,6 +6,7 @@
 #include "beacon_sysinfo.h"
 #include "beacon_transfer.h"
 #include "beacon_tunnel.h"
+#include "beacon_cascade.h"
 #include "beacon_api.h"
 #include "beacon_jobs.h"
 #include "beacon_runtime.h"
@@ -24,6 +25,7 @@ typedef struct BeaconContext {
     JobManager jobs;               /* 后台 process/BOF job 管理器 */
     TransferManager transfers;     /* 文件上传/下载状态管理器 */
     TunnelManager tunnels;         /* 隧道通道状态管理器 */
+    CascadeManager cascade;         /* TCP/SMB 级联子链路管理器 */
 } BeaconContext;
 
 VOID ContextInit(BeaconContext* ctx);
