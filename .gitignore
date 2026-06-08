@@ -40,6 +40,7 @@ __pycache__/
 *.Build.CppClean.log
 C-Beacon/x64/
 C-Beacon/x86/
+C-Beacon/Beacon/
 stager_shellcode/x64/
 stager_shellcode/x86/
 stager_shellcode/stager_shellcode/x64/
