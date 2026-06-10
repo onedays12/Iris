@@ -4,26 +4,13 @@
 
 ## 通用准备
 
-```bash
-git switch dev
-git pull
-```
-
 安装 Wails 3 CLI：
 
 ```bash
 go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 ```
 
-详细安装文档请参考 Wails 3 官网：https://v3.wails.io/zh-cn/
-
-前端依赖首次安装：
-
-```bash
-cd frontend
-npm install
-cd ..
-```
+详细安装文档请参考 Wails 3 官网：<https://v3.wails.io/zh-cn/>
 
 ## Windows
 
