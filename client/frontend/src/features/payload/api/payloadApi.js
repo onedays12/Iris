@@ -22,7 +22,7 @@ import { request } from '../../../shared/api/httpClient.js'
  * @param {string} params.beacon_type - Beacon 类型 (go | c)
  * @returns {Promise<Object>} 生成结果
  */
-export async function generatePayload({ listener_id, os, arch, format, stage_mode = 'stagerless', beacon_type = 'go' }) {
+export async function generatePayload({ listener_id, os, arch, format, stage_mode = 'stagerless', beacon_type }) {
   const normalizedArch = String(arch).trim().toLowerCase()
   if (!['amd64', 'x86', 'arm'].includes(normalizedArch)) {
     throw new Error('Payload arch 只允许 amd64、x86 或 arm')
@@ -40,7 +40,9 @@ export async function generatePayload({ listener_id, os, arch, format, stage_mod
     arch: normalizedArch,
     format: normalizedFormat,
     stage_mode: normalizedStageMode,
-    beacon_type: String(beacon_type || 'go').trim().toLowerCase(),
+  }
+  if (beacon_type) {
+    payload.beacon_type = String(beacon_type).trim().toLowerCase()
   }
   return await request('POST', '/api/v1/payload/generate', payload)
 }

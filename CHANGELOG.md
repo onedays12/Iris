@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.1
+
+### Bug Fix
+
+- 修复 stager 模式发送 beacon_type 导致模板找不到的问题，现在可以正确生成 stager
+
 ## v0.1.0
 
 ### Client

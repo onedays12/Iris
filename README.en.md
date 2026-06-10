@@ -76,8 +76,8 @@ Build output includes the plugin directory:
 Server binaries are published through GitHub Releases. Each platform package includes the required `config.yaml`, `c2profile/`, and `static/` runtime files:
 
 ```text
-Iris-Server-v0.1.0-windows-x64.zip
-Iris-Server-v0.1.0-linux-x64.tar.gz
+Iris-Server-v0.1.1-windows-x64.zip
+Iris-Server-v0.1.1-linux-x64.tar.gz
 ```
 
 ### Beacon
@@ -179,7 +179,7 @@ If you clone a private repository over HTTPS, make sure the current account or t
 Extract the Server release package and enter the extracted directory, for example:
 
 ```bash
-cd Iris-Server-v0.1.0-<platform>
+cd Iris-Server-v0.1.1-<platform>
 ```
 
 Edit `config.yaml` and review the following values:

@@ -132,6 +132,7 @@ const currentStageModeMeta = computed(() => {
 })
 const availableArchOptions = computed(() => {
   if (isInternal.value) return [{ label: 'amd64 (64位)', value: 'amd64' }]
+  if (stageMode.value === 'stager') return windowsArchOptions
   if (os.value === 'mac') return macArchOptions
   if (os.value === 'linux') return linuxArchOptions
   return windowsArchOptions
@@ -198,8 +199,15 @@ const warningText = computed(() => {
   return '生成过程将根据监听模式自动注入加密密钥与传输协议特征。format=exe 返回 PE，format=bin 返回 shellcode。'
 })
 
-// 根据 OS 和 Beacon 类型动态计算可用格式
+// 根据 OS、Beacon 类型和 Stage 模式动态计算可用格式
 const availableFormats = computed(() => {
+  if (stageMode.value === 'stager') {
+    return [
+      { label: 'Executable (.exe)', value: 'exe' },
+      { label: 'Shellcode (.bin)', value: 'bin' },
+      { label: 'C Array Source (.c)', value: 'c' },
+    ]
+  }
   if (isInternal.value) {
     return [{ label: 'Executable (.exe)', value: 'exe' }]
   }
@@ -207,16 +215,10 @@ const availableFormats = computed(() => {
     return [{ label: 'Executable (.exe)', value: 'exe' }]
   }
   switch (os.value) {
-    case 'windows': {
-      const formats = [
-        { label: 'Executable (.exe)', value: 'exe' },
-        { label: 'Shellcode (.bin)', value: 'bin' },
-      ]
-      if (stageMode.value === 'stager') {
-        formats.push({ label: 'C Array Source (.c)', value: 'c' })
-      }
-      return formats
-    }
+    case 'windows': return [
+      { label: 'Executable (.exe)', value: 'exe' },
+      { label: 'Shellcode (.bin)', value: 'bin' },
+    ]
     case 'linux': return [
       { label: 'ELF Executable', value: 'elf' },
     ]
@@ -400,14 +402,17 @@ async function handleGenerateBeacon() {
   generating.value = true
   try {
     // 1. 调用后端生成 Payload
-    const result = await generatePayload({
+    const payloadParams = {
       listener_id: activeListener.value.id,
       os: os.value,
       arch: arch.value,
       format: format.value,
       stage_mode: stageMode.value,
-      beacon_type: beaconType.value,
-    })
+    }
+    if (stageMode.value !== 'stager') {
+      payloadParams.beacon_type = beaconType.value
+    }
+    const result = await generatePayload(payloadParams)
 
     const payload = result?.payload ?? result?.data?.payload
     if (!payload) {
@@ -539,7 +544,7 @@ watch(generationMode, (mode) => {
             </div>
 
             <!-- 维度 4: Beacon 类型 -->
-            <div class="form-group flex-1">
+            <div v-if="stageMode !== 'stager'" class="form-group flex-1">
               <label>Beacon 类型</label>
               <select v-model="beaconType" class="glass-select" :disabled="availableBeaconTypes.length === 1">
                 <option v-for="bt in availableBeaconTypes" :key="bt.value" :value="bt.value">{{ bt.label }}</option>

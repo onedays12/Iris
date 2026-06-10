@@ -76,8 +76,8 @@ Client 源码位于 `client/`，基于 Wails 3 构建，后端使用 Go，前端
 Server 成品通过 GitHub Releases 发布。每个平台包内都会包含运行所需的 `config.yaml`、`c2profile/` 和 `static/`：
 
 ```text
-Iris-Server-v0.1.0-windows-x64.zip
-Iris-Server-v0.1.0-linux-x64.tar.gz
+Iris-Server-v0.1.1-windows-x64.zip
+Iris-Server-v0.1.1-linux-x64.tar.gz
 ```
 
 ### Beacon
@@ -179,7 +179,7 @@ git lfs pull
 解压 Server 发布包后进入目录，例如：
 
 ```bash
-cd Iris-Server-v0.1.0-<platform>
+cd Iris-Server-v0.1.1-<platform>
 ```
 
 编辑 `config.yaml`，重点检查：
