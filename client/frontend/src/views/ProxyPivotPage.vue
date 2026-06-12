@@ -11,6 +11,7 @@ import { useModalStore } from '../stores/modal.js'
 import { useNotificationStore } from '../stores/notification.js'
 import { useTunnelStore } from '../stores/tunnel.js'
 import { formatTunnelReason } from '../utils/tunnel.js'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const agentStore = useAgentStore()
 const modalStore = useModalStore()
@@ -537,7 +538,10 @@ onMounted(refreshTunnels)
   <div class="page-container proxy-pivot-page">
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">代理与穿透</h1>
+        <h1 class="page-title">
+          <PageTitleIcon name="proxy" />
+          代理与穿透
+        </h1>
         <p class="page-subtitle">管理基于 Beacon 建立的统一 Tunnel</p>
       </div>
 
@@ -822,6 +826,9 @@ onMounted(refreshTunnels)
 }
 
 .page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 20px;
   font-weight: 600;
   color: var(--text-primary);

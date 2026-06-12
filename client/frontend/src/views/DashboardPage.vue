@@ -8,6 +8,7 @@
 import { ref } from 'vue'
 import { useAgentStore } from '../stores/agent.js'
 import AgentTable from '../components/dashboard/AgentTable.vue'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const agentStore = useAgentStore()
 const searchQuery = ref('')
@@ -29,7 +30,7 @@ async function refreshDashboard() {
     <!-- 页头 -->
     <div class="page-header">
       <div class="page-title">
-        <span class="icon">🖥️</span>
+        <PageTitleIcon name="dashboard" />
         <span>仪表盘</span>
       </div>
       

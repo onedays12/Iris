@@ -141,6 +141,158 @@ html[data-ui-theme="dark"] {
   --bg-secondary: rgba(15, 23, 42, 0.7);
 }
 
+html[data-ui-theme="paper"] {
+  color-scheme: light;
+
+  --color-primary: #d97706;
+  --color-primary-rgb: 217, 119, 6;
+  --color-primary-dim: rgba(217, 119, 6, 0.08);
+  --color-primary-light: #f59e0b;
+  --color-accent: #b45309;
+  --color-accent-dim: rgba(180, 83, 9, 0.08);
+  --color-success: #16a34a;
+  --color-success-dim: rgba(22, 163, 74, 0.08);
+  --color-warning: #d97706;
+  --color-warning-dim: rgba(217, 119, 6, 0.08);
+  --color-danger: #dc2626;
+  --color-danger-dim: rgba(220, 38, 38, 0.08);
+
+  --bg-deep: #faf9f6;
+  --bg-sidebar: #f5f3ef;
+  --bg-card: #ffffff;
+  --bg-card-hover: #faf9f6;
+  --bg-input: #ffffff;
+  --bg-input-focus: #ffffff;
+  --bg-overlay: rgba(250, 249, 246, 0.85);
+  --bg-console: #faf9f6;
+
+  --glass-panel-bg: #ffffff;
+  --glass-card-bg: #ffffff;
+  --glass-modal-bg: #ffffff;
+  --glass-popover-bg: #ffffff;
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-strong: rgba(0, 0, 0, 0.12);
+  --glass-highlight: transparent;
+  --glass-grain: transparent;
+  --glass-blur-sm: 0px;
+  --glass-blur-md: 0px;
+  --glass-blur-lg: 0px;
+
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #8a8a8a;
+  --text-console: #2a2a2a;
+
+  --border: rgba(0, 0, 0, 0.08);
+  --border-light: rgba(0, 0, 0, 0.05);
+  --border-focus: rgba(217, 119, 6, 0.4);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
+  --shadow-glow-primary: 0 4px 14px rgba(217, 119, 6, 0.12);
+  --shadow-glow-accent: 0 4px 14px rgba(180, 83, 9, 0.1);
+  --shadow-glow-success: 0 4px 14px rgba(22, 163, 74, 0.1);
+
+  --bg-secondary: #f5f3ef;
+}
+
+/* Paper 主题：禁用 glassmorphism，恢复扁平实色 */
+html[data-ui-theme="paper"] .glass-card {
+  background: var(--bg-card);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border);
+}
+
+html[data-ui-theme="paper"] .glass-card:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.15);
+  box-shadow: var(--shadow-md);
+}
+
+html[data-ui-theme="paper"] .modal-content {
+  background: var(--glass-modal-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--border);
+}
+
+html[data-ui-theme="paper"] .btn-primary {
+  background: var(--color-primary);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+html[data-ui-theme="paper"] .btn-ghost {
+  background: #f5f3ef;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: var(--border);
+}
+
+html[data-ui-theme="paper"] .btn-ghost:hover {
+  background: #eeecea;
+  border-color: rgba(var(--color-primary-rgb), 0.15);
+}
+
+html[data-ui-theme="paper"] .btn-danger {
+  background: var(--color-danger);
+}
+
+html[data-ui-theme="paper"] .data-table th {
+  background: #faf9f6;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-ui-theme="paper"] .modal-overlay {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(250, 249, 246, 0.75);
+}
+
+html[data-ui-theme="paper"] .search-input-wrapper {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: #ffffff;
+  border-color: var(--border);
+}
+
+html[data-ui-theme="paper"] .search-input-wrapper:focus-within {
+  background: #ffffff;
+  border-color: var(--color-primary);
+  outline: 3px solid rgba(217, 119, 6, 0.08);
+}
+
+html[data-ui-theme="paper"] .liquid-bg {
+  background: var(--bg-deep);
+}
+
+html[data-ui-theme="paper"] .blob {
+  display: none;
+}
+
+html[data-ui-theme="paper"] .status-dot.offline {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+html[data-ui-theme="paper"] .select option,
+html[data-ui-theme="paper"] select option {
+  background: #ffffff;
+  color: var(--text-primary);
+}
+
+/* Paper 主题：全局禁用 backdrop-filter */
+html[data-ui-theme="paper"] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* ---------- 重置 & 全局 ---------- */
 *,
 *::before,

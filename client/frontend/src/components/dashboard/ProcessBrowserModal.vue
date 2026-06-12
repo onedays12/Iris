@@ -56,7 +56,8 @@ const MIN_COLUMN_WIDTH = {
 
 const {
   winPos, winSize, isDragging, isResizing, resizeType,
-  initWindowPosition, startDrag, startResize, stopDrag, stopResize,
+  initWindowPosition, startResizeListener, stopResizeListener,
+  startDrag, startResize, stopDrag, stopResize,
 } = useModalDragResize({
   defaultWidth: 800, defaultHeight: 600,
   minWidth: 600, minHeight: 400,
@@ -220,6 +221,8 @@ function formatTime(iso) {
 
 watch(() => props.visible, (val) => {
   if (val) {
+    initWindowPosition()
+    startResizeListener()
     fetchProcesses()
     setTimeout(() => document.addEventListener('click', handleDocumentClick), 0)
   } else {
@@ -228,6 +231,7 @@ watch(() => props.visible, (val) => {
     stopDrag()
     stopResize()
     stopColumnResize()
+    stopResizeListener()
     processStore.clear(props.beaconid)
     document.removeEventListener('click', handleDocumentClick)
   }

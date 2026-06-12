@@ -17,6 +17,7 @@ import { useAgentStore } from '../stores/agent.js'
 import { useModalStore } from '../stores/modal.js'
 import { useNotificationStore } from '../stores/notification.js'
 import { useScreenshotStore } from '../stores/screenshot.js'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const agentStore = useAgentStore()
 const modalStore = useModalStore()
@@ -213,7 +214,10 @@ onMounted(refreshScreenshots)
   <div class="page-container screenshots-page">
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">屏幕截图</h1>
+        <h1 class="page-title">
+          <PageTitleIcon name="screenshots" />
+          屏幕截图
+        </h1>
         <p class="page-subtitle">查看已保存的截图，并向指定 Beacon 下发新的截图任务</p>
       </div>
 
@@ -372,6 +376,9 @@ onMounted(refreshScreenshots)
 }
 
 .page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 20px;
   font-weight: 600;
   color: var(--text-primary);

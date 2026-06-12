@@ -10,6 +10,7 @@ import { useAgentStore } from '../stores/agent.js'
 import TopologyCanvas from '../components/topology/TopologyCanvas.vue'
 import TopologyToolbar from '../components/topology/TopologyToolbar.vue'
 import BeaconContextMenu from '../components/beacon/BeaconContextMenu.vue'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const agentStore = useAgentStore()
 const canvasRef = ref(null)
@@ -184,13 +185,7 @@ const hasAgents = computed(() => agentStore.agents.length > 0)
     <!-- Page Header -->
     <div class="page-header">
       <div class="page-title">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="5" r="3"/>
-          <circle cx="5" cy="19" r="3"/>
-          <circle cx="19" cy="19" r="3"/>
-          <line x1="12" y1="8" x2="5" y2="16"/>
-          <line x1="12" y1="8" x2="19" y2="16"/>
-        </svg>
+        <PageTitleIcon name="topology" />
         <span>网络拓扑</span>
       </div>
       <div class="header-stats">

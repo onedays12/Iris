@@ -25,7 +25,8 @@ const searchQuery = ref('')
 
 const {
   winPos, winSize, isDragging, isResizing, resizeType,
-  initWindowPosition, startDrag, startResize, stopDrag, stopResize,
+  initWindowPosition, startResizeListener, stopResizeListener,
+  startDrag, startResize, stopDrag, stopResize,
 } = useModalDragResize({
   defaultWidth: 980, defaultHeight: 680,
   minWidth: 720, minHeight: 460,
@@ -105,11 +106,13 @@ watch(() => props.visible, (visible) => {
   if (!visible) {
     searchQuery.value = ''
     activeTab.value = 'interfaces'
+    stopResizeListener()
     networkStore.clear(props.beaconid)
     return
   }
 
   initWindowPosition()
+  startResizeListener()
   fetchAll()
 })
 

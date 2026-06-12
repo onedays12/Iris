@@ -178,7 +178,7 @@ async function handleLogout() {
           :aria-label="`切换到 ${themeStore.nextLabel} 主题`"
           @click="themeStore.toggleTheme()"
         >
-          <span>{{ themeStore.isDark ? '☾' : '☼' }}</span>
+          <span>{{ themeStore.isDark ? '☾' : themeStore.isPaper ? '◆' : '☼' }}</span>
         </button>
         <button
           type="button"

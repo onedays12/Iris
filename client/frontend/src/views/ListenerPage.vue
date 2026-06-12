@@ -11,6 +11,7 @@ import { useModalStore } from '../stores/modal.js'
 import ListenerList from '../components/listener/ListenerList.vue'
 import ListenerDialog from '../components/listener/ListenerDialog.vue'
 import GenerateBeaconModal from '../components/listener/GenerateBeaconModal.vue'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const listenerStore = useListenerStore()
 const modalStore = useModalStore()
@@ -40,7 +41,7 @@ async function handleDelete(name) {
   <div class="listener-page">
     <div class="page-header">
       <div class="page-title">
-        <span class="icon">📡</span>
+        <PageTitleIcon name="listener" />
         <span>监听器管理</span>
       </div>
       <div class="header-actions">

@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia'
 
 const STORAGE_KEY = 'ui-theme'
-const THEMES = ['liquid', 'dark']
+const THEMES = ['liquid', 'dark', 'paper']
 
 function normalizeTheme(value) {
   const theme = String(value || '').trim().toLowerCase()
@@ -24,8 +24,12 @@ export const useThemeStore = defineStore('theme', {
 
   getters: {
     isDark: (state) => state.currentTheme === 'dark',
-    label: (state) => state.currentTheme === 'dark' ? 'Dark' : 'Liquid',
-    nextLabel: (state) => state.currentTheme === 'dark' ? 'Liquid' : 'Dark',
+    isPaper: (state) => state.currentTheme === 'paper',
+    label: (state) => ({ liquid: 'Liquid', dark: 'Dark', paper: 'Paper' })[state.currentTheme] || 'Liquid',
+    nextLabel: (state) => {
+      const idx = THEMES.indexOf(state.currentTheme)
+      return THEMES[(idx + 1) % THEMES.length].charAt(0).toUpperCase() + THEMES[(idx + 1) % THEMES.length].slice(1)
+    },
   },
 
   actions: {
@@ -43,7 +47,8 @@ export const useThemeStore = defineStore('theme', {
     },
 
     toggleTheme() {
-      this.setTheme(this.currentTheme === 'dark' ? 'liquid' : 'dark')
+      const idx = THEMES.indexOf(this.currentTheme)
+      this.setTheme(THEMES[(idx + 1) % THEMES.length])
     },
   },
 })

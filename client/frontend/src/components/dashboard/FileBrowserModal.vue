@@ -62,7 +62,8 @@ const zipDialogTarget = ref(null)
 // [新增] 窗口定位与尺寸状态
 const {
   winPos, winSize, isDragging, isResizing, resizeType,
-  initWindowPosition, startDrag, startResize, stopDrag, stopResize,
+  initWindowPosition, startResizeListener, stopResizeListener,
+  startDrag, startResize, stopDrag, stopResize,
 } = useModalDragResize({
   defaultWidth: 900, defaultHeight: 800,
   minWidth: 600, minHeight: 400,
@@ -617,9 +618,12 @@ onMounted(() => {
 watch(() => props.visible, (val) => {
   if (val) {
     initWindowPosition()
+    startResizeListener()
     if (props.beaconid) {
       loadDirectory(currentPath.value || '')
     }
+  } else {
+    stopResizeListener()
   }
 })
 
@@ -1166,8 +1170,9 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
   transition: all 0.2s;
 }
 
-.file-row:hover {
-  background: rgba(255, 255, 255, 0.6);
+.file-row:hover,
+.file-row.menu-active {
+  background: rgba(var(--color-primary-rgb), 0.06);
 }
 
 .file-table td {

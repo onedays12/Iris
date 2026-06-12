@@ -10,6 +10,7 @@ import { Dialogs } from '@wailsio/runtime'
 import * as FileService from '../../bindings/changeme/service/fileservice.js'
 import { downloadFileBase64, listDownloads } from '../features/files/api/fileApi.js'
 import { useNotificationStore } from '../stores/notification.js'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const notificationStore = useNotificationStore()
 
@@ -85,7 +86,10 @@ onMounted(fetchDownloads)
   <div class="page-container">
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">下载文件</h1>
+        <h1 class="page-title">
+          <PageTitleIcon name="downloads" />
+          下载文件
+        </h1>
         <p class="page-subtitle">查看 TeamServer 已接收完成、可保存到本地的文件</p>
       </div>
       <button class="btn btn-primary" :disabled="loading" @click="fetchDownloads">
@@ -146,7 +150,7 @@ onMounted(fetchDownloads)
 <style scoped>
 .page-container { padding: 24px; height: 100%; display: flex; flex-direction: column; gap: 20px; }
 .page-header { display: flex; justify-content: space-between; align-items: flex-end; }
-.page-title { font-size: 20px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.page-title { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
 .page-subtitle { font-size: 13px; color: var(--text-muted); }
 
 .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }

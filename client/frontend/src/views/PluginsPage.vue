@@ -10,6 +10,7 @@ import { Dialogs } from '@wailsio/runtime'
 import { useModalStore } from '../stores/modal.js'
 import { useNotificationStore } from '../stores/notification.js'
 import { usePluginStore } from '../stores/plugin.js'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
@@ -124,7 +125,9 @@ onMounted(async () => {
     <header class="page-header">
       <div>
         <div class="page-title-row">
-          <div class="page-icon">🧩</div>
+          <div class="page-icon">
+            <PageTitleIcon name="plugins" :size="22" />
+          </div>
           <h1 class="page-title">插件系统</h1>
         </div>
         <p class="page-subtitle">

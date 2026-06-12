@@ -14,7 +14,7 @@ export function useModalDragResize(options = {}) {
     defaultHeight = 600,
     minWidth = 600,
     minHeight = 400,
-    sidebarWidth = 260,
+    sidebarWidth = 220,
     onBeforeDrag = null,
     onBeforeResize = null,
   } = options
@@ -27,6 +27,8 @@ export function useModalDragResize(options = {}) {
   const dragOffset = ref({ x: 0, y: 0 })
   const resizeSnapshot = ref({ x: 0, y: 0, w: 0, h: 0, mouseX: 0, mouseY: 0 })
 
+  let viewportResizeHandler = null
+
   function initWindowPosition() {
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
@@ -35,6 +37,19 @@ export function useModalDragResize(options = {}) {
     winPos.value = {
       x: sidebarWidth + Math.max(20, (mainWidth - winSize.value.w) / 2),
       y: Math.max(20, (viewportHeight - winSize.value.h) / 2),
+    }
+  }
+
+  function startResizeListener() {
+    stopResizeListener()
+    viewportResizeHandler = () => initWindowPosition()
+    window.addEventListener('resize', viewportResizeHandler)
+  }
+
+  function stopResizeListener() {
+    if (viewportResizeHandler) {
+      window.removeEventListener('resize', viewportResizeHandler)
+      viewportResizeHandler = null
     }
   }
 
@@ -130,6 +145,8 @@ export function useModalDragResize(options = {}) {
     isResizing,
     resizeType,
     initWindowPosition,
+    startResizeListener,
+    stopResizeListener,
     startDrag,
     startResize,
     stopDrag,

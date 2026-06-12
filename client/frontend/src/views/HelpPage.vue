@@ -14,6 +14,7 @@ import { usePluginStore } from '../stores/plugin.js'
 import { useThemeStore } from '../stores/theme.js'
 import { useNotificationStore } from '../stores/notification.js'
 import { COMMAND_HELP } from '../constants/commands.js'
+import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const authStore = useAuthStore()
 const wsStore = useWSStore()
@@ -70,7 +71,7 @@ async function copyText(text) {
   <div class="help-page">
     <div class="page-header">
       <div class="page-title">
-        <span class="icon">❓</span>
+        <PageTitleIcon name="help" />
         <span>帮助</span>
       </div>
     </div>
