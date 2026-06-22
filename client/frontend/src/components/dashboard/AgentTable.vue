@@ -146,6 +146,7 @@ function formatProcessName(name) {
           <th>主机名</th>
           <th>用户</th>
           <th>系统 / 架构</th>
+          <th>C2 协议</th>
           <th>内网 IP</th>
           <th>外网 IP</th>
           <th>进程 (PID)</th>
@@ -182,6 +183,11 @@ function formatProcessName(name) {
               <span class="os-badge">{{ agent.os }}</span>
               <span class="arch-text">{{ agent.arch }}</span>
             </div>
+          </td>
+          <td>
+            <span class="protocol-tag" :class="'proto-' + (agent.protocol || 'http').toLowerCase()">
+              {{ (agent.protocol || 'http').toUpperCase() }}
+            </span>
           </td>
           <td class="cell-ip">{{ agent.ip }}</td>
           <td class="cell-ip">{{ agent.externalIp }}</td>
@@ -398,6 +404,35 @@ function formatProcessName(name) {
 }
 
 .topo-smb {
+  background: rgba(168, 85, 247, 0.12);
+  color: #7c3aed;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.protocol-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.proto-http,
+.proto-https {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.proto-tcp {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.proto-smb {
   background: rgba(168, 85, 247, 0.12);
   color: #7c3aed;
   border: 1px solid rgba(168, 85, 247, 0.2);

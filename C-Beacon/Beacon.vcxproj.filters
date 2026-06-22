@@ -14,6 +14,21 @@
     <ClCompile Include="src\beacon.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\bof\bof_entry.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bof\bof_loader.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bof\bof_resolve.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bof\bof_runtime.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bof\bof_util.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\commands\command_attr.c">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -42,6 +57,18 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\agent.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_common.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_http.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_internal.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_tcp_external.c">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\common.c">
@@ -86,7 +113,25 @@
     <ClCompile Include="src\managers\cascade.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\transport\http.c">
+    <ClCompile Include="src\managers\cascade_channel.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_frame.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_io.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_io_smb.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_io_tcp.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\transport\http_external.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\transport\tcp_external.c">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\commands\command_beacon_api.c">
@@ -104,6 +149,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_agent.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_agent_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_commands.h">
@@ -157,7 +205,13 @@
     <ClInclude Include="include\beacon_bof.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="include\beacon_bof_internal.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="include\beacon_cascade.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_cascade_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

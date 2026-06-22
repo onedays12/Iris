@@ -8,11 +8,6 @@
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "iphlpapi.lib")
 
-/*
- * SysinfoCollect - 收集操作系统版本、架构、主机名、用户名、
- *   当前进程名、管理员权限、PID、代码页以及
- *   第一个非回环 IPv4 地址到 MetaData 结构体中。
- */
 VOID SysinfoCollect(MetaData* m)
 {
     DWORD size;

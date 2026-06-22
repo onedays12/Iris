@@ -131,7 +131,7 @@ const currentStageModeMeta = computed(() => {
   return stageModeOptions.find(item => item.value === stageMode.value) || stageModeOptions[0]
 })
 const availableArchOptions = computed(() => {
-  if (isInternal.value) return [{ label: 'amd64 (64位)', value: 'amd64' }]
+  if (isInternal.value) return windowsArchOptions
   if (stageMode.value === 'stager') return windowsArchOptions
   if (os.value === 'mac') return macArchOptions
   if (os.value === 'linux') return linuxArchOptions
@@ -557,7 +557,7 @@ watch(generationMode, (mode) => {
             <span class="hint-icon">🔗</span>
             <div>
               <strong>Cascade Internal Beacon</strong>
-              <p>固定使用 C-Beacon (Windows / amd64 / exe)，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
+              <p>固定使用 C-Beacon (Windows / amd64 或 x86 / exe)，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
             </div>
           </div>
           <div v-if="!isInternal && os === 'mac'" class="internal-hint">

@@ -17,7 +17,7 @@ extern "C" {
 #endif
 
 /* Beacon 入口点：初始化并运行代理主循环 */
-INT BeaconRun(Agent* agent);
+INT BeaconRun(Agent* agent, PVOID image_base);
 
 #ifdef __cplusplus
 }

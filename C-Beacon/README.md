@@ -58,10 +58,10 @@ build_all.bat
 Release 产物目录：
 
 ```text
-x64\Release\Beacon_amd64.dll
-x64\ReleaseExe\beacon_windows_amd64.exe
-x86\Release\Beacon_x86.dll
-x86\ReleaseExe\beacon_windows_x86.exe
+x64\Release\beacon_http_windows_amd64.dll
+x64\ReleaseExe\beacon_http_windows_amd64.exe
+x86\Release\beacon_http_windows_x86.dll
+x86\ReleaseExe\beacon_http_windows_x86.exe
 ```
 
 Internal 级联模板产物目录：
@@ -77,19 +77,23 @@ x86\ReleaseExeSmbInternal\beacon_smb_internal_x86.exe
 
 ```text
 static\beacon_templates\C-Beacon\
-├── beacon_windows_amd64.dll        ← patched reflective DLL
-├── beacon_windows_x86.dll          ← patched reflective DLL
-├── beacon_windows_amd64.exe
-├── beacon_windows_x86.exe
-├── beacon_tcp_internal_amd64.exe
-├── beacon_tcp_internal_x86.exe
-├── beacon_smb_internal_amd64.exe
-└── beacon_smb_internal_x86.exe
+├── beacon_http_windows_amd64.dll        ← HTTP external patched DLL
+├── beacon_http_windows_x86.dll          ← HTTP external patched DLL
+├── beacon_http_windows_amd64.exe        ← HTTP external EXE
+├── beacon_http_windows_x86.exe          ← HTTP external EXE
+├── beacon_tcp_windows_amd64.dll         ← TCP external patched DLL
+├── beacon_tcp_windows_x86.dll           ← TCP external patched DLL
+├── beacon_tcp_windows_amd64.exe         ← TCP external EXE
+├── beacon_tcp_windows_x86.exe           ← TCP external EXE
+├── beacon_tcp_internal_amd64.exe        ← TCP internal EXE
+├── beacon_tcp_internal_x86.exe          ← TCP internal EXE
+├── beacon_smb_internal_amd64.exe        ← SMB internal EXE
+└── beacon_smb_internal_x86.exe          ← SMB internal EXE
 ```
 
 ### 同步部署
 
-项目提供 `sync_teamserver_templates.bat` 脚本（本地使用，不纳入版本管理），自动完成 build → patch DLL → 复制全部产物到 `C-Beacon`：
+项目提供 `sync_teamserver_templates.bat` 脚本，自动完成 build → patch DLL → 复制全部产物到 `C-Beacon`：
 
 ```bat
 sync_teamserver_templates.bat
@@ -102,9 +106,34 @@ sync_teamserver_templates.bat E:\other\TeamServer
 ```
 
 脚本流程：
-1. 调用 `build_all.bat` 构建全部 8 个目标
-2. 使用 `PatchBeacon.exe` 对 x64/x86 DLL 打 reflective stub 补丁
-3. 复制 8 个产物（2 patched DLL + 2 EXE + 4 internal EXE）到 `C-Beacon`
+1. 调用 `build_all.bat` 构建全部目标
+2. 使用 `PatchBeacon.exe` 对 HTTP/TCP external DLL 打 reflective stub 补丁
+3. 复制 12 个产物到 `C-Beacon`（4 patched DLL + 2 HTTP EXE + 2 TCP external EXE + 2 TCP internal EXE + 2 SMB internal EXE）
+
+### TCP external SSL/TLS
+
+TCP external Beacon 支持明文 TCP 和 TLS over TCP，由监听器配置中的 `ssl` 字段控制：
+
+| `ssl` | 传输方式 | 说明 |
+|-------|----------|------|
+| `0` | Raw TCP | 直接发送 TCP length-frame |
+| `1` | TLS over TCP | 使用 Windows SChannel 建立 TLS 会话后发送相同的 length-frame |
+
+应用层帧格式不变：
+
+```text
+[length:u32be][encrypted heartbeat/result]
+```
+
+启用 TLS 后，以上帧会被包裹在 SChannel TLS 流内；TeamServer TCP external listener 完成 TLS 握手后继续按原 length-frame 协议读取数据。
+
+实现说明：
+
+- TLS 使用 Windows 原生 SChannel，不依赖 OpenSSL/wolfSSL 等第三方库。
+- 默认使用系统 TLS 协议策略，兼容 Win7+ 的 SChannel 能力。
+- 第一版使用手动证书验证模式，默认兼容自签名证书；如果服务端 TLS 握手正常，Beacon 不会因为 unknown CA / 自签名证书失败。
+- `CfgTCPSSL(224)` 由 TeamServer patch 到 profile；生成 TCP external Beacon 时，监听器 `ssl=1` 即启用 TLS。
+- `ssl=0/1` 不影响 Beacon 应用层加密，`CfgTCPEncryptKey(225)` 仍用于心跳和任务结果加密。
 
 ### 级联使用概要
 
@@ -133,22 +162,22 @@ tools\patch_reflective_stub
 
 该工具会自动识别 DLL 架构并生成对应的 DOS-head reflective stub：
 
-- `x64\Release\Beacon_amd64.dll` → x64 stub
-- `x86\Release\Beacon_x86.dll` → x86 stub
+- `x64\Release\beacon_http_windows_amd64.dll` → x64 stub
+- `x86\Release\beacon_http_windows_x86.dll` → x86 stub
 
 ### 使用预编译工具
 
 ```bat
-tools\patch_reflective_stub\PatchBeacon.exe x64\Release\Beacon_amd64.dll x64\Release\beacon_windows_amd64.dll REFLoader
-tools\patch_reflective_stub\PatchBeacon.exe x86\Release\Beacon_x86.dll x86\Release\beacon_windows_x86.dll REFLoader
+tools\patch_reflective_stub\PatchBeacon.exe x64\Release\beacon_http_windows_amd64.dll x64\Release\beacon_http_windows_amd64.dll REFLoader
+tools\patch_reflective_stub\PatchBeacon.exe x86\Release\beacon_http_windows_x86.dll x86\Release\beacon_http_windows_x86.dll REFLoader
 ```
 
 ### 从源码运行（需要 Go 1.21+）
 
 ```bat
 cd tools\patch_reflective_stub
-go run . "..\..\x64\Release\Beacon_amd64.dll" "..\..\beacon_windows_amd64.dll" REFLoader
-go run . "..\..\x86\Release\Beacon_x86.dll" "..\..\beacon_windows_x86.dll" REFLoader
+go run . "..\..\x64\Release\beacon_http_windows_amd64.dll" "..\..\beacon_http_windows_amd64.dll" REFLoader
+go run . "..\..\x86\Release\beacon_http_windows_x86.dll" "..\..\beacon_http_windows_x86.dll" REFLoader
 ```
 
 说明：
@@ -159,9 +188,18 @@ go run . "..\..\x86\Release\Beacon_x86.dll" "..\..\beacon_windows_x86.dll" REFLo
 - x86 patched blob 需要在 x86/WOW64 进程中执行。
 - patched DLL 输出到第二个参数指定的路径，`sync_teamserver_templates.bat` 会自动完成 patch 并复制到 `C-Beacon`。
 
-## DebugExe 用法
+## 调试配置用法
 
-DebugExe 是独立运行的调试版本，用于验证功能和添加新功能。构建产物为 `x64\DebugExe\beacon_windows_amd64.exe`。
+项目提供 4 个调试配置（VS 配置管理器中选择）：
+
+| 配置名 | 用途 | 传输类型 |
+|--------|------|----------|
+| `Debug-ExHttpExe` | External HTTP beacon 调试 | HTTP/HTTPS |
+| `Debug-ExTcpExe` | External TCP beacon 调试 | Raw TCP / TLS |
+| `Debug-InTcpExe` | Internal TCP cascade 调试 | TCP 级联 |
+| `Debug-InSmbExe` | Internal SMB cascade 调试 | Named Pipe 级联 |
+
+调试配置以独立 EXE 方式运行，不依赖 DLL 注入或反射加载，方便直接调试。
 
 ### 硬编码配置
 
@@ -193,16 +231,18 @@ p->sleep_obf_technique = SLEEP_OBF_ZILEAN;
 
 ### 构建与运行
 
-在 VS 中选择 `DebugExe|x64` 或 `DebugExe|x86` 配置构建，或使用批处理脚本：
+在 VS 配置管理器中选择对应的调试配置构建，或使用批处理脚本：
 
 ```bat
-build_exe_x64.bat
-build_exe_x86.bat
+build_exe_x64.bat          # External HTTP (Debug-ExHttpExe)
+build_tcp_external_x64.bat # External TCP (Debug-ExTcpExe)
+build_tcp_internal_x64.bat # Internal TCP (Debug-InTcpExe)
+build_smb_internal_x64.bat # Internal SMB (Debug-InSmbExe)
 ```
 
-产物：
+产物示例（x64）：
 
-- `x64\DebugExe\beacon_windows_amd64.exe`
-- `x86\DebugExe\beacon_windows_x86.exe`
-
-DebugExe 以独立 EXE 方式运行，不依赖 DLL 注入或反射加载，方便直接调试。
+- `x64\Debug-ExHttpExe\beacon_http_windows_amd64.exe`
+- `x64\Debug-ExTcpExeTcpExternal\beacon_tcp_windows_amd64.exe`
+- `x64\Debug-InTcpExeTcpInternal\beacon_tcp_internal_amd64.exe`
+- `x64\Debug-InSmbExeSmbInternal\beacon_smb_internal_amd64.exe`

@@ -19,7 +19,7 @@ const emit = defineEmits(['confirm', 'cancel'])
 
 const isEdit = computed(() => !!props.editData)
 
-const protocols = ['HTTP', 'HTTPS']
+const protocols = ['HTTP', 'HTTPS', 'TCP']
 const internalProtocols = ['TCP', 'SMB']
 const listenerTypes = [
   { value: 'external', label: '外部 (TeamServer)', desc: 'TeamServer 直接监听' },
@@ -40,6 +40,7 @@ function defaultForm() {
     port: 4444,
     callback_host: '',
     callback_port: 4444,
+    ssl_enabled: false,
     ssl_cert: '',
     ssl_key: '',
     encrypt_key: '',
@@ -59,6 +60,7 @@ const selectedProfile = computed(() => profileOptions.find(item => item.value ==
 const profileRequiresStager = computed(() => Boolean(selectedProfile.value?.stager))
 const profileDescription = computed(() => selectedProfile.value?.desc || '自定义 c2profile；仅提交实例端点。')
 const isInternal = computed(() => form.value.listener_type === 'internal')
+const isExternalTcp = computed(() => form.value.listener_type === 'external' && form.value.protocol === 'tcp')
 const availableProtocols = computed(() => isInternal.value ? internalProtocols : protocols)
 
 function parseListenerConfig(config) {
@@ -151,6 +153,7 @@ watch(() => props.editData, (newVal) => {
     form.value.port = Number(config.bind_port ?? config.port ?? newVal.bind_port ?? 4444)
     form.value.callback_host = callback.host
     form.value.callback_port = callback.port
+    form.value.ssl_enabled = Boolean(config.ssl)
     form.value.ssl_cert = config.ssl_cert || ''
     form.value.ssl_key = config.ssl_key || ''
     form.value.encrypt_key = config.encrypt_key || ''
@@ -170,7 +173,7 @@ watch(() => props.editData, (newVal) => {
 watch(() => form.value.listener_type, (newType) => {
   if (newType === 'internal' && ['http', 'https'].includes(form.value.protocol)) {
     form.value.protocol = 'tcp'
-  } else if (newType === 'external' && ['tcp', 'smb'].includes(form.value.protocol)) {
+  } else if (newType === 'external' && form.value.protocol === 'smb') {
     form.value.protocol = 'http'
   }
 })
@@ -257,6 +260,48 @@ async function handleConfirm() {
         const newListener = await listenerStore.createListener(payload)
         if (newListener && newListener.status === 'error') {
           notificationStore.error(`部署失败：配置错误`)
+          return
+        }
+        notificationStore.success(`监听器 ${name} 部署成功并已启动`)
+      }
+      emit('confirm')
+      resetForm()
+      return
+    }
+
+    // External TCP 模式
+    if (isExternalTcp.value) {
+      const host = validateHostOnly(form.value.host, '绑定地址 (Host)')
+      if (!host) return
+      const port = parsePort(form.value.port, '监听端口')
+      if (port === null) return
+      const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', { allowUnspecified: false })
+      if (!callbackHost) return
+      const callbackPort = parsePort(form.value.callback_port, '回连端口')
+      if (callbackPort === null) return
+
+      const payload = {
+        name,
+        protocol: 'tcp',
+        listener_type: 'external',
+        profile: 'tcp-default',
+        host,
+        port,
+        callback_host: callbackHost,
+        callback_port: callbackPort,
+        encrypt_key: encryptKey,
+        ssl: form.value.ssl_enabled,
+        ...(form.value.ssl_cert ? { ssl_cert: form.value.ssl_cert } : {}),
+        ...(form.value.ssl_key ? { ssl_key: form.value.ssl_key } : {}),
+      }
+
+      if (isEdit.value) {
+        await listenerStore.updateListener(payload)
+        notificationStore.success(`监听器 ${name} 配置已成功热更新`)
+      } else {
+        const newListener = await listenerStore.createListener(payload)
+        if (newListener && newListener.status === 'error') {
+          notificationStore.error(`部署失败：端口可能已被占用或配置错误`)
           return
         }
         notificationStore.success(`监听器 ${name} 部署成功并已启动`)
@@ -420,7 +465,7 @@ function resetForm() {
               </select>
               <p class="field-hint">{{ listenerTypes.find(lt => lt.value === form.listener_type)?.desc }}</p>
             </div>
-            <div class="form-group">
+            <div v-if="!isExternalTcp" class="form-group">
               <label>C2 Profile</label>
               <select v-model="form.profile" class="glass-input">
                 <option v-for="profile in profileOptions" :key="profile.value" :value="profile.value">
@@ -428,6 +473,11 @@ function resetForm() {
                 </option>
               </select>
               <p class="field-hint">{{ profileDescription }}</p>
+            </div>
+            <div v-else class="form-group">
+              <label>C2 Profile</label>
+              <input type="text" class="glass-input mono" value="tcp-default" disabled>
+              <p class="field-hint">TCP 外部监听器固定使用 tcp-default profile。</p>
             </div>
 
           </div>
@@ -555,7 +605,19 @@ function resetForm() {
           </div>
         </section>
 
-        <div v-if="!isInternal" class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+        <!-- SSL/TLS 开关 (仅 external TCP) -->
+        <section v-if="isExternalTcp" class="form-section">
+          <div class="section-heading">
+            <h3 class="section-title">SSL / TLS</h3>
+          </div>
+          <label class="toggle-row">
+            <input type="checkbox" v-model="form.ssl_enabled" class="toggle-checkbox">
+            <span class="toggle-label">启用 TLS 加密</span>
+          </label>
+          <p class="field-hint">开启后 Beacon 与 TeamServer 之间使用 TLS 加密通信，需提供证书和私钥。</p>
+        </section>
+
+        <div v-if="!isInternal && (!isExternalTcp || form.ssl_enabled)" class="advanced-toggle" @click="showAdvanced = !showAdvanced">
           <span>{{ showAdvanced ? '收起' : '展开' }} TLS 证书</span>
         </div>
 
@@ -563,7 +625,7 @@ function resetForm() {
           <!-- 证书输入 -->
           <section class="form-section">
             <h3 class="section-title">SSL 证书链 (PEM 格式)</h3>
-            <p class="field-hint">仅 protocol=https 时使用；留空则由后端按当前能力处理。</p>
+            <p class="field-hint">{{ isExternalTcp ? 'TLS 启用时必须同时提供证书和私钥。' : '仅 protocol=https 时使用；留空则由后端按当前能力处理。' }}</p>
             <div class="cert-grid">
               <div class="form-group">
                 <label>SSL Certificate</label>
@@ -1221,6 +1283,27 @@ select.glass-input {
   color: var(--color-primary);
   font-size: 12px;
   font-weight: 700;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.toggle-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.toggle-label {
+  user-select: none;
 }
 
 .advanced-toggle {

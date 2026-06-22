@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.3
+
+### Beacon
+
+- 变更 — 睡眠混淆改用 patched PE 头部信息到 Beacon，并且 Beacon 通过入口 WinMain 或 DllMain 传递基址
+- 新增 — TCP 外部 Beacon 传输及 TLS 构建支持
+- 重构 — 核心模块拆分：agent 模块拆分、BOF 模块拆分、cascade 模块拆分、构建产物重命名
+
+### Client
+
+- 新增 External TCP 监听器支持，含 SSL/TLS 开关
+- 仪表盘 Beacon Session 表格新增 C2 协议列
+- 修复：现在支持生成 x86 架构的 Internal TCP/SMB Beacon
+
 ## v0.1.2
 
 ### Client

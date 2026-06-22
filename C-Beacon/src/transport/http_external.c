@@ -5,7 +5,7 @@
 #pragma comment(lib, "winhttp.lib")
 
 /*
- * HTTP 传输层负责一次心跳交换：
+ * HTTP external 传输层负责一次心跳交换：
  * metadata 放在可配置请求头中，payload 作为请求体，响应体交给 Agent 解密。
  */
 

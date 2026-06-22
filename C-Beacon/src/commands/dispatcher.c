@@ -22,9 +22,13 @@ PacketList CommandDispatch(BeaconContext* ctx, UINT32 task_id, UINT32 command_id
         if (ParserU32(&p) == 0) {
             PlistAdd(&out, BbFromText("sleep requires at least 1 argument"));
         } else {
+            ByteBuf msg;
             ctx->profile.sleep_ms = (INT)ParserU32(&p);
             if (ParserLeft(&p) >= 4) ctx->profile.jitter = (INT)ParserU32(&p);
-            PlistAdd(&out, BbFromText("Sleep policy updated"));
+            BbInit(&msg);
+            BbPrintf(&msg, "Sleep policy updated: Interval=%dms, Jitter=%d%%, hInstance=%p",
+                     ctx->profile.sleep_ms, ctx->profile.jitter, ctx->image_base);
+            PlistAdd(&out, msg);
         }
         break;
 

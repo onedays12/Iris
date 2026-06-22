@@ -18,31 +18,56 @@ REM 1. Build all targets
 call "%SCRIPT_DIR%build_all.bat"
 if errorlevel 1 exit /b %ERRORLEVEL%
 
-REM 2. Patch reflective DLLs (x64 + x86)
+REM 2. Patch reflective DLLs
 echo [*] Patching reflective DLLs...
 set "PATCHER=%SCRIPT_DIR%tools\patch_reflective_stub\PatchBeacon.exe"
 
-"%PATCHER%" "%SCRIPT_DIR%x64\Release\Beacon_amd64.dll" "%SCRIPT_DIR%x64\Release\beacon_windows_amd64.dll" REFLoader
+REM HTTP external DLL
+"%PATCHER%" "%SCRIPT_DIR%x64\Release\beacon_http_windows_amd64.dll" "%SCRIPT_DIR%x64\Release\beacon_http_windows_amd64_patched.dll" REFLoader
 if errorlevel 1 (
-    echo [!] Patch x64 DLL failed
+    echo [!] Patch HTTP x64 DLL failed
     exit /b 1
 )
 
-"%PATCHER%" "%SCRIPT_DIR%x86\Release\Beacon_x86.dll" "%SCRIPT_DIR%x86\Release\beacon_windows_x86.dll" REFLoader
+"%PATCHER%" "%SCRIPT_DIR%x86\Release\beacon_http_windows_x86.dll" "%SCRIPT_DIR%x86\Release\beacon_http_windows_x86_patched.dll" REFLoader
 if errorlevel 1 (
-    echo [!] Patch x86 DLL failed
+    echo [!] Patch HTTP x86 DLL failed
+    exit /b 1
+)
+
+REM TCP external DLL
+"%PATCHER%" "%SCRIPT_DIR%x64\ReleaseDllTcpExternal\beacon_tcp_windows_amd64.dll" "%SCRIPT_DIR%x64\ReleaseDllTcpExternal\beacon_tcp_windows_amd64_patched.dll" REFLoader
+if errorlevel 1 (
+    echo [!] Patch TCP x64 DLL failed
+    exit /b 1
+)
+
+"%PATCHER%" "%SCRIPT_DIR%x86\ReleaseDllTcpExternal\beacon_tcp_windows_x86.dll" "%SCRIPT_DIR%x86\ReleaseDllTcpExternal\beacon_tcp_windows_x86_patched.dll" REFLoader
+if errorlevel 1 (
+    echo [!] Patch TCP x86 DLL failed
     exit /b 1
 )
 
 REM 3. Copy all artifacts to C-Beacon
 echo [*] Copying to %DEST%...
 
-copy /Y "%SCRIPT_DIR%x64\Release\beacon_windows_amd64.dll"                "%DEST%\" >nul
-copy /Y "%SCRIPT_DIR%x86\Release\beacon_windows_x86.dll"                  "%DEST%\" >nul
-copy /Y "%SCRIPT_DIR%x64\ReleaseExe\beacon_windows_amd64.exe"             "%DEST%\" >nul
-copy /Y "%SCRIPT_DIR%x86\ReleaseExe\beacon_windows_x86.exe"               "%DEST%\" >nul
+REM HTTP external: patched DLL + EXE (x64 + x86)
+copy /Y "%SCRIPT_DIR%x64\Release\beacon_http_windows_amd64_patched.dll"    "%DEST%\beacon_http_windows_amd64.dll" >nul
+copy /Y "%SCRIPT_DIR%x86\Release\beacon_http_windows_x86_patched.dll"      "%DEST%\beacon_http_windows_x86.dll" >nul
+copy /Y "%SCRIPT_DIR%x64\ReleaseExe\beacon_http_windows_amd64.exe"         "%DEST%\" >nul
+copy /Y "%SCRIPT_DIR%x86\ReleaseExe\beacon_http_windows_x86.exe"           "%DEST%\" >nul
+
+REM TCP external: patched DLL + EXE (x64 + x86)
+copy /Y "%SCRIPT_DIR%x64\ReleaseDllTcpExternal\beacon_tcp_windows_amd64_patched.dll"  "%DEST%\beacon_tcp_windows_amd64.dll" >nul
+copy /Y "%SCRIPT_DIR%x86\ReleaseDllTcpExternal\beacon_tcp_windows_x86_patched.dll"    "%DEST%\beacon_tcp_windows_x86.dll" >nul
+copy /Y "%SCRIPT_DIR%x64\ReleaseExeTcpExternal\beacon_tcp_windows_amd64.exe"           "%DEST%\" >nul
+copy /Y "%SCRIPT_DIR%x86\ReleaseExeTcpExternal\beacon_tcp_windows_x86.exe"             "%DEST%\" >nul
+
+REM TCP internal: EXE (x64 + x86)
 copy /Y "%SCRIPT_DIR%x64\ReleaseExeTcpInternal\beacon_tcp_internal_amd64.exe"  "%DEST%\" >nul
 copy /Y "%SCRIPT_DIR%x86\ReleaseExeTcpInternal\beacon_tcp_internal_x86.exe"    "%DEST%\" >nul
+
+REM SMB internal: EXE (x64 + x86)
 copy /Y "%SCRIPT_DIR%x64\ReleaseExeSmbInternal\beacon_smb_internal_amd64.exe"  "%DEST%\" >nul
 copy /Y "%SCRIPT_DIR%x86\ReleaseExeSmbInternal\beacon_smb_internal_x86.exe"    "%DEST%\" >nul
 
