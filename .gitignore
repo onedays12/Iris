@@ -41,6 +41,7 @@ __pycache__/
 C-Beacon/x64/
 C-Beacon/x86/
 C-Beacon/Beacon/
+C-Beacon/docs/
 stager_shellcode/x64/
 stager_shellcode/x86/
 stager_shellcode/stager_shellcode/x64/
@@ -48,6 +49,8 @@ stager_shellcode/stager_shellcode/x86/
 
 # Generated helper binaries; source is kept next to them.
 C-Beacon/tools/**/*.exe
+C-Beacon/tools/**/*.dll
+C-Beacon/tools/cascade_proto/bin/
 stager_shellcode/tools/**/*.exe
 
 # Release packages are uploaded through GitHub Releases.
