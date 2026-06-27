@@ -67,6 +67,10 @@ stager_shellcode/tools/**/*.bin
 # ============================================================
 # Client — Wails / Go / Frontend build output
 # ============================================================
+client/.editorconfig
+client/.gitattributes
+client/.gitignore
+client/CLAUDE.md
 client/bin/
 client/frontend/node_modules/
 client/frontend/dist/
