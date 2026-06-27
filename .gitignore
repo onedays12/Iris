@@ -72,6 +72,9 @@ client/.gitattributes
 client/.gitignore
 client/CLAUDE.md
 client/bin/
+client/devcheck.log
+client/vite-proxy-pivot.err.log
+client/vite-proxy-pivot.log
 client/frontend/node_modules/
 client/frontend/dist/
 client/frontend/.vite/
