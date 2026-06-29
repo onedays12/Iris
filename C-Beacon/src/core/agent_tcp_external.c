@@ -155,6 +155,7 @@ INT AgentRunExternalTcp(Agent* agent)
         AgentFlushTransfers(ctx);
         AgentFlushTunnels(ctx);
         AgentFlushCascade(ctx);
+        AgentFlushPostEx(ctx);
         if (!FlushOutboxTcpExternal(ctx, &session)) {
             TransportTcpExternalClose(&session);
             if (failures++ >= max_failures) {

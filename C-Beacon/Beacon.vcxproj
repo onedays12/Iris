@@ -353,15 +353,22 @@
       <ExceptionHandling>false</ExceptionHandling>
       <AdditionalIncludeDirectories>$(ProjectDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BufferSecurityCheck>false</BufferSecurityCheck>
+      <ControlFlowGuard>
+      </ControlFlowGuard>
+      <GuardEHContMetadata>false</GuardEHContMetadata>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /guard:cf- /guard:ehcont- %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>BEACON_REFLECTIVE_NO_STOMP;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <AdditionalDependencies>kernel32.lib;advapi32.lib;bcrypt.lib;iphlpapi.lib;ws2_32.lib;winhttp.lib;secur32.lib;user32.lib;gdi32.lib;ole32.lib;oleaut32.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <LinkControlFlowGuard>false</LinkControlFlowGuard>
+      <LinkGuardEHContMetadata>false</LinkGuardEHContMetadata>
+      <AdditionalOptions>%(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -534,6 +541,12 @@
     <ClCompile Include="src\managers\cascade_io_smb.c" />
     <ClCompile Include="src\managers\cascade_io_tcp.c" />
     <ClCompile Include="src\managers\jobs.c" />
+    <ClCompile Include="src\managers\postex.c" />
+    <ClCompile Include="src\managers\postex_backend.c" />
+    <ClCompile Include="src\managers\postex_frame.c" />
+    <ClCompile Include="src\managers\postex_job.c" />
+    <ClCompile Include="src\managers\postex_pipe.c" />
+    <ClCompile Include="src\managers\postex_request.c" />
     <ClCompile Include="src\managers\tunnel.c" />
     <ClCompile Include="src\managers\transfer.c" />
     <ClCompile Include="src\transport\http_external.c">
@@ -558,6 +571,10 @@
     <ClInclude Include="include\beacon_jobs.h" />
     <ClInclude Include="include\beacon_outbox.h" />
     <ClInclude Include="include\beacon_packet.h" />
+    <ClInclude Include="include\beacon_postex.h" />
+    <ClInclude Include="include\beacon_postex_backend.h" />
+    <ClInclude Include="include\beacon_postex_module.h" />
+    <ClInclude Include="src\managers\postex_internal.h" />
     <ClInclude Include="include\beacon_profile.h" />
     <ClInclude Include="include\beacon_reflective_loader.h" />
     <ClInclude Include="include\beacon_runtime.h" />

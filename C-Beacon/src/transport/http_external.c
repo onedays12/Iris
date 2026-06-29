@@ -4,6 +4,10 @@
 
 #pragma comment(lib, "winhttp.lib")
 
+#ifndef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2
+#define WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 0x00000800
+#endif
+
 /*
  * HTTP external 传输层负责一次心跳交换：
  * metadata 放在可配置请求头中，payload 作为请求体，响应体交给 Agent 解密。
@@ -57,6 +61,21 @@ static VOID HttpClose(HINTERNET h)
     if (h) WinHttpCloseHandle(h);
 }
 
+/* Windows 7 WinHTTP defaults can still offer only TLS 1.0. Force TLS 1.2 for HTTPS. */
+static INT HttpForceTls12(HINTERNET session)
+{
+    DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+
+    if (!session) {
+        return 0;
+    }
+
+    return WinHttpSetOption(session,
+                            WINHTTP_OPTION_SECURE_PROTOCOLS,
+                            &protocols,
+                            sizeof(protocols)) ? 1 : 0;
+}
+
 /* 通过 WinHTTP 执行单次 HTTP 请求。成功返回 1，失败返回 0 */
 static INT HttpExchangeOnce(const Profile* profile, const ByteBuf* metadata, const ByteBuf* payload, ByteBuf* response)
 {
@@ -96,6 +115,7 @@ static INT HttpExchangeOnce(const Profile* profile, const ByteBuf* metadata, con
     /* 使用配置的用户代理打开 WinHTTP 会话 */
     session = WinHttpOpen(ua_w, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) goto cleanup;
+    if (parts.nScheme == INTERNET_SCHEME_HTTPS && !HttpForceTls12(session)) goto cleanup;
 
     /* 从配置应用连接超时（默认 10 秒） */
     {

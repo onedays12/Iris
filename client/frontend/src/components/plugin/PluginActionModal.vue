@@ -43,28 +43,43 @@ function normalizeBooleanDefault(value) {
   return false
 }
 
+function resolveFieldDefaultByArch(field) {
+  const byArch = field?.defaultByArch || field?.default_by_arch || field?.DefaultByArch || {}
+  if (!byArch || typeof byArch !== 'object' || Array.isArray(byArch)) return undefined
+
+  const arch = normalizeBeaconArch(activeAgent.value?.arch)
+  if (!arch || arch === 'unknown') return undefined
+  if (Object.prototype.hasOwnProperty.call(byArch, arch)) return byArch[arch]
+  return undefined
+}
+
 function normalizeFieldDefault(field) {
+  const archDefault = resolveFieldDefaultByArch(field)
+  const defaultValue = archDefault !== undefined ? archDefault : (field.defaultValue ?? field.default ?? '')
   if (isBooleanField(field)) {
-    return normalizeBooleanDefault(field.defaultValue ?? field.default ?? false)
+    return normalizeBooleanDefault(defaultValue)
   }
-  const defaultValue = field.defaultValue ?? field.default ?? ''
   return defaultValue === undefined || defaultValue === null ? '' : defaultValue
 }
 
 // normalizedAction 将当前激活的动作原始数据归一化
 function normalizedAction() {
   const action = activeAction.value || {}
+  const postex = action.postex || action.PostEx || null
   return {
     id: String(action.id || '').trim(),
+    kind: String(action.kind || action.Kind || (postex ? 'postex' : 'bof')).trim().toLowerCase() || 'bof',
     label: String(action.label || action.id || '插件动作').trim(),
     description: String(action.description || ''),
     os: Array.isArray(action.os) ? action.os : [],
     arch: Array.isArray(action.arch) ? action.arch : [],
     artifact: String(action.artifact || ''),
     artifactByArch: action.artifactByArch || action.artifact_by_arch || {},
+    artifactData: String(action.artifactData || action.artifact_data || ''),
     commandId: Number(action.commandId || action.command_id || 0) || 0,
     requiresInput: Boolean(action.requiresInput || action.requires_input || false),
     fields: Array.isArray(action.fields) ? action.fields : [],
+    postex,
   }
 }
 
@@ -97,6 +112,15 @@ watch(activeAction, () => {
     resetValues()
   }
 })
+
+watch(
+  () => activeAgent.value?.arch,
+  () => {
+    if (visible.value) {
+      resetValues()
+    }
+  }
+)
 
 function close() {
   modalStore.closePluginAction()
@@ -188,10 +212,12 @@ async function submit() {
       plugin_id: activePluginId.value,
       plugin_name: activePluginName.value,
       action_id: action.id,
+      kind: action.kind,
       action_label: action.label,
       command_id: action.commandId,
       artifact: action.artifact,
       artifact_data: action.artifactData || '',
+      postex: action.postex || null,
       beacon_os: normalizeBeaconPlatform(activeAgent.value?.os),
       beacon_arch: normalizeBeaconArch(activeAgent.value?.arch),
       values,
@@ -225,8 +251,12 @@ async function submit() {
         <div class="modal-body">
           <div class="summary">
             <div class="summary-line" v-if="normalizedAction().description">{{ normalizedAction().description }}</div>
-            <div class="summary-line dim" v-if="normalizedAction().artifact">BOF 文件：{{ normalizedAction().artifact }}</div>
-            <div class="summary-line dim" v-if="activeAction?.artifactData">BOF 已由宿主预加载</div>
+            <div class="summary-line dim" v-if="normalizedAction().artifact">
+              {{ normalizedAction().kind === 'postex' ? 'PostEx DLL' : 'BOF 文件' }}：{{ normalizedAction().artifact }}
+            </div>
+            <div class="summary-line dim" v-if="normalizedAction().kind === 'postex' && normalizedAction().postex?.mode">模式：{{ normalizedAction().postex.mode }}</div>
+            <div class="summary-line dim" v-if="normalizedAction().kind === 'postex' && normalizedAction().postex?.backend">Backend：{{ normalizedAction().postex.backend }}</div>
+            <div class="summary-line dim" v-if="normalizedAction().kind !== 'postex' && activeAction?.artifactData">BOF 已由宿主预加载</div>
             <div class="summary-line dim" v-if="normalizedAction().commandId">命令 ID：{{ normalizedAction().commandId }}</div>
           </div>
 

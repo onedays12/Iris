@@ -17,5 +17,6 @@ export {
     BeaconCommandArg,
     PluginAction,
     PluginActionField,
+    PluginPostExAction,
     PluginSnapshot
 } from "./models.js";

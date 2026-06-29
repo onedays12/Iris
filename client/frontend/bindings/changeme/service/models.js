@@ -58,6 +58,13 @@ export class PluginAction {
              */
             this["id"] = "";
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["kind"] = undefined;
+        }
         if (!("label" in $$source)) {
             /**
              * @member
@@ -110,6 +117,13 @@ export class PluginAction {
         if (/** @type {any} */(false)) {
             /**
              * @member
+             * @type {PluginPostExAction | null | undefined}
+             */
+            this["postex"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
              * @type {number | undefined}
              */
             this["command_id"] = undefined;
@@ -145,26 +159,30 @@ export class PluginAction {
      * @returns {PluginAction}
      */
     static createFrom($$source = {}) {
-        const $$createField3_0 = $$createType0;
         const $$createField4_0 = $$createType0;
-        const $$createField6_0 = $$createType1;
-        const $$createField10_0 = $$createType3;
-        const $$createField11_0 = $$createType5;
+        const $$createField5_0 = $$createType0;
+        const $$createField7_0 = $$createType1;
+        const $$createField9_0 = $$createType3;
+        const $$createField12_0 = $$createType5;
+        const $$createField13_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("os" in $$parsedSource) {
-            $$parsedSource["os"] = $$createField3_0($$parsedSource["os"]);
+            $$parsedSource["os"] = $$createField4_0($$parsedSource["os"]);
         }
         if ("arch" in $$parsedSource) {
-            $$parsedSource["arch"] = $$createField4_0($$parsedSource["arch"]);
+            $$parsedSource["arch"] = $$createField5_0($$parsedSource["arch"]);
         }
         if ("artifact_by_arch" in $$parsedSource) {
-            $$parsedSource["artifact_by_arch"] = $$createField6_0($$parsedSource["artifact_by_arch"]);
+            $$parsedSource["artifact_by_arch"] = $$createField7_0($$parsedSource["artifact_by_arch"]);
+        }
+        if ("postex" in $$parsedSource) {
+            $$parsedSource["postex"] = $$createField9_0($$parsedSource["postex"]);
         }
         if ("fields" in $$parsedSource) {
-            $$parsedSource["fields"] = $$createField10_0($$parsedSource["fields"]);
+            $$parsedSource["fields"] = $$createField12_0($$parsedSource["fields"]);
         }
         if ("args" in $$parsedSource) {
-            $$parsedSource["args"] = $$createField11_0($$parsedSource["args"]);
+            $$parsedSource["args"] = $$createField13_0($$parsedSource["args"]);
         }
         return new PluginAction(/** @type {Partial<PluginAction>} */($$parsedSource));
     }
@@ -211,6 +229,13 @@ export class PluginActionField {
              */
             this["default"] = null;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {{ [_: string]: any } | undefined}
+             */
+            this["default_by_arch"] = undefined;
+        }
         if (!("required" in $$source)) {
             /**
              * @member
@@ -232,6 +257,20 @@ export class PluginActionField {
              */
             this["options"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["role"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["postex_arg"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }
@@ -242,12 +281,136 @@ export class PluginActionField {
      * @returns {PluginActionField}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType0;
+        const $$createField5_0 = $$createType8;
+        const $$createField8_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("default_by_arch" in $$parsedSource) {
+            $$parsedSource["default_by_arch"] = $$createField5_0($$parsedSource["default_by_arch"]);
+        }
         if ("options" in $$parsedSource) {
-            $$parsedSource["options"] = $$createField7_0($$parsedSource["options"]);
+            $$parsedSource["options"] = $$createField8_0($$parsedSource["options"]);
         }
         return new PluginActionField(/** @type {Partial<PluginActionField>} */($$parsedSource));
+    }
+}
+
+export class PluginPostExAction {
+    /**
+     * Creates a new PluginPostExAction instance.
+     * @param {Partial<PluginPostExAction>} [$$source = {}] - The source object to create the PluginPostExAction.
+     */
+    constructor($$source = {}) {
+        if (!("mode" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["mode"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["dll"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {{ [_: string]: string } | undefined}
+             */
+            this["dll_by_arch"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["manifest"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["wait_ms"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["max_runtime_ms"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["idle_timeout_ms"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["description"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["module_args"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["spawn_path"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {{ [_: string]: string } | undefined}
+             */
+            this["spawn_path_by_arch"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["spawn_args"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["backend"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PluginPostExAction instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PluginPostExAction}
+     */
+    static createFrom($$source = {}) {
+        const $$createField2_0 = $$createType1;
+        const $$createField10_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("dll_by_arch" in $$parsedSource) {
+            $$parsedSource["dll_by_arch"] = $$createField2_0($$parsedSource["dll_by_arch"]);
+        }
+        if ("spawn_path_by_arch" in $$parsedSource) {
+            $$parsedSource["spawn_path_by_arch"] = $$createField10_0($$parsedSource["spawn_path_by_arch"]);
+        }
+        return new PluginPostExAction(/** @type {Partial<PluginPostExAction>} */($$parsedSource));
     }
 }
 
@@ -356,7 +519,7 @@ export class PluginSnapshot {
      */
     static createFrom($$source = {}) {
         const $$createField6_0 = $$createType0;
-        const $$createField7_0 = $$createType7;
+        const $$createField7_0 = $$createType10;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("permissions" in $$parsedSource) {
             $$parsedSource["permissions"] = $$createField6_0($$parsedSource["permissions"]);
@@ -371,9 +534,12 @@ export class PluginSnapshot {
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = $Create.Map($Create.Any, $Create.Any);
-const $$createType2 = PluginActionField.createFrom;
-const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = BeaconCommandArg.createFrom;
+const $$createType2 = PluginPostExAction.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = PluginActionField.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = PluginAction.createFrom;
+const $$createType6 = BeaconCommandArg.createFrom;
 const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $Create.Map($Create.Any, $Create.Any);
+const $$createType9 = PluginAction.createFrom;
+const $$createType10 = $Create.Array($$createType9);

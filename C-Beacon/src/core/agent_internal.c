@@ -294,6 +294,7 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
         AgentFlushTransfers(ctx);
         AgentFlushTunnels(ctx);
         AgentFlushCascade(ctx);
+        AgentFlushPostEx(ctx);
         if (!FlushOutboxInternal(ctx, upstream)) break;
     }
 

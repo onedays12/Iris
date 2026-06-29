@@ -119,7 +119,7 @@ async function copyText(text) {
           </tr>
           <tr>
             <td class="ft-name">插件</td>
-            <td>添加含 <code>plugin.json</code> 的目录即可注册插件。插件动作会出现在 Agent 右键菜单中，支持 BOF 执行和自定义参数输入</td>
+            <td>添加含 <code>plugin.json</code> 的目录即可注册插件。插件动作会出现在 Agent 右键菜单中，支持 BOF / PostEx 执行和自定义参数输入</td>
           </tr>
           <tr>
             <td class="ft-name">帮助</td>

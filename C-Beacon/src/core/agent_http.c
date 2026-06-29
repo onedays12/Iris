@@ -61,6 +61,7 @@ INT AgentRunExternalHttp(Agent* agent)
             AgentFlushTransfers(ctx);
             AgentFlushTunnels(ctx);
             AgentFlushCascade(ctx);
+            AgentFlushPostEx(ctx);
             FlushOutboxHttp(ctx, &heartbeat);
             BbFree(&response);
         }

@@ -19,11 +19,14 @@ function normalizePluginActionField(field) {
     type: pickString(field.type || field.Type || 'string').toLowerCase(),
     placeholder: pickString(field.placeholder || field.Placeholder || ''),
     defaultValue: field.default ?? field.default_value ?? field.defaultValue ?? field.Default ?? '',
+    defaultByArch: normalizeDefaultByArch(field.default_by_arch || field.defaultByArch || field.DefaultByArch),
     required: Boolean(field.required || field.Required),
     help: pickString(field.help || field.Help || ''),
     options: Array.isArray(field.options || field.Options)
       ? (field.options || field.Options).map(item => pickString(item)).filter(Boolean)
       : [],
+    role: pickString(field.role || field.Role || '').toLowerCase(),
+    postexArg: pickString(field.postex_arg || field.postexArg || field.PostExArg || ''),
   }
 }
 
@@ -41,6 +44,40 @@ function normalizeStringMap(value) {
   )
 }
 
+function normalizeArchKey(key) {
+  const text = pickString(key).trim().toLowerCase()
+  if (['amd64', 'x64', 'x86_64'].includes(text)) return 'amd64'
+  if (['x86', 'i386', '386'].includes(text)) return 'x86'
+  return text
+}
+
+function normalizeDefaultByArch(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [normalizeArchKey(key), item])
+      .filter(([key, item]) => key && item !== undefined && item !== null)
+  )
+}
+
+function normalizePostExConfig(postex) {
+  if (!postex || typeof postex !== 'object') return null
+  return {
+    mode: pickString(postex.mode || postex.Mode || '').toLowerCase().replace(/_/g, '-'),
+    dll: pickString(postex.dll || postex.DLL || ''),
+    dllByArch: normalizeStringMap(postex.dll_by_arch || postex.dllByArch || postex.DLLByArch),
+    waitMs: Number(postex.wait_ms || postex.waitMs || postex.WaitMS || 0) || 0,
+    maxRuntimeMs: Number(postex.max_runtime_ms || postex.maxRuntimeMs || postex.MaxRuntimeMS || 0) || 0,
+    idleTimeoutMs: Number(postex.idle_timeout_ms || postex.idleTimeoutMs || postex.IdleTimeoutMS || 0) || 0,
+    description: pickString(postex.description || postex.Description || ''),
+    moduleArgs: pickString(postex.module_args || postex.moduleArgs || postex.ModuleArgs || ''),
+    spawnPath: pickString(postex.spawn_path || postex.spawnPath || postex.SpawnPath || ''),
+    spawnPathByArch: normalizeStringMap(postex.spawn_path_by_arch || postex.spawnPathByArch || postex.SpawnPathByArch),
+    spawnArgs: pickString(postex.spawn_args || postex.spawnArgs || postex.SpawnArgs || ''),
+    backend: pickString(postex.backend || postex.Backend || ''),
+  }
+}
+
 // normalizePluginAction 将原始动作对象转换为前端统一的动作模型
 function normalizePluginAction(action) {
   if (!action || typeof action !== 'object') return null
@@ -48,9 +85,12 @@ function normalizePluginAction(action) {
   const fields = Array.isArray(action.fields || action.Fields)
     ? (action.fields || action.Fields).map(normalizePluginActionField).filter(Boolean)
     : []
+  const postex = normalizePostExConfig(action.postex || action.PostEx)
+  const kind = pickString(action.kind || action.Kind || (postex ? 'postex' : 'bof')).toLowerCase() || 'bof'
 
   return {
     id: pickString(action.id || action.ID || action.name),
+    kind,
     label: pickString(action.label || action.Label || action.display_name || action.displayName || action.name || action.id || action.ID),
     description: pickString(action.description || action.Description || ''),
     os: normalizeStringList(action.os || action.OS),
@@ -61,6 +101,7 @@ function normalizePluginAction(action) {
     commandId: Number(action.command_id || action.commandId || action.CommandID || 0) || 0,
     requiresInput: Boolean(action.requires_input || action.requiresInput || action.RequiresInput || fields.length),
     fields,
+    postex,
     raw: action,
   }
 }
@@ -221,14 +262,21 @@ export const usePluginStore = defineStore('plugin', {
         const consoleStore = useConsoleStore()
         const beaconId = pickString(payload.beacon_id || payload.beaconId || payload.selected_beacon_id || payload.selectedBeaconId)
         const artifact = pickString(payload.artifact || payload.artifact_path || payload.artifactPath || '')
+        const kind = pickString(payload.kind || payload.action_kind || payload.actionKind || 'bof').toLowerCase()
         if (beaconId) {
           consoleStore.openConsole(beaconId)
-          if (artifact) {
-            consoleStore.appendToConsole(beaconId, 'input', `bof "${artifact}"`.trim())
+          if (kind === 'postex') {
+            const mode = pickString(payload.postex?.mode || payload.postex_mode || payload.postexMode || 'postex')
+            consoleStore.appendToConsole(beaconId, 'input', `${mode} "${artifact}"`.trim())
+            consoleStore.appendToConsole(beaconId, 'output', '正在推送 PostEx DLL 并创建任务...')
           } else {
-            consoleStore.appendToConsole(beaconId, 'input', 'bof')
+            if (artifact) {
+              consoleStore.appendToConsole(beaconId, 'input', `bof "${artifact}"`.trim())
+            } else {
+              consoleStore.appendToConsole(beaconId, 'input', 'bof')
+            }
+            consoleStore.appendToConsole(beaconId, 'output', '正在推送 Payload 并准备执行 bof...')
           }
-          consoleStore.appendToConsole(beaconId, 'output', '正在推送 Payload 并准备执行 bof...')
         }
 
         const requestPayload = {
@@ -254,7 +302,9 @@ export const usePluginStore = defineStore('plugin', {
         const consoleStore = useConsoleStore()
         const beaconId = pickString(payload.beacon_id || payload.beaconId || payload.selected_beacon_id || payload.selectedBeaconId)
         if (beaconId) {
-          consoleStore.appendToConsole(beaconId, 'error', `插件 BOF 执行失败: ${err.message || '未知错误'}`)
+          const kind = pickString(payload.kind || payload.action_kind || payload.actionKind || 'bof').toLowerCase()
+          const label = kind === 'postex' ? 'PostEx' : 'BOF'
+          consoleStore.appendToConsole(beaconId, 'error', `插件 ${label} 执行失败: ${err.message || '未知错误'}`)
         }
         this.error = err.message || '插件动作执行失败'
         throw err

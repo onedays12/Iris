@@ -2,7 +2,7 @@
 
 Language: [中文](README.md) | English
 
-IrisC2 is a C2 framework for authorized security testing, red team exercises, attack-defense labs, and internal research. It is composed of Iris Client, Iris Server, Beacon, Stager, and a plugin system, covering listener management, payload generation, Beacon tasking, file transfer, screenshots, tunneling, BOF execution, and real-time event synchronization.
+IrisC2 is a C2 framework for authorized security testing, red team exercises, attack-defense labs, and internal research. It is composed of Iris Client, Iris Server, Beacon, Stager, and a plugin system, covering listener management, payload generation, Beacon tasking, file transfer, screenshots, tunneling, BOF/PostEx extension execution, structured events, and real-time event synchronization.
 
 > This project is only intended for use in explicitly authorized environments. Do not deploy, connect, test, or run any component against unauthorized systems, accounts, networks, or third-party assets.
 
@@ -28,7 +28,7 @@ Client source code is located in `client/`, built with Wails 3 (Go + Vue/TypeScr
 - Server handles authentication, listeners, payload generation, tasking, files, screenshots, tunneling, and event synchronization.
 - Beacon runs in authorized target environments, communicates with listeners according to the C2 Profile, and executes tasks.
 - Stager is used in staged payload scenarios: it downloads the stage first, then starts the Beacon stage.
-- Plugins expose BOF/OBJ-based extension actions through Client and dispatch them to Beacon.
+- Plugins expose BOF/OBJ and PostEx DLL extension actions through Client and dispatch them to Beacon.
 
 ## Demo
 
@@ -53,6 +53,8 @@ GitHub may not preview the large LFS-backed demo video directly on the repositor
 - Manages listeners, payloads, Beacons, tasks, files, screenshots, and tunnels.
 - Supports Beacon context menus and plugin action entry points.
 - Organizes `plugin.json` and artifact files into executable plugin actions.
+- Supports BOF/OBJ and PostEx plugin actions; PostEx actions support `spawn-dll` / `inject-dll`, architecture-aware DLL selection, architecture-aware defaults, and manifest linting.
+- Displays structured PostEx frames, including metadata, progress, artifact, and error frames, and routes artifacts into the downloads page.
 - Supports common task parameter forms, such as strings, select fields, and required inputs.
 
 Client source code is located in `client/`, built with Wails 3 with a Go backend and Vue + TypeScript frontend. You need to build it from source. See [client/README.md](client/README.md) for details.
@@ -64,13 +66,15 @@ Build output includes the plugin directory:
 - Supports username/password authentication and JWT-based API authorization.
 - Allows only one active session per username; a new login replaces the previous session.
 - Provides REST APIs and a WebSocket event channel.
-- Supports HTTP/HTTPS listeners; Server also contains TCP listener-related capabilities, while the currently public Beacon C2 callback path is based on HTTP/HTTPS transport.
+- Supports HTTP/HTTPS listeners and External TCP listeners; TCP listeners can enable SSL/TLS when configured.
 - Supports creating, editing, pausing, resuming, deleting, and listing listeners.
-- Uses C2 Profiles to manage Beacon sleep, jitter, HTTP URI, headers, User-Agent, stager behavior, and related options.
+- Uses C2 Profiles to manage Beacon sleep, jitter, sleep obfuscation, HTTP URI, headers, User-Agent, stager behavior, and related options.
 - Supports stagerless and staged payload generation.
 - Supports Windows x64/x86 Beacon templates and stager templates.
 - Supports task persistence, pending task recovery, task status tracking, and result collection.
+- Supports PostEx `spawn_dll` / `inject_dll` commands, structured frame events, and artifact downloads.
 - Supports file upload, Beacon file download, chunked transfer, screenshot management, and tunneling.
+- Provides Windows 7-compatible TLS cipher fallback for HTTP, stager, and TCP listeners.
 - Supports local SQLite persistence, runtime logging, and basic decoy response configuration.
 
 Server binaries are published through GitHub Releases. Each platform package includes the required `config.yaml`, `c2profile/`, and `static/` runtime files:
@@ -84,13 +88,14 @@ Iris-Server-linux-x64.tar.gz
 
 Beacon source code is located in `C-Beacon/`. Current Beacon-side capabilities include:
 
-- HTTP/HTTPS C2 communication.
+- HTTP/HTTPS and External TCP C2 communication, with Raw TCP or TLS over TCP for TCP transport.
 - Initial registration, heartbeat refresh, and session key update.
 - Sleep time, jitter, and sleep obfuscation configuration.
 - Sleep obfuscation technique values:
   - `0` = none
   - `1` = ekko
   - `2` = zilean
+  - `3` = gargle
 - Basic control: Sleep and Exit.
 - Command execution: Shell and PowerShell.
 - File system operations: Cd, Ls, Pwd, Cat, Mkdir, Rm, Mv, Cp, SetAttr, and Zip.
@@ -101,19 +106,24 @@ Beacon source code is located in `C-Beacon/`. Current Beacon-side capabilities i
 - Screenshot capture: Screenshot.
 - Tunneling: SOCKS / port-forward-style tunnel start, control, data, and close.
 - Extension execution: BOF/OBJ loading, relocation, execution, output collection, and task cancellation.
+- PostEx extension execution: supports `spawn-dll` / `inject-dll`, async job polling, metadata/progress/artifact/error frames, and task cancellation.
 - Cascade transport: supports TCP and SMB (named pipe) internal beacons. Parent beacons establish cascade links via `connect` or `link` commands, with multi-hop support (e.g. HTTP → TCP → SMB). Internal beacons automatically return to listen state when disconnected from parent.
 
 Beacon build artifacts should be deployed to `server/static/beacon_templates/C-Beacon/`:
 
 ```text
-beacon_windows_amd64.dll          # x64 reflective DLL (requires patching)
-beacon_windows_amd64.exe          # x64 HTTP/HTTPS EXE
-beacon_windows_x86.dll            # x86 reflective DLL (requires patching)
-beacon_windows_x86.exe            # x86 HTTP/HTTPS EXE
-beacon_tcp_internal_amd64.exe     # x64 TCP cascade beacon
-beacon_tcp_internal_x86.exe       # x86 TCP cascade beacon
-beacon_smb_internal_amd64.exe     # x64 SMB cascade beacon
-beacon_smb_internal_x86.exe       # x86 SMB cascade beacon
+beacon_http_windows_amd64.dll     # x64 HTTP/HTTPS reflective DLL (requires patching)
+beacon_http_windows_x86.dll       # x86 HTTP/HTTPS reflective DLL (requires patching)
+beacon_http_windows_amd64.exe     # x64 HTTP/HTTPS EXE
+beacon_http_windows_x86.exe       # x86 HTTP/HTTPS EXE
+beacon_tcp_windows_amd64.dll      # x64 TCP external reflective DLL (requires patching)
+beacon_tcp_windows_x86.dll        # x86 TCP external reflective DLL (requires patching)
+beacon_tcp_windows_amd64.exe      # x64 TCP external EXE
+beacon_tcp_windows_x86.exe        # x86 TCP external EXE
+beacon_tcp_internal_amd64.exe     # x64 TCP internal cascade beacon
+beacon_tcp_internal_x86.exe       # x86 TCP internal cascade beacon
+beacon_smb_internal_amd64.exe     # x64 SMB internal cascade beacon
+beacon_smb_internal_x86.exe       # x86 SMB internal cascade beacon
 ```
 
 ### Go-Beacon
@@ -256,7 +266,7 @@ In Client, enter the Server address, username, and password to log in. The defau
 
 After logging in, create a listener in Client:
 
-- For the currently public Beacon, choose an HTTP/HTTPS listener.
+- Choose an HTTP/HTTPS listener or an External TCP listener based on the payload transport; TCP can enable SSL/TLS when needed.
 - Set the bind address, port, and callback address.
 - Set the communication key.
 - Choose a C2 Profile, such as `http-default` or `http-stager`.
@@ -287,11 +297,11 @@ After a Beacon checks in, Client can display its session, heartbeat, system info
 - View processes and jobs.
 - Capture screenshots.
 - Start or stop tunnels.
-- Execute BOF/OBJ actions provided by plugins.
+- Execute BOF/OBJ or PostEx actions provided by plugins, and review structured output or artifacts in task results and the downloads page.
 
 ## Plugins
 
-Plugins are bundled with the Client release packages. Plugin authoring, field formats, parameter types, and examples are documented below.
+Plugins are bundled with the Client release packages and support BOF/OBJ and PostEx DLL actions. Plugin authoring, field formats, parameter types, and full examples are documented in [client/plugins/README.md](client/plugins/README.md).
 
 Inside a Client release package, plugins are located in:
 
@@ -311,18 +321,19 @@ Built-in plugin examples in the Client release package:
 
 ```text
 client/plugins/
-└── execution-injection/
+├── execution-injection/
+└── postex-template/
 ```
 
 ### Usage Steps
 
 1. Place the plugin directory under `client/plugins/`.
 2. Make sure the plugin directory contains `plugin.json`.
-3. Make sure the file referenced by `artifact` exists and is relative to the plugin directory.
+3. Make sure BOF/OBJ `artifact` / `artifact_by_arch` files or PostEx `postex.dll` / `postex.dll_by_arch` files exist and are relative to the plugin directory.
 4. Restart Client or refresh the plugin list.
 5. Select the action from the Beacon context menu or plugin entry point.
 6. Fill in the form fields and submit the task.
-7. View the result in task output or Beacon output.
+7. View results in task output, Beacon output, or the Downloads page.
 
 ### plugin.json Format
 
@@ -335,10 +346,12 @@ client/plugins/
   "actions": [
     {
       "id": "whoami",
+      "kind": "bof",
       "label": "Whoami",
       "description": "Get the identity of the current Beacon session",
+      "os": ["windows"],
+      "arch": ["amd64"],
       "artifact": "bin/whoami.x64.o",
-      "command_id": 70,
       "requires_input": false
     }
   ]
@@ -351,8 +364,11 @@ Actions with parameters can declare `fields`:
 {
   "id": "example_with_input",
   "label": "Example With Input",
-  "artifact": "bin/example.x64.o",
-  "command_id": 70,
+  "kind": "bof",
+  "artifact_by_arch": {
+    "amd64": "bin/example.x64.o",
+    "x86": "bin/example.x86.o"
+  },
   "requires_input": true,
   "fields": [
     {
@@ -374,10 +390,40 @@ Field notes:
 - `type`: field type, commonly `string` or `select`.
 - `options`: candidate values for `select` fields.
 - `artifact`: plugin artifact path, relative to the plugin directory.
-- `command_id`: Beacon command ID; BOF/OBJ plugins usually use `70`.
+- `artifact_by_arch`: chooses a BOF/OBJ artifact by Beacon architecture; common keys are `amd64` and `x86`.
+- `kind`: action type; omitted actions default to `bof`, and PostEx actions use `postex`.
+- `postex`: PostEx action configuration block. Use `dll` / `dll_by_arch` for DLL files; PostEx does not reuse the `artifact` field.
+- `command_id`: Beacon command ID; BOF/OBJ actions default to `70`, PostEx actions must use `90`, and plugin authors usually do not need to set it manually.
 - `requires_input`: whether a parameter form should be shown.
 
-Plugin artifacts must match the Beacon architecture. Use x64 BOF/OBJ artifacts with x64 Beacon, and x86 BOF/OBJ artifacts with x86 Beacon.
+Plugin artifacts must match the Beacon architecture. Use x64 BOF/OBJ or DLL artifacts with x64 Beacon, and x86 BOF/OBJ or DLL artifacts with x86 Beacon.
+
+PostEx action example:
+
+```json
+{
+  "id": "postex_template_spawn",
+  "kind": "postex",
+  "label": "PostEx Template Spawn",
+  "os": ["windows"],
+  "arch": ["amd64", "x86"],
+  "postex": {
+    "mode": "spawn-dll",
+    "dll_by_arch": {
+      "amd64": "bin/postex_template.x64.dll",
+      "x86": "bin/postex_template.x86.dll"
+    },
+    "manifest": "postex-template.manifest.json",
+    "wait_ms": 3000,
+    "spawn_path_by_arch": {
+      "amd64": "C:\\Windows\\System32\\cmd.exe",
+      "x86": "C:\\Windows\\SysWOW64\\cmd.exe"
+    },
+    "spawn_args": "/c timeout /t 30 /nobreak > nul",
+    "backend": "remote-thread"
+  }
+}
+```
 
 ## C2 Profile
 
@@ -396,7 +442,7 @@ beacon:
   sleep_time: 3000
   jitter: 20
   sleep_obf_enabled: true
-  sleep_obf_technique: 2
+  sleep_obf_technique: 3
 
 http:
   uri: /index.php
@@ -417,6 +463,7 @@ stager:
 - `0`: none
 - `1`: ekko
 - `2`: zilean
+- `3`: gargle
 
 `http-stager.yaml` enables staged payloads. `http-default.yaml` is the default profile for regular HTTP Beacon usage.
 
@@ -429,16 +476,20 @@ cd C-Beacon
 build_all.bat
 ```
 
-`build_all.bat` produces all 8 artifacts:
+`build_all.bat` produces all 12 artifacts:
 
 ```text
-C-Beacon/x64/Release/Beacon_amd64.dll
-C-Beacon/x64/ReleaseExe/beacon_windows_amd64.exe
+C-Beacon/x64/Release/beacon_http_windows_amd64.dll
+C-Beacon/x86/Release/beacon_http_windows_x86.dll
+C-Beacon/x64/ReleaseExe/beacon_http_windows_amd64.exe
+C-Beacon/x86/ReleaseExe/beacon_http_windows_x86.exe
+C-Beacon/x64/ReleaseDllTcpExternal/beacon_tcp_windows_amd64.dll
+C-Beacon/x86/ReleaseDllTcpExternal/beacon_tcp_windows_x86.dll
+C-Beacon/x64/ReleaseExeTcpExternal/beacon_tcp_windows_amd64.exe
+C-Beacon/x86/ReleaseExeTcpExternal/beacon_tcp_windows_x86.exe
 C-Beacon/x64/ReleaseExeTcpInternal/beacon_tcp_internal_amd64.exe
-C-Beacon/x64/ReleaseExeSmbInternal/beacon_smb_internal_amd64.exe
-C-Beacon/x86/Release/Beacon_x86.dll
-C-Beacon/x86/ReleaseExe/beacon_windows_x86.exe
 C-Beacon/x86/ReleaseExeTcpInternal/beacon_tcp_internal_x86.exe
+C-Beacon/x64/ReleaseExeSmbInternal/beacon_smb_internal_amd64.exe
 C-Beacon/x86/ReleaseExeSmbInternal/beacon_smb_internal_x86.exe
 ```
 

@@ -110,6 +110,24 @@
     <ClCompile Include="src\managers\jobs.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\managers\postex.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_backend.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_frame.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_job.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_pipe.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_request.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\managers\cascade.c">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -170,6 +188,18 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_packet.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_postex.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_postex_backend.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_postex_module.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\managers\postex_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_profile.h">

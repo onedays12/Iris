@@ -368,6 +368,7 @@ static ByteBuf JobListAll(BeaconContext* ctx)
     JobAppendActive(&ctx->jobs, &out, &count, now);
     TransferAppendJobs(&ctx->transfers, &out, &count, now);
     TunnelAppendJobs(&ctx->tunnels, &out, &count, now);
+    PostExAppendJobs(&ctx->postex, &out, &count, now);
 
     if (count == 0) {
         BbFree(&out);
@@ -414,6 +415,9 @@ ByteBuf CommandKillJob(struct BeaconContext* ctx, Parser* parser)
         return out;
     }
     if (TunnelCancelJob(ctx, job_id, &out)) {
+        return out;
+    }
+    if (PostExCancelJob(ctx, job_id, &out)) {
         return out;
     }
 

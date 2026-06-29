@@ -8,6 +8,7 @@
 import { ref, nextTick, watch, computed, onUnmounted } from 'vue'
 import { useAgentStore } from '../../stores/agent.js'
 import { useConsoleStore } from '../../stores/console.js'
+import { ReadBinaryFileBase64 } from '../../../bindings/changeme/service/fileservice.js'
 import { useModalStore } from '../../stores/modal.js'
 import {
   getCommandId,
@@ -258,12 +259,20 @@ function showHelp(specificCmd = null) {
   consoleStore.appendToConsole(bid, 'output', helpContent)
 }
 
-function sendCommand() {
+async function sendCommand() {
   const rawInput = commandInput.value.trim()
   if (!rawInput || !consoleStore.activeBeaconId) return
   
   const parsed = parseCommandLine(rawInput)
   if (!parsed) return
+
+  // PostEx 别名映射：postex_list → jobs, postex_kill → killjob
+  if (parsed.cmdName.toLowerCase() === 'postex_list') {
+    parsed.cmdId = COMMAND_ID.JOBS
+    parsed.args = []
+  } else if (parsed.cmdName.toLowerCase() === 'postex_kill') {
+    parsed.cmdId = COMMAND_ID.KILLJOB
+  }
 
   // 重置历史指针
   historyIndex.value = -1
@@ -423,6 +432,91 @@ function sendCommand() {
     } catch (err) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', err.message || String(err))
+      commandInput.value = ''
+      return
+    }
+  } else if (parsed.cmdName.toLowerCase() === 'postex_spawn_dll') {
+    // postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]
+    const spawnDllPath = String(parsed.args[0] || '').trim()
+    const spawnPath = String(parsed.args[5] || '').trim()
+    if (!spawnDllPath) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_spawn_dll 需要提供 dll_path。用法: postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]')
+      commandInput.value = ''
+      return
+    }
+    const spawnWaitMs = parseInt(parsed.args[1])
+    if (!spawnWaitMs || spawnWaitMs <= 0) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】wait_ms 必须是正整数。用法: postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]')
+      commandInput.value = ''
+      return
+    }
+    const spawnMaxRuntimeMs = parseInt(parsed.args[2] || '0')
+    const spawnIdleTimeoutMs = parseInt(parsed.args[3] || '0')
+    if (isNaN(spawnMaxRuntimeMs) || spawnMaxRuntimeMs < 0 || isNaN(spawnIdleTimeoutMs) || spawnIdleTimeoutMs < 0) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】max_runtime_ms 和 idle_timeout_ms 必须是非负整数，0 表示关闭。')
+      commandInput.value = ''
+      return
+    }
+    if (!spawnPath) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_spawn_dll 需要提供 spawn_path。用法: postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]')
+      commandInput.value = ''
+      return
+    }
+    try {
+      const spawnDllBase64 = await ReadBinaryFileBase64(spawnDllPath)
+      const spawnDesc = String(parsed.args[4] || 'postex').trim()
+      const spawnArgs = String(parsed.args[6] || '').trim()
+      const spawnModuleArgs = String(parsed.args.slice(7).join(' ') || '').trim()
+      finalArgs = [5, spawnWaitMs, spawnMaxRuntimeMs, spawnIdleTimeoutMs, spawnDesc, spawnModuleArgs, spawnPath, spawnArgs, { kind: 'bytes', value: spawnDllBase64 }]
+    } catch (err) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', `读取 DLL 文件失败: ${err.message || err}`)
+      commandInput.value = ''
+      return
+    }
+  } else if (parsed.cmdName.toLowerCase() === 'postex_inject_dll') {
+    // postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]
+    const injectDllPath = String(parsed.args[0] || '').trim()
+    const injectPid = parseInt(parsed.args[5])
+    if (!injectDllPath) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_inject_dll 需要提供 dll_path。用法: postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]')
+      commandInput.value = ''
+      return
+    }
+    const injectWaitMs = parseInt(parsed.args[1])
+    if (!injectWaitMs || injectWaitMs <= 0) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】wait_ms 必须是正整数。用法: postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]')
+      commandInput.value = ''
+      return
+    }
+    const injectMaxRuntimeMs = parseInt(parsed.args[2] || '0')
+    const injectIdleTimeoutMs = parseInt(parsed.args[3] || '0')
+    if (isNaN(injectMaxRuntimeMs) || injectMaxRuntimeMs < 0 || isNaN(injectIdleTimeoutMs) || injectIdleTimeoutMs < 0) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】max_runtime_ms 和 idle_timeout_ms 必须是非负整数，0 表示关闭。')
+      commandInput.value = ''
+      return
+    }
+    if (!injectPid || injectPid <= 0) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_inject_dll 需要提供有效的 pid。用法: postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]')
+      commandInput.value = ''
+      return
+    }
+    try {
+      const injectDllBase64 = await ReadBinaryFileBase64(injectDllPath)
+      const injectDesc = String(parsed.args[4] || 'postex').trim()
+      const injectModuleArgs = String(parsed.args.slice(6).join(' ') || '').trim()
+      finalArgs = [6, injectWaitMs, injectMaxRuntimeMs, injectIdleTimeoutMs, injectDesc, injectModuleArgs, injectPid, { kind: 'bytes', value: injectDllBase64 }]
+    } catch (err) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', `读取 DLL 文件失败: ${err.message || err}`)
       commandInput.value = ''
       return
     }

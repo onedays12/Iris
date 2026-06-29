@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.1.4
+
+### Client
+
+- 新增 — PostEx 插件动作工作流，支持 `spawn-dll` / `inject-dll`、按架构选择 DLL、按架构默认值和加载期 manifest lint
+- 新增 — PostEx 结构化事件展示，支持 metadata、progress、artifact、error frame
+- 新增 — PostEx artifact 下载接入 Downloads 页面，使用 Server 解析后的 artifact 字段和下载标识
+- 修复 — Downloads 页面滚动、表头和自动刷新体验
+
+### Server
+
+- 新增 — PostEx server 侧命令与事件处理，支持 `spawn_dll` / `inject_dll` 子命令、异步 frame 事件和 artifact 下载
+- 新增 — C2 Profile 支持 Gargle sleep obfuscation 配置
+- 修复 — PostEx artifact 下载标识与 Client 对齐
+- 修复 — Listener TLS 增加 Windows 7 cipher fallback，HTTP、stager、TCP listener 共用兼容配置
+- 维护 — 刷新 internal C-Beacon 模板和 payload/cascade 模板
+
+### Beacon
+
+- 新增 — Gargle sleep obfuscation 支持，这是为了绕过CFG保护，提前为“迁移”功能模块做准备。
+- 新增 — PostEx 模块执行框架，支持 backend 拆分、job 轮询、结构化 frame 输出和 artifact/error helper
+- 加固 — PostEx job 边界、轮询流程和 reflective loading 架构校验
+- 修复 — 禁用 CFG 敏感的 reflective stomping 路径
+- 修复 — Win7 WinHTTP 强制 TLS 1.2
+
 ## v0.1.3
 
 ### Beacon

@@ -81,9 +81,36 @@ export function normalizeArtifactByArchMap(value) {
  * @returns {string} 解析后的工件路径
  */
 export function resolveActionArtifact(action, beaconArch) {
-  const artifactByArch = normalizeArtifactByArchMap(action?.artifactByArch || action?.artifact_by_arch || {})
+  const kind = normalizePluginActionKind(action)
+  const postex = normalizePostExConfig(action?.postex || action?.PostEx)
+  const artifactByArch = kind === 'postex'
+    ? normalizeArtifactByArchMap(postex?.dllByArch || postex?.dll_by_arch || {})
+    : normalizeArtifactByArchMap(action?.artifactByArch || action?.artifact_by_arch || {})
   const arch = normalizeBeaconArch(beaconArch)
-  return artifactByArch[arch] || String(action?.artifact || '').trim()
+  return artifactByArch[arch] || String(kind === 'postex' ? postex?.dll || '' : action?.artifact || '').trim()
+}
+
+function normalizePluginActionKind(action) {
+  const postex = action?.postex || action?.PostEx
+  return String(action?.kind || action?.Kind || (postex ? 'postex' : 'bof')).trim().toLowerCase() || 'bof'
+}
+
+function normalizePostExConfig(postex) {
+  if (!postex || typeof postex !== 'object') return null
+  return {
+    mode: String(postex.mode || postex.Mode || '').trim().toLowerCase().replace(/_/g, '-'),
+    dll: String(postex.dll || postex.DLL || '').trim(),
+    dllByArch: normalizeArtifactByArchMap(postex.dllByArch || postex.dll_by_arch || postex.DLLByArch || {}),
+    waitMs: Number(postex.waitMs || postex.wait_ms || postex.WaitMS || 0) || 0,
+    maxRuntimeMs: Number(postex.maxRuntimeMs || postex.max_runtime_ms || postex.MaxRuntimeMS || 0) || 0,
+    idleTimeoutMs: Number(postex.idleTimeoutMs || postex.idle_timeout_ms || postex.IdleTimeoutMS || 0) || 0,
+    description: String(postex.description || postex.Description || '').trim(),
+    moduleArgs: String(postex.moduleArgs || postex.module_args || postex.ModuleArgs || '').trim(),
+    spawnPath: String(postex.spawnPath || postex.spawn_path || postex.SpawnPath || '').trim(),
+    spawnPathByArch: normalizeArtifactByArchMap(postex.spawnPathByArch || postex.spawn_path_by_arch || postex.SpawnPathByArch || {}),
+    spawnArgs: String(postex.spawnArgs || postex.spawn_args || postex.SpawnArgs || '').trim(),
+    backend: String(postex.backend || postex.Backend || '').trim(),
+  }
 }
 
 /**
@@ -97,16 +124,25 @@ export function resolveActionArtifact(action, beaconArch) {
 export function isPluginActionTargetSupported(action, commandId, targetOs, targetArch) {
   if (!isMenuActionSupportedForOS(BEACON_ACTION.PLUGIN, targetOs, commandId)) return false
 
+  const kind = normalizePluginActionKind(action)
   const beaconOS = normalizeBeaconPlatform(targetOs)
   const beaconArch = normalizeBeaconArch(targetArch)
   const supportedOS = normalizeTargetOSList(action?.os || action?.OS)
   const supportedArch = normalizeTargetArchList(action?.arch || action?.Arch)
 
+  if (kind === 'postex' && beaconOS !== 'windows') return false
   if (supportedOS.length && !supportedOS.includes(beaconOS)) return false
   if (supportedArch.length && !supportedArch.includes(beaconArch)) return false
 
-  const artifactByArch = normalizeArtifactByArchMap(action?.artifactByArch || action?.artifact_by_arch || {})
-  if (Object.keys(artifactByArch).length && !artifactByArch[beaconArch] && !String(action?.artifact || '').trim()) {
+  const postex = normalizePostExConfig(action?.postex || action?.PostEx)
+  const artifactByArch = kind === 'postex'
+    ? normalizeArtifactByArchMap(postex?.dllByArch || postex?.dll_by_arch || {})
+    : normalizeArtifactByArchMap(action?.artifactByArch || action?.artifact_by_arch || {})
+  const fallbackArtifact = kind === 'postex' ? postex?.dll : action?.artifact
+  if (kind === 'postex' && !Object.keys(artifactByArch).length && !String(fallbackArtifact || '').trim()) {
+    return false
+  }
+  if (Object.keys(artifactByArch).length && !artifactByArch[beaconArch] && !String(fallbackArtifact || '').trim()) {
     return false
   }
 
@@ -134,7 +170,11 @@ function buildPluginMenuGroups(targetAgent, plugins) {
           const label = String(action?.label || actionId || '').trim()
           if (!actionId || !label) return null
 
-          const artifactByArch = normalizeArtifactByArchMap(action?.artifactByArch || action?.artifact_by_arch || {})
+          const kind = normalizePluginActionKind(action)
+          const postex = normalizePostExConfig(action?.postex || action?.PostEx)
+          const artifactByArch = kind === 'postex'
+            ? normalizeArtifactByArchMap(postex?.dllByArch || {})
+            : normalizeArtifactByArchMap(action?.artifactByArch || action?.artifact_by_arch || {})
           const resolvedArtifact = resolveActionArtifact(action, targetArch)
 
           return {
@@ -146,6 +186,7 @@ function buildPluginMenuGroups(targetAgent, plugins) {
             pluginName: plugin.displayName || plugin.name || plugin.id,
             pluginAction: {
               id: actionId,
+              kind,
               label,
               description: String(action?.description || ''),
               os: normalizeTargetOSList(action?.os || action?.OS),
@@ -156,12 +197,15 @@ function buildPluginMenuGroups(targetAgent, plugins) {
               commandId: Number(action?.commandId || action?.command_id || 0) || 0,
               requiresInput: Boolean(action?.requiresInput || action?.requires_input || (Array.isArray(action?.fields) && action.fields.length)),
               fields: Array.isArray(action?.fields) ? action.fields : [],
+              postex,
             },
           }
         })
         .filter(Boolean)
         .filter((item) => {
-          const commandId = Number(item?.pluginAction?.commandId || 0) || PLUGIN_COMMAND_ID.EXECUTION_BOF
+          const kind = item?.pluginAction?.kind || 'bof'
+          const defaultCommandId = kind === 'postex' ? PLUGIN_COMMAND_ID.POSTEX : PLUGIN_COMMAND_ID.EXECUTION_BOF
+          const commandId = Number(item?.pluginAction?.commandId || 0) || defaultCommandId
           return isPluginActionTargetSupported(item?.pluginAction, commandId, targetOs, targetArch)
         })
 

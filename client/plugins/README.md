@@ -10,6 +10,7 @@
 plugins/
   my-plugin/
     plugin.json
+    my-plugin.manifest.json
     bin/
       demo.x64.o
       demo.x86.o
@@ -28,6 +29,7 @@ plugins/
 规则：
 
 - 每个插件目录必须包含 `plugin.json`。
+- PostEx 插件可选 `<module>.manifest.json`，并通过 `postex.manifest` 启用加载期 lint。
 - 插件管理页「添加插件」时选择的是某个插件目录里的 `plugin.json`。
 - 如果选择的插件已经在 `plugins/` 目录内，Client 只重新加载。
 - 如果选择的是外部目录，Client 会把整个插件目录复制到 `plugins/<源目录名>`。
@@ -106,18 +108,21 @@ plugins/
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `id` | string | 是 | 动作唯一标识。 |
+| `kind` | string | 否 | 动作类型。省略时默认 `bof`；PostEx 动作写 `postex`。 |
 | `label` | string | 否 | 菜单显示名。为空时前端会退回使用 `id`。 |
 | `description` | string | 否 | 动作说明，在参数弹窗里展示。 |
 | `os` | string[] | 否 | 支持的目标系统。空数组或省略表示不限制。常用值：`windows` / `linux` / `darwin`。 |
 | `arch` | string[] | 否 | 支持的目标架构。空数组或省略表示不限制。常用值：`amd64` / `x86`。 |
 | `artifact` | string | 单工件 BOF 必填 | 工件相对路径，相对于插件根目录。也可作为 `artifact_by_arch` 未命中时的 fallback。 |
 | `artifact_by_arch` | object | 多架构 BOF 可用 | 按 Beacon 架构选择工件，key 使用 `amd64` / `x86`。优先级高于 `artifact`。 |
+| `postex` | object | PostEx 必填 | PostEx DLL 动作配置。`kind: "postex"` 时使用，不复用 `artifact` 字段。 |
 | `command_id` | number | 否 | 命令 ID。BOF action 不需要写；存在 `artifact` 或 `artifact_by_arch` 时统一默认使用 `70`。 |
 | `requires_input` | bool | 否 | 是否打开参数弹窗。只要 `fields` 非空，前端也会强制认为需要输入。 |
 | `fields` | object[] | 否 | 参数定义。顺序即最终传给 BOF 的参数顺序。 |
 | `args` | object[] | 否 | 显式 typed 参数。适合 BOF 常量参数；命令 `70` 下工件会作为 `bytes` 参数插入到最前。 |
 
 普通 BOF / OBJ 插件不需要写 `command_id`。
+PostEx 插件不使用 `artifact` / `artifact_by_arch`，而是使用 `postex.dll` / `postex.dll_by_arch`。
 
 ## 5. OS / Arch 过滤语法
 
@@ -182,6 +187,125 @@ artifact_by_arch[目标架构] -> artifact fallback -> 执行失败
 - 工件路径错误时，加载阶段不一定报错，但执行阶段会因为缺少 `artifact_data` 失败。
 - `artifact_data` 由 Client 生成，插件作者不要手写。
 
+## 6.1 PostEx 动作语法
+
+PostEx action 作为插件系统的第二种执行入口，与 BOF 共用插件加载、右键菜单、参数弹窗和平台过滤，但使用独立的 `postex` 配置块。
+
+最小 spawn 示例：
+
+```json
+{
+  "id": "postex_template_spawn",
+  "kind": "postex",
+  "label": "PostEx Template Spawn",
+  "description": "创建宿主进程并加载 PostEx DLL",
+  "os": ["windows"],
+  "arch": ["amd64", "x86"],
+  "postex": {
+    "mode": "spawn-dll",
+    "dll_by_arch": {
+      "amd64": "bin/postex_template.x64.dll",
+      "x86": "bin/postex_template.x86.dll"
+    },
+    "wait_ms": 3000,
+    "max_runtime_ms": 0,
+    "idle_timeout_ms": 0,
+    "description": "postex-template",
+    "spawn_path": "C:\\Windows\\System32\\cmd.exe",
+    "spawn_path_by_arch": {
+      "amd64": "C:\\Windows\\System32\\cmd.exe",
+      "x86": "C:\\Windows\\SysWOW64\\cmd.exe"
+    },
+    "spawn_args": "/c timeout /t 30 /nobreak > nul",
+    "backend": "remote-thread"
+  },
+  "fields": [
+    { "name": "max_runtime_ms", "label": "Max Runtime MS", "type": "int32", "default": 0, "role": "max_runtime_ms" },
+    { "name": "idle_timeout_ms", "label": "Idle Timeout MS", "type": "int32", "default": 0, "role": "idle_timeout_ms" },
+    { "name": "count", "label": "Count", "type": "int32", "default": 3, "postex_arg": "--count" },
+    { "name": "message", "label": "Message", "type": "string", "default": "hello", "postex_arg": "--message" },
+    { "name": "artifact", "label": "Artifact", "type": "bool", "default": false, "postex_arg": "--artifact" }
+  ]
+}
+```
+
+最小 inject 示例：
+
+```json
+{
+  "id": "postex_template_inject",
+  "kind": "postex",
+  "label": "PostEx Template Inject",
+  "os": ["windows"],
+  "arch": ["amd64", "x86"],
+  "postex": {
+    "mode": "inject-dll",
+    "dll_by_arch": {
+      "amd64": "bin/postex_template.x64.dll",
+      "x86": "bin/postex_template.x86.dll"
+    },
+    "wait_ms": 3000,
+    "description": "postex-template",
+    "backend": "remote-thread"
+  },
+  "fields": [
+    { "name": "pid", "label": "Target PID", "type": "int32", "required": true, "role": "target_pid" },
+    { "name": "message", "label": "Message", "type": "string", "default": "hello", "postex_arg": "--message" },
+    { "name": "artifact", "label": "Artifact", "type": "bool", "default": false, "postex_arg": "--artifact" }
+  ]
+}
+```
+
+`postex` 字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `mode` | string | 是 | `spawn-dll` 或 `inject-dll`。 |
+| `dll` | string | 单 DLL 可用 | DLL 相对路径，相对于插件根目录。 |
+| `dll_by_arch` | object | 多架构可用 | 按 Beacon 架构选择 DLL，key 使用 `amd64` / `x86`。 |
+| `manifest` | string | 否 | PostEx module manifest 相对路径；存在时 Client 会做 v1 lint。 |
+| `wait_ms` | number | 否 | 等待 PostEx pipe 连接超时，默认 `3000`。 |
+| `max_runtime_ms` | number | 否 | 最大运行时长，`0` 表示关闭。 |
+| `idle_timeout_ms` | number | 否 | 无输出空闲超时，`0` 表示关闭。 |
+| `description` | string | 否 | PostEx job 描述。 |
+| `module_args` | string | 否 | 固定传给 DLL 的参数前缀。 |
+| `spawn_path` | string | spawn 必填 | spawn-dll 宿主进程路径。 |
+| `spawn_path_by_arch` | object | 否 | 按 Beacon 架构选择 spawn 宿主进程路径；key 使用 `amd64` / `x86`。 |
+| `spawn_args` | string | 否 | spawn-dll 宿主进程参数。 |
+| `backend` | string | 否 | 当前只允许 `remote-thread`，用于声明远程执行 backend。 |
+
+PostEx 下发到 TeamServer 的命令 ID 固定为 `90`。参数顺序由 Client 后端生成：
+
+```text
+spawn-dll:  [5, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_args, spawn_path, spawn_args, dll_bytes]
+inject-dll: [6, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_args, pid, dll_bytes]
+```
+
+PostEx 的 `fields` 不再按 BOF packed args 顺序直接下发：
+
+- `role: "target_pid"` 表示该字段是 inject 目标 PID。
+- `role: "wait_ms"` 表示该字段覆盖 pipe 等待超时。
+- `role: "max_runtime_ms"` 表示该字段覆盖最大运行时长。
+- `role: "idle_timeout_ms"` 表示该字段覆盖无输出空闲超时。
+- `role: "spawn_path"` / `role: "spawn_args"` 表示该字段覆盖 spawn 宿主进程配置。
+- `default_by_arch` 可用于按 Beacon 架构覆盖字段默认值，例如 x86 默认 `C:\Windows\SysWOW64\cmd.exe`。
+- `postex_arg: "--name"` 表示该字段会被拼进 `module_args`。
+- bool 字段为 `true` 时只追加 flag；为 `false` 时忽略。
+- string/int 字段会追加为 `--flag value`，包含空白的 value 会自动加双引号。
+
+PostEx Package v1 加载期校验：
+
+- `postex.mode` 只能是 `spawn-dll` / `inject-dll`。
+- `postex.backend` 当前只能是 `remote-thread`。
+- `postex.wait_ms` 必须大于 `0`；`max_runtime_ms` / `idle_timeout_ms` 必须大于等于 `0`。
+- `postex.dll` / `postex.dll_by_arch` 指向的 DLL 必须存在、非空，并且不能逃逸插件目录。
+- `postex.manifest` 如果存在，必须是 `beacon.postex.module/v1`，且 ABI、target mode、backend、transport、架构声明与当前 action 一致。
+- `dll_by_arch` key 只允许 `amd64` / `x86`。
+- `spawn-dll` 必须提供 `postex.spawn_path`、`postex.spawn_path_by_arch` 或 `role: "spawn_path"` 字段。
+- `inject-dll` 必须提供 `role: "target_pid"` 字段。
+- `role` 只允许 `target_pid`、`wait_ms`、`max_runtime_ms`、`idle_timeout_ms`、`description`、`spawn_path`、`spawn_args`。
+- `postex_arg` 必须是单个 flag，例如 `--count`，不能包含空白。
+
 ## 7. Fields 参数语法
 
 `fields` 定义参数弹窗，也定义默认参数打包顺序。
@@ -209,9 +333,12 @@ artifact_by_arch[目标架构] -> artifact fallback -> 执行失败
 | `type` | string | 否 | 参数类型，默认 `string`。详见下一节。 |
 | `placeholder` | string | 否 | 输入框占位提示。 |
 | `default` | any | 否 | 默认值。 |
+| `default_by_arch` | object | 否 | 按 Beacon 架构覆盖默认值；key 使用 `amd64` / `x86`。 |
 | `required` | bool | 否 | 前端校验必填。bool 字段不做必填校验。 |
 | `help` | string | 否 | 参数帮助文本。 |
 | `options` | string[] | `select` 必填 | 下拉框选项，只支持字符串数组。 |
+| `role` | string | PostEx 可用 | 控制字段语义，例如 inject PID 使用 `target_pid`。 |
+| `postex_arg` | string | PostEx 可用 | 拼入 PostEx `module_args` 的参数名，例如 `--count`。 |
 
 规则：
 
@@ -352,6 +479,7 @@ BOF 参数示例：
 平台过滤：
 
 - BOF 插件命令 ID `70` 可按 action 的 `os` / `arch` 暴露给 Windows 或 Linux Beacon。
+- PostEx 插件命令 ID `90` 当前只暴露给 Windows Beacon，DLL 通过 `postex.dll_by_arch` 选择。
 - 如果 action 声明了 `os` / `arch`，前端会按目标 Beacon 的系统和架构过滤。
 - 如果 action 只有 `artifact_by_arch` 且当前架构没有对应工件，也会隐藏。
 
@@ -372,6 +500,8 @@ Client 启动时会自动加载插件目录。
 - `plugin.json` 不是合法 JSON。
 - `fields[].name` 为空。
 - 插件目录没有 `plugin.json`。
+- PostEx action 的 `mode` / `backend` / `wait_ms` / `dll_by_arch` / `role` 不符合 Package v1 规则。
+- PostEx DLL 路径不存在、为空、或逃逸插件目录。
 
 执行失败常见原因：
 

@@ -106,6 +106,92 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
         consoleStore.pushCommandResult(bid, fallback)
       }
     }
+  } else if (normalizedResultType === 'POSTEXARTIFACT' || resultType === 'postex_artifact') {
+    const jobId = resultPayload?.job_id ?? resultPayload?.JobID ?? '?'
+    const desc = resultPayload?.description || resultPayload?.Description || 'postex'
+    const artifactId = resultPayload?.artifact_id || resultPayload?.artifactId || resultPayload?.ArtifactID || ''
+    const fileId = resultPayload?.file_id || resultPayload?.fileId || resultPayload?.FileID || ''
+    const name = resultPayload?.name || resultPayload?.Name || artifactId || fileId || 'artifact'
+    const mime = resultPayload?.mime || resultPayload?.MIME || 'application/octet-stream'
+    const totalSize = Number(resultPayload?.total_size ?? resultPayload?.totalSize ?? resultPayload?.TotalSize ?? 0) || 0
+    const downloadUrl = resultPayload?.download_url || resultPayload?.downloadUrl || ''
+    const label = `[postex:${jobId}/${desc}]`
+    const suffix = downloadUrl ? ` url=${downloadUrl}` : ''
+    consoleStore.pushCommandResult(bid, `${label} artifact: ${name} (${mime}) ${formatBytes(totalSize)}${suffix}`)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('downloads:refresh'))
+    }
+  } else if (normalizedResultType === 'POSTEXFRAME' || resultType === 'postex_frame') {
+    // event_type=4: Post-Ex 帧事件（metadata / progress / artifact）
+    // Server 转发字段：job_id, description, frame_type(u32), frame_name, flags, seq, text, payload_base64
+    const jobId = resultPayload?.job_id ?? resultPayload?.JobID ?? '?'
+    const desc = resultPayload?.description || resultPayload?.Description || 'postex'
+    const frameName = resultPayload?.frame_name || resultPayload?.FrameName || ''
+    const text = resultPayload?.text || resultPayload?.Text || ''
+    const label = `[postex:${jobId}/${desc}]`
+
+    if (frameName === 'error') {
+      const code = resultPayload?.code ?? resultPayload?.Code ?? 0
+      const stage = resultPayload?.stage ?? resultPayload?.Stage ?? 0
+      const win32Error = resultPayload?.win32_error ?? resultPayload?.win32Error ?? resultPayload?.Win32Error ?? 0
+      const ntstatus = resultPayload?.ntstatus ?? resultPayload?.Ntstatus ?? resultPayload?.NTStatus ?? 0
+      const source = resultPayload?.source || resultPayload?.Source || '-'
+      const message = resultPayload?.message || resultPayload?.Message || '-'
+      const nt = Number(ntstatus)
+      const ntText = Number.isFinite(nt) ? `0x${(nt >>> 0).toString(16).padStart(8, '0')}` : String(ntstatus)
+      consoleStore.pushCommandResult(bid,
+        `${label} error: code=${code} stage=${stage} win32=${win32Error} ntstatus=${ntText} source=${source} message=${message}`)
+    } else if (frameName === 'metadata') {
+      // text 是 JSON 字符串，尝试格式化展示
+      let display = text
+      try {
+        const obj = JSON.parse(text)
+        display = Object.entries(obj).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' ')
+      } catch { /* 非 JSON，直接显示原文 */ }
+      consoleStore.pushCommandResult(bid, `${label} metadata: ${display}`)
+    } else if (frameName === 'progress') {
+      // text 是 JSON：{"current":1,"total":3,"percent":33,"message":"running"}
+      let parts = []
+      try {
+        const obj = JSON.parse(text)
+        if (obj.total !== undefined) parts.push(`${obj.current ?? '?'}/${obj.total}`)
+        if (obj.percent !== undefined) parts.push(`${obj.percent}%`)
+        if (obj.message) parts.push(obj.message)
+      } catch { /* 非 JSON，直接用 text */ }
+      const content = parts.length ? parts.join(' ') : text
+      consoleStore.pushCommandResult(bid, `${label} progress: ${content}`)
+    } else if (frameName === 'artifact') {
+      const artifactId = resultPayload?.artifact_id || resultPayload?.artifactId || resultPayload?.ArtifactID || ''
+      const name = resultPayload?.name || resultPayload?.Name || ''
+      const mime = resultPayload?.mime || resultPayload?.MIME || ''
+      const offset = resultPayload?.offset ?? resultPayload?.Offset ?? 0
+      const chunkSize = resultPayload?.chunk_size ?? resultPayload?.chunkSize ?? resultPayload?.ChunkSize ?? 0
+      const totalSize = resultPayload?.total_size ?? resultPayload?.totalSize ?? resultPayload?.TotalSize ?? 0
+      const status = resultPayload?.status || resultPayload?.Status || ''
+
+      const finalTag = status === 'completed' ? ' [completed]' : ''
+      consoleStore.pushCommandResult(bid,
+        `${label} artifact: ${name || artifactId || 'artifact'} (${mime || 'application/octet-stream'}) chunk ${offset}+${chunkSize}/${totalSize} bytes${finalTag}`)
+      if (status === 'completed' && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('downloads:refresh'))
+      }
+    } else {
+      // 未知 frame_name，显示 text 原文
+      consoleStore.pushCommandResult(bid, `${label} ${frameName || 'frame'}: ${text || '(empty)'}`)
+    }
+  } else if (normalizedResultType === 'POSTEX_EVENT' || numericCommandId === 93) {
+    // event_type=2/3: postex_output / postex_dead
+    const isDead = resultType === 'postex_dead'
+    const jobId = resultPayload?.job_id ?? resultPayload?.JobID ?? '?'
+    const desc = resultPayload?.description || resultPayload?.Description || 'postex'
+    if (isDead) {
+      const reason = resultPayload?.reason || resultPayload?.Reason || 'unknown'
+      consoleStore.pushCommandResult(bid, `[postex:${jobId}/${desc}] ${reason}`)
+    } else {
+      const text = getTextResultContent(resultPayload)
+      const label = `[postex:${jobId}/${desc}]`
+      consoleStore.pushCommandResult(bid, text ? `${label} ${text}` : label)
+    }
   } else if (['DOWNLOAD', 'UPLOAD'].includes(normalizedResultType)) {
     const { useNotificationStore } = await import('../../stores/notification.js')
     const { useFileTransferStore } = await import('../../stores/fileTransfer.js')
@@ -177,4 +263,12 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
       console.log(`[KILL DONE] 指令 42 执行完成，但来源不是进程浏览器，跳过自动刷新: ${bid}`)
     }
   }
+}
+
+function formatBytes(value) {
+  const size = Number(value) || 0
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
 }

@@ -55,6 +55,10 @@
 #define BEACON_COMMAND_CASCADE_DEAD        86u
 #define BEACON_COMMAND_CASCADE_PING        87u
 
+/* PostEx 子协议 */
+#define BEACON_COMMAND_POSTEX              90u
+#define BEACON_COMMAND_POSTEX_EVENT        93u
+
 /* 命令分发：根据 command_id 调用对应处理函数 */
 PacketList CommandDispatch(BeaconContext* ctx, UINT32 task_id, UINT32 command_id, const ByteBuf* payload);
 

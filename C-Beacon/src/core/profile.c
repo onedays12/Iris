@@ -457,9 +457,9 @@ VOID ProfileLoad(Profile* p)
     p->sleep_ms = 5000;
     p->jitter = 20;
     p->conn_timeout_sec = 10;
-    //p->sleep_obf_enabled = TRUE;
-    p->sleep_obf_enabled = FALSE;
-    p->sleep_obf_technique = SLEEP_OBF_ZILEAN;
+    p->sleep_obf_enabled = TRUE;
+    //p->sleep_obf_enabled = FALSE;
+    p->sleep_obf_technique = SLEEP_OBF_GARGLE;
 
     strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-http");
     strcpy_s(p->listener_type, sizeof(p->listener_type), "external");

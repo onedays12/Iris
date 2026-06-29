@@ -2,7 +2,7 @@
 
 语言：中文 | [English](README.en.md)
 
-IrisC2 是一个面向授权安全测试、红队演练、攻防实验和内部研究的 C2 框架。项目由 Client、Server、Beacon、Stager 和插件体系组成，围绕 Listener 管理、Payload 生成、Beacon 任务调度、文件传输、截图、隧道转发、BOF 执行和实时事件同步构建。
+IrisC2 是一个面向授权安全测试、红队演练、攻防实验和内部研究的 C2 框架。项目由 Client、Server、Beacon、Stager 和插件体系组成，围绕 Listener 管理、Payload 生成、Beacon 任务调度、文件传输、截图、隧道转发、BOF/PostEx 扩展执行、结构化事件和实时事件同步构建。
 
 > 本项目仅允许在明确授权的环境中使用。请勿在未授权系统、账号、网络或第三方资产上部署、连接、测试或运行任何组件。
 
@@ -28,7 +28,7 @@ Client 源码位于 `client/`，基于 Wails 3 构建（Go + Vue/TypeScript）�
 - Server 负责认证、Listener、Payload、任务、文件、截图、隧道和事件同步。
 - Beacon 在授权目标环境中运行，按 C2 Profile 与 Listener 通信并执行任务。
 - Stager 用于 staged payload 场景，先下载 stage，再启动 Beacon stage。
-- 插件通过 Client 暴露 BOF/OBJ 等扩展动作，统一下发到 Beacon 执行。
+- 插件通过 Client 暴露 BOF/OBJ 和 PostEx DLL 等扩展动作，统一下发到 Beacon 执行。
 
 ## 演示
 
@@ -53,6 +53,8 @@ GitHub 仓库页面可能不会直接预览较大的 LFS 视频。可以直接�
 - 管理 Listener、Payload、Beacon、任务、文件、截图和隧道。
 - 支持 Beacon 右键菜单和插件动作入口。
 - 支持将插件目录中的 `plugin.json` 与工件文件自动组织为可执行动作。
+- 支持 BOF/OBJ 与 PostEx 插件动作；PostEx 动作支持 `spawn-dll` / `inject-dll`、按架构选择 DLL、按架构默认值和 manifest lint。
+- 支持 PostEx metadata、progress、artifact、error 等结构化 frame 展示，并将 artifact 接入下载页面。
 - 支持常见任务参数表单，例如字符串、下拉选项和必填字段。
 
 Client 源码位于 `client/`，基于 Wails 3 构建，后端使用 Go，前端使用 Vue + TypeScript。需要自行从源码构建，详见 [client/README.md](client/README.md)。
@@ -64,13 +66,15 @@ Client 源码位于 `client/`，基于 Wails 3 构建，后端使用 Go，前端
 - 基于账号密码和 JWT 的 API 鉴权。
 - 支持同名用户单会话登录，新登录会替换旧会话。
 - 提供 REST API 与 WebSocket 事件通道。
-- 支持 HTTP/HTTPS Listener；Server 侧包含 TCP Listener 相关能力，但当前公开 Beacon 的 C2 回连以 HTTP/HTTPS transport 为准。
+- 支持 HTTP/HTTPS Listener 和 External TCP Listener；TCP Listener 可按配置启用 SSL/TLS。
 - 支持 Listener 创建、编辑、暂停、恢复、删除和列表查询。
-- 通过 C2 Profile 管理 Beacon sleep、jitter、HTTP URI、Header、User-Agent、stager 等行为。
+- 通过 C2 Profile 管理 Beacon sleep、jitter、sleep obfuscation、HTTP URI、Header、User-Agent、stager 等行为。
 - 支持 stagerless 与 staged payload 生成。
 - 支持 Windows x64/x86 Beacon 模板和 stager 模板。
 - 支持任务持久化、pending 任务恢复、任务状态跟踪和结果回传。
+- 支持 PostEx `spawn_dll` / `inject_dll` 命令、结构化 frame 事件和 artifact 下载。
 - 支持文件上传、Beacon 文件下载、分块传输、截图管理和隧道转发。
+- 支持 Windows 7 兼容 TLS cipher fallback，用于 HTTP、stager 和 TCP listener。
 - 支持 SQLite 本地持久化、运行日志和基础伪装响应配置。
 
 Server 成品通过 GitHub Releases 发布。每个平台包内都会包含运行所需的 `config.yaml`、`c2profile/` 和 `static/`：
@@ -84,13 +88,14 @@ Iris-Server-linux-x64.tar.gz
 
 Beacon 源码位于 `C-Beacon/`。当前 Beacon 侧能力包括：
 
-- HTTP/HTTPS C2 通信。
+- HTTP/HTTPS 与 External TCP C2 通信，TCP 支持 Raw TCP 或 TLS over TCP。
 - 首次上线注册、心跳刷新和会话密钥更新。
 - sleep time、jitter 和 sleep obfuscation 配置。
 - sleep obfuscation technique 支持：
   - `0` = none
   - `1` = ekko
   - `2` = zilean
+  - `3` = gargle
 - 基础控制：Sleep、Exit。
 - 命令执行：Shell、PowerShell。
 - 文件系统：Cd、Ls、Pwd、Cat、Mkdir、Rm、Mv、Cp、SetAttr、Zip。
@@ -101,19 +106,24 @@ Beacon 源码位于 `C-Beacon/`。当前 Beacon 侧能力包括：
 - 截图：Screenshot。
 - 隧道：SOCKS/端口转发类 tunnel start、control、data、close。
 - 扩展执行：BOF/OBJ 加载、重定位、执行、输出回传和任务取消。
+- PostEx 扩展执行：支持 `spawn-dll` / `inject-dll`、异步 job 轮询、metadata/progress/artifact/error frame 回传和任务取消。
 - 级联传输：支持 TCP 和 SMB（命名管道）两种 internal beacon，父 Beacon 可通过 `connect` 或 `link` 命令建立级联链路，支持多级跳转（如 HTTP → TCP → SMB）。断开后 internal beacon 自动回到监听状态。
 
 Beacon 构建产物部署到 `server/static/beacon_templates/C-Beacon/`：
 
 ```text
-beacon_windows_amd64.dll          # x64 reflective DLL（需 patch）
-beacon_windows_amd64.exe          # x64 HTTP/HTTPS EXE
-beacon_windows_x86.dll            # x86 reflective DLL（需 patch）
-beacon_windows_x86.exe            # x86 HTTP/HTTPS EXE
-beacon_tcp_internal_amd64.exe     # x64 TCP 级联 Beacon
-beacon_tcp_internal_x86.exe       # x86 TCP 级联 Beacon
-beacon_smb_internal_amd64.exe     # x64 SMB 级联 Beacon
-beacon_smb_internal_x86.exe       # x86 SMB 级联 Beacon
+beacon_http_windows_amd64.dll     # x64 HTTP/HTTPS reflective DLL（需 patch）
+beacon_http_windows_x86.dll       # x86 HTTP/HTTPS reflective DLL（需 patch）
+beacon_http_windows_amd64.exe     # x64 HTTP/HTTPS EXE
+beacon_http_windows_x86.exe       # x86 HTTP/HTTPS EXE
+beacon_tcp_windows_amd64.dll      # x64 TCP external reflective DLL（需 patch）
+beacon_tcp_windows_x86.dll        # x86 TCP external reflective DLL（需 patch）
+beacon_tcp_windows_amd64.exe      # x64 TCP external EXE
+beacon_tcp_windows_x86.exe        # x86 TCP external EXE
+beacon_tcp_internal_amd64.exe     # x64 TCP internal 级联 Beacon
+beacon_tcp_internal_x86.exe       # x86 TCP internal 级联 Beacon
+beacon_smb_internal_amd64.exe     # x64 SMB internal 级联 Beacon
+beacon_smb_internal_x86.exe       # x86 SMB internal 级联 Beacon
 ```
 
 ### Go-Beacon
@@ -256,7 +266,7 @@ open client.app
 
 登录后，在 Client 中创建 Listener：
 
-- 当前公开 Beacon 选择 HTTP/HTTPS Listener。
+- 根据 Payload 传输选择 HTTP/HTTPS Listener 或 External TCP Listener；TCP 可按需启用 SSL/TLS。
 - 设置绑定地址、端口和回连地址。
 - 设置通信密钥。
 - 选择 C2 Profile，例如 `http-default` 或 `http-stager`。
@@ -287,11 +297,11 @@ Beacon 上线后，可在 Client 中查看会话、心跳、系统信息、任�
 - 查看进程和作业。
 - 截图。
 - 启动或关闭隧道。
-- 执行插件提供的 BOF/OBJ 动作。
+- 执行插件提供的 BOF/OBJ 或 PostEx 动作，并在任务结果或下载页面查看结构化输出和 artifact。
 
 ## 插件使用
 
-插件会随 Client 发布包一起提供，插件编写、字段格式、参数类型和示例如下。
+插件会随 Client 发布包一起提供，支持 BOF/OBJ 与 PostEx DLL 两类动作。插件编写、字段格式、参数类型和完整示例详见 [client/plugins/README.md](client/plugins/README.md)。
 
 在 Client 发布包中，插件位于：
 
@@ -311,18 +321,19 @@ Client 发布包中的内置插件示例：
 
 ```text
 client/plugins/
-└── execution-injection/
+├── execution-injection/
+└── postex-template/
 ```
 
 ### 使用步骤
 
 1. 将插件目录放入 `client/plugins/`。
 2. 确认插件目录中存在 `plugin.json`。
-3. 确认 `artifact` 指向的 BOF/OBJ 文件存在，路径相对于插件目录。
+3. 确认 BOF/OBJ 动作的 `artifact` / `artifact_by_arch` 或 PostEx 动作的 `postex.dll` / `postex.dll_by_arch` 指向的文件存在，路径相对于插件目录。
 4. 重启 Client 或刷新插件列表。
 5. 在 Beacon 右键菜单或插件入口中选择对应动作。
 6. 按表单填写参数并提交任务。
-7. 在任务结果或 Beacon 输出中查看执行结果。
+7. 在任务结果、Beacon 输出或 Downloads 页面中查看执行结果和 artifact。
 
 ### plugin.json 格式
 
@@ -335,10 +346,12 @@ client/plugins/
   "actions": [
     {
       "id": "whoami",
+      "kind": "bof",
       "label": "Whoami",
       "description": "获取当前 Beacon 会话身份",
+      "os": ["windows"],
+      "arch": ["amd64"],
       "artifact": "bin/whoami.x64.o",
-      "command_id": 70,
       "requires_input": false
     }
   ]
@@ -351,8 +364,11 @@ client/plugins/
 {
   "id": "example_with_input",
   "label": "Example With Input",
-  "artifact": "bin/example.x64.o",
-  "command_id": 70,
+  "kind": "bof",
+  "artifact_by_arch": {
+    "amd64": "bin/example.x64.o",
+    "x86": "bin/example.x86.o"
+  },
   "requires_input": true,
   "fields": [
     {
@@ -374,10 +390,40 @@ client/plugins/
 - `type`：字段类型，常用 `string`、`select`。
 - `options`：`select` 字段的候选值。
 - `artifact`：插件工件路径，相对于插件目录。
-- `command_id`：Beacon 命令 ID；BOF/OBJ 插件通常使用 `70`。
+- `artifact_by_arch`：按 Beacon 架构选择 BOF/OBJ 工件，常用 key 为 `amd64`、`x86`。
+- `kind`：动作类型；省略时默认 `bof`，PostEx 动作使用 `postex`。
+- `postex`：PostEx 动作配置块，使用 `dll` / `dll_by_arch` 指向 DLL，不复用 `artifact` 字段。
+- `command_id`：Beacon 命令 ID；BOF/OBJ 动作默认使用 `70`，PostEx 动作固定使用 `90`，通常不需要手写。
 - `requires_input`：是否需要弹出参数表单。
 
-插件工件需要与 Beacon 架构匹配。x64 Beacon 使用 x64 BOF/OBJ，x86 Beacon 使用 x86 BOF/OBJ。
+插件工件需要与 Beacon 架构匹配。x64 Beacon 使用 x64 BOF/OBJ 或 DLL，x86 Beacon 使用 x86 BOF/OBJ 或 DLL。
+
+PostEx 动作示例：
+
+```json
+{
+  "id": "postex_template_spawn",
+  "kind": "postex",
+  "label": "PostEx Template Spawn",
+  "os": ["windows"],
+  "arch": ["amd64", "x86"],
+  "postex": {
+    "mode": "spawn-dll",
+    "dll_by_arch": {
+      "amd64": "bin/postex_template.x64.dll",
+      "x86": "bin/postex_template.x86.dll"
+    },
+    "manifest": "postex-template.manifest.json",
+    "wait_ms": 3000,
+    "spawn_path_by_arch": {
+      "amd64": "C:\\Windows\\System32\\cmd.exe",
+      "x86": "C:\\Windows\\SysWOW64\\cmd.exe"
+    },
+    "spawn_args": "/c timeout /t 30 /nobreak > nul",
+    "backend": "remote-thread"
+  }
+}
+```
 
 ## C2 Profile
 
@@ -396,7 +442,7 @@ beacon:
   sleep_time: 3000
   jitter: 20
   sleep_obf_enabled: true
-  sleep_obf_technique: 2
+  sleep_obf_technique: 3
 
 http:
   uri: /index.php
@@ -417,6 +463,7 @@ stager:
 - `0`：none
 - `1`：ekko
 - `2`：zilean
+- `3`：gargle
 
 `http-stager.yaml` 启用 staged payload；`http-default.yaml` 默认用于常规 HTTP Beacon。
 
@@ -429,16 +476,20 @@ cd C-Beacon
 build_all.bat
 ```
 
-`build_all.bat` 构建全部 8 个产物：
+`build_all.bat` 构建全部 12 个产物：
 
 ```text
-C-Beacon/x64/Release/Beacon_amd64.dll
-C-Beacon/x64/ReleaseExe/beacon_windows_amd64.exe
+C-Beacon/x64/Release/beacon_http_windows_amd64.dll
+C-Beacon/x86/Release/beacon_http_windows_x86.dll
+C-Beacon/x64/ReleaseExe/beacon_http_windows_amd64.exe
+C-Beacon/x86/ReleaseExe/beacon_http_windows_x86.exe
+C-Beacon/x64/ReleaseDllTcpExternal/beacon_tcp_windows_amd64.dll
+C-Beacon/x86/ReleaseDllTcpExternal/beacon_tcp_windows_x86.dll
+C-Beacon/x64/ReleaseExeTcpExternal/beacon_tcp_windows_amd64.exe
+C-Beacon/x86/ReleaseExeTcpExternal/beacon_tcp_windows_x86.exe
 C-Beacon/x64/ReleaseExeTcpInternal/beacon_tcp_internal_amd64.exe
-C-Beacon/x64/ReleaseExeSmbInternal/beacon_smb_internal_amd64.exe
-C-Beacon/x86/Release/Beacon_x86.dll
-C-Beacon/x86/ReleaseExe/beacon_windows_x86.exe
 C-Beacon/x86/ReleaseExeTcpInternal/beacon_tcp_internal_x86.exe
+C-Beacon/x64/ReleaseExeSmbInternal/beacon_smb_internal_amd64.exe
 C-Beacon/x86/ReleaseExeSmbInternal/beacon_smb_internal_x86.exe
 ```
 

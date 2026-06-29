@@ -13,6 +13,10 @@
 #define TCP_EXTERNAL_MAX_FRAME (10u * 1024u * 1024u)
 #define TCP_TLS_IO_BUFFER      16384u
 
+#ifndef SP_PROT_TLS1_2_CLIENT
+#define SP_PROT_TLS1_2_CLIENT 0x00000800
+#endif
+
 static VOID WriteBe32(BYTE8* out, UINT32 v)
 {
     out[0] = (BYTE8)((v >> 24) & 0xff);
@@ -102,6 +106,7 @@ static INT TcpTlsAcquireCredentials(TcpExternalSession* session)
 
     ZeroMemory(&cred, sizeof(cred));
     cred.dwVersion = SCHANNEL_CRED_VERSION;
+    cred.grbitEnabledProtocols = SP_PROT_TLS1_2_CLIENT;
     cred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_CRED_MANUAL_CRED_VALIDATION;
 #ifdef SCH_USE_STRONG_CRYPTO
     cred.dwFlags |= SCH_USE_STRONG_CRYPTO;

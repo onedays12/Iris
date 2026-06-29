@@ -5,7 +5,7 @@
  * 展示从 Beacon 下载的文件列表，支持文件预览和保存到本地磁盘。
  */
 
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Dialogs } from '@wailsio/runtime'
 import * as FileService from '../../bindings/changeme/service/fileservice.js'
 import { downloadFileBase64, listDownloads } from '../features/files/api/fileApi.js'
@@ -79,7 +79,14 @@ async function saveDownload(file) {
   }
 }
 
-onMounted(fetchDownloads)
+onMounted(() => {
+  fetchDownloads()
+  window.addEventListener('downloads:refresh', fetchDownloads)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('downloads:refresh', fetchDownloads)
+})
 </script>
 
 <template>
@@ -107,7 +114,8 @@ onMounted(fetchDownloads)
         正在读取下载列表...
       </div>
 
-      <table v-else class="data-table">
+      <div v-else class="table-scroll">
+      <table class="data-table">
         <thead>
           <tr>
             <th>文件名</th>
@@ -143,6 +151,7 @@ onMounted(fetchDownloads)
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 </template>
@@ -155,12 +164,13 @@ onMounted(fetchDownloads)
 
 .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
-.content-panel { flex: 1; background: var(--bg-card); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); backdrop-filter: blur(var(--glass-blur-md)) saturate(150%); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; }
+.content-panel { flex: 1; background: var(--bg-card); border: 1px solid var(--glass-border); border-radius: var(--radius-lg); backdrop-filter: blur(var(--glass-blur-md)) saturate(150%); box-shadow: var(--shadow-sm); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.table-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .state-line { padding: 18px 20px; color: var(--text-muted); font-size: 13px; border-bottom: 1px solid var(--border-light); }
 .error-state { color: var(--color-danger); }
 
 .data-table { width: 100%; border-collapse: collapse; text-align: left; }
-.data-table th { padding: 12px 16px; font-size: 12px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border-light); background: rgba(255, 255, 255, 0.72); }
+.data-table th { padding: 12px 16px; font-size: 12px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border-light); background: rgba(255, 255, 255, 0.72); position: sticky; top: 0; z-index: 1; }
 .data-table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid var(--border-light); vertical-align: middle; }
 .data-table tbody tr:hover { background: rgba(15, 23, 42, 0.035); }
 

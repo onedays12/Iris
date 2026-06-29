@@ -119,6 +119,7 @@ typedef struct _MY_RTL_OSVERSIONINFOW {
 #define H_FUNC_CREATEPIPE_HASH                      0xCF8CAEDC
 #define H_FUNC_GETSTDHANDLE_HASH                    0x2C73A4E6
 #define H_FUNC_WAITFORSINGLEOBJECT_HASH             0x3A3B335B
+#define H_FUNC_WAITFORMULTIPLEOBJECTS_HASH          0xD135C53D
 #define H_FUNC_GETEXITCODEPROCESS_HASH              0x6568A1BB
 #define H_FUNC_FLUSHFILEBUFFERS_HASH                0x7CB9E5DD
 #define H_FUNC_SETENDOFFILE_HASH                    0x6887114C
@@ -318,6 +319,7 @@ typedef BOOL(WINAPI *fnSetHandleInformation)(HANDLE, DWORD, DWORD);
 typedef BOOL(WINAPI *fnCreatePipe)(PHANDLE, PHANDLE, LPSECURITY_ATTRIBUTES, DWORD);
 typedef HANDLE(WINAPI *fnGetStdHandle)(DWORD);
 typedef DWORD(WINAPI *fnWaitForSingleObject)(HANDLE, DWORD);
+typedef DWORD(WINAPI *fnWaitForMultipleObjects)(DWORD, const HANDLE*, BOOL, DWORD);
 typedef BOOL(WINAPI *fnGetExitCodeProcess)(HANDLE, LPDWORD);
 typedef BOOL(WINAPI *fnFlushFileBuffers)(HANDLE);
 typedef BOOL(WINAPI *fnSetEndOfFile)(HANDLE);
@@ -477,6 +479,7 @@ typedef struct _Win32Api {
     fnCreatePipe pfnCreatePipe;
     fnGetStdHandle pfnGetStdHandle;
     fnWaitForSingleObject pfnWaitForSingleObject;
+    fnWaitForMultipleObjects pfnWaitForMultipleObjects;
     fnGetExitCodeProcess pfnGetExitCodeProcess;
     fnFlushFileBuffers pfnFlushFileBuffers;
     fnSetEndOfFile pfnSetEndOfFile;

@@ -10,6 +10,7 @@
 #include "beacon_api.h"
 #include "beacon_jobs.h"
 #include "beacon_runtime.h"
+#include "beacon_postex.h"
 
 /* Beacon 实例的运行时状态 */
 typedef struct BeaconContext {
@@ -26,6 +27,7 @@ typedef struct BeaconContext {
     TransferManager transfers;     /* 文件上传/下载状态管理器 */
     TunnelManager tunnels;         /* 隧道通道状态管理器 */
     CascadeManager cascade;         /* TCP/SMB 级联子链路管理器 */
+    PostExManager postex;           /* 外部 post-ex pipe job 管理器 */
 } BeaconContext;
 
 VOID ContextInit(BeaconContext* ctx);

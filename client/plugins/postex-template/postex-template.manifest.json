@@ -1,0 +1,72 @@
+{
+  "schema": "beacon.postex.module/v1",
+  "name": "postex_module_template",
+  "display_name": "PostEx Module Template",
+  "version": "1.0.0",
+  "description": "Template PostEx module that emits metadata, progress, text, and optional artifact frames.",
+  "module": {
+    "abi": "postex/2.1",
+    "format": "reflective-dll",
+    "entry": "REFLoader",
+    "arch": ["x64", "x86"],
+    "files": {
+      "x64": "bin/postex_template.x64.dll",
+      "x86": "bin/postex_template.x86.dll"
+    }
+  },
+  "execution": {
+    "target_modes": ["spawn-dll", "inject-dll"],
+    "recommended_target_mode": "spawn-dll",
+    "backends": ["remote-thread"],
+    "recommended_backend": "remote-thread",
+    "transport": "named-pipe",
+    "default_wait_ms": 3000,
+    "supports_cancel": true
+  },
+  "args": [
+    {
+      "name": "count",
+      "flag": "--count",
+      "type": "int",
+      "required": false,
+      "default": 3,
+      "min": 1,
+      "max": 10000,
+      "description": "Number of text/progress iterations."
+    },
+    {
+      "name": "delay",
+      "flag": "--delay",
+      "type": "int",
+      "required": false,
+      "default": 1000,
+      "min": 0,
+      "max": 3600000,
+      "description": "Delay between iterations in milliseconds."
+    },
+    {
+      "name": "message",
+      "flag": "--message",
+      "type": "string",
+      "required": false,
+      "default": "hello",
+      "description": "Message appended to each text output line."
+    },
+    {
+      "name": "artifact",
+      "flag": "--artifact",
+      "type": "bool",
+      "required": false,
+      "default": false,
+      "description": "Emit a text/plain artifact at the end of execution."
+    }
+  ],
+  "outputs": [
+    { "type": "metadata", "format": "json" },
+    { "type": "progress", "format": "json" },
+    { "type": "text", "format": "utf-8" },
+    { "type": "artifact", "mime": ["text/plain"] },
+    { "type": "error", "format": "postex-error-v1" },
+    { "type": "done" }
+  ]
+}

