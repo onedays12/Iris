@@ -116,8 +116,14 @@ function parseCommandLine(input) {
   let match
   
   while ((match = regex.exec(input)) !== null) {
-    // 优先取捕获组 1 (双引号内容) 或 2 (单引号内容)，否则取整体匹配
-    parts.push(match[1] || match[2] || match[0])
+    // 保留 "" / '' 这类空字符串参数，不能用 || 回退到原始引号文本。
+    if (match[1] !== undefined) {
+      parts.push(match[1])
+    } else if (match[2] !== undefined) {
+      parts.push(match[2])
+    } else {
+      parts.push(match[0])
+    }
   }
   
   if (parts.length === 0) return null
@@ -520,6 +526,63 @@ async function sendCommand() {
       commandInput.value = ''
       return
     }
+  } else if (parsed.cmdName.toLowerCase() === 'spawnto') {
+    const migrateArch = String(parsed.args[0] || '').trim().toLowerCase()
+    const migrateSpawnPath = String(parsed.args[1] || '').trim()
+    if (!['x86', 'x64', 'amd64'].includes(migrateArch)) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】spawnto 需要提供 x86 或 x64。用法: spawnto <x86|x64> <spawn_path>')
+      commandInput.value = ''
+      return
+    }
+    if (!migrateSpawnPath) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】spawnto 需要提供 spawn_path。用法: spawnto <x86|x64> <spawn_path>')
+      commandInput.value = ''
+      return
+    }
+    finalArgs = [1, migrateArch, migrateSpawnPath]
+  } else if (parsed.cmdName.toLowerCase() === 'migrate_spawn') {
+    const listenerName = String(parsed.args[0] || '').trim()
+    const migrateArch = String(parsed.args[1] || '').trim().toLowerCase()
+    const migrateSpawnPath = String(parsed.args[2] || '')
+    const migrateSpawnArgs = String(parsed.args[3] || '')
+    if (!listenerName) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_spawn 需要提供 listener。用法: migrate_spawn <listener> <x86|x64> [spawn_path] [spawn_args]')
+      commandInput.value = ''
+      return
+    }
+    if (!['x86', 'x64', 'amd64'].includes(migrateArch)) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_spawn 需要提供 x86 或 x64。用法: migrate_spawn <listener> <x86|x64> [spawn_path] [spawn_args]')
+      commandInput.value = ''
+      return
+    }
+    finalArgs = [2, listenerName, migrateArch, migrateSpawnPath, migrateSpawnArgs]
+  } else if (parsed.cmdName.toLowerCase() === 'migrate_inject') {
+    const listenerName = String(parsed.args[0] || '').trim()
+    const migrateArch = String(parsed.args[1] || '').trim().toLowerCase()
+    const migratePid = parseInt(parsed.args[2], 10)
+    if (!listenerName) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_inject 需要提供 listener。用法: migrate_inject <listener> <x86|x64> <pid>')
+      commandInput.value = ''
+      return
+    }
+    if (!['x86', 'x64', 'amd64'].includes(migrateArch)) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_inject 需要提供 x86 或 x64。用法: migrate_inject <listener> <x86|x64> <pid>')
+      commandInput.value = ''
+      return
+    }
+    if (!migratePid || migratePid <= 0) {
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_inject 需要提供有效的 pid。用法: migrate_inject <listener> <x86|x64> <pid>')
+      commandInput.value = ''
+      return
+    }
+    finalArgs = [3, listenerName, migrateArch, migratePid]
   }
 
   // 发送结构化指令

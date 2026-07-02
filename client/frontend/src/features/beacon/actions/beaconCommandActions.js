@@ -208,6 +208,18 @@ export function sendExecutionBofCommand(beaconid, args) {
 }
 
 /**
+ * 发送 migrate_inject 命令，按现有 migrate 子协议生成新的 Beacon。
+ * @param {string} beaconid - 当前父 Beacon ID
+ * @param {string} listenerName - 目标 listener 名称
+ * @param {string} arch - 目标进程架构 (x86 | x64)
+ * @param {number|string} pid - 目标进程 PID
+ * @returns {Promise<Object>}
+ */
+export function sendMigrateInjectCommand(beaconid, listenerName, arch, pid) {
+  return sendCommand(beaconid, COMMAND_ID.MIGRATE, [3, listenerName, arch, Number(pid)])
+}
+
+/**
  * 发送退出命令，终止 Beacon 进程
  * @param {string} beaconid - 目标 Beacon ID
  * @returns {Promise<Object>}

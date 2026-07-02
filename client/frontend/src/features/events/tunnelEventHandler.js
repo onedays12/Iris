@@ -7,7 +7,7 @@
 
 // ─── 导入 ───
 
-import { getCommandField } from './eventPayload.js'
+import { EVENT_TYPE, getCommandField } from './eventPayload.js'
 
 // ─── 事件处理入口 ───
 
@@ -22,46 +22,47 @@ export async function handleTunnelEvent({ type, data }) {
   const tunnelStore = useTunnelStore()
   const tunnelId = String(getCommandField(data, null, ['tunnel_id', 'tunnelId', 'TunnelID', 'TunnelId', 'id', 'ID'], ''))
 
-  if (['TUNNELSTARTED', 'TUNNELPAUSED', 'TUNNELRESUMED', 'TUNNELSTOPPED', 'TUNNELUPDATED'].includes(type)) {
+  if ([
+    EVENT_TYPE.TUNNEL_STARTED,
+    EVENT_TYPE.TUNNEL_PAUSED,
+    EVENT_TYPE.TUNNEL_RESUMED,
+    EVENT_TYPE.TUNNEL_STOPPED,
+    EVENT_TYPE.TUNNEL_UPDATED,
+    EVENT_TYPE.TUNNEL_STATS,
+  ].includes(type)) {
     if (data && typeof data === 'object') {
       tunnelStore.upsertTunnel(data)
     }
-    tunnelStore.fetchTunnels({ silent: true }).catch(err => {
-      console.warn('[TUNNEL] 列表刷新失败:', err)
-    })
     return
   }
 
-  if (type === 'TUNNELCLEARED') {
+  if (type === EVENT_TYPE.TUNNEL_CLEARED) {
     if (tunnelId) {
       tunnelStore.removeTunnelLocal(tunnelId)
     }
-    tunnelStore.fetchTunnels({ silent: true }).catch(err => {
-      console.warn('[TUNNEL] 列表刷新失败:', err)
-    })
     return
   }
 
-  if (type === 'TUNNELSTATS') {
+  if ([
+    EVENT_TYPE.TUNNEL_CHANNEL_OPEN,
+    EVENT_TYPE.TUNNEL_CHANNEL_CLOSE,
+  ].includes(type)) {
     if (data && typeof data === 'object') {
-      tunnelStore.upsertTunnel(data)
+      tunnelStore.upsertChannel(data)
     }
     return
   }
 
-  if (['TUNNELCHANNELOPEN', 'TUNNELCHANNELCLOSE', 'TUNNELCHANNELRECYCLED'].includes(type)) {
+  if (type === EVENT_TYPE.TUNNEL_CHANNEL_RECYCLED) {
     if (tunnelId) {
       tunnelStore.fetchChannels(tunnelId, { silent: true }).catch(err => {
         console.warn('[TUNNEL] 连接列表刷新失败:', err)
       })
-      tunnelStore.fetchTunnels({ silent: true }).catch(err => {
-        console.warn('[TUNNEL] 列表刷新失败:', err)
-      })
     }
     return
   }
 
-  if (type === 'TUNNELERROR') {
-    tunnelStore.error = String(getCommandField(data, null, ['error', 'Error', 'message', 'Message', 'error_message', 'errorMessage'], 'Tunnel 事件异常'))
+  if (type === EVENT_TYPE.TUNNEL_ACK) {
+    tunnelStore.recordTunnelAck(data)
   }
 }

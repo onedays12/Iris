@@ -167,7 +167,7 @@ async function handleLogout() {
         </div>
         <div class="logo-text">
           <span class="logo-name">Iris Client</span>
-          <span class="logo-version">v0.0.1</span>
+          <span class="logo-version">v0.1.5</span>
         </div>
       </div>
       <div class="logo-actions">

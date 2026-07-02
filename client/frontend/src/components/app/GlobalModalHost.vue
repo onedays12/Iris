@@ -16,6 +16,7 @@ import NetworkBrowserModal from '../dashboard/NetworkBrowserModal.vue'
 import ExecuteTaskModal from '../dashboard/ExecuteTaskModal.vue'
 import SleepConfigModal from '../dashboard/SleepConfigModal.vue'
 import CascadeConnectModal from '../dashboard/CascadeConnectModal.vue'
+import MigrateInjectModal from '../dashboard/MigrateInjectModal.vue'
 
 const modalStore = useModalStore()
 </script>
@@ -37,6 +38,13 @@ const modalStore = useModalStore()
     :visible="modalStore.processBrowserVisible"
     :beaconid="modalStore.activeProcessBrowserBeaconId || ''"
     @close="modalStore.closeProcessBrowser()"
+  />
+
+  <MigrateInjectModal
+    :visible="modalStore.migrateInjectVisible"
+    :beaconid="modalStore.activeMigrateInject.beaconid || ''"
+    :process="modalStore.activeMigrateInject.process"
+    @close="modalStore.closeMigrateInject()"
   />
 
   <NetworkBrowserModal

@@ -32,6 +32,39 @@ export const useListenerStore = defineStore('listener', {
       }
     },
 
+    /** 根据 LISTENER_STATE_CHANGED 增量合并监听器状态 */
+    upsertListener(payload) {
+      if (!payload || typeof payload !== 'object') return
+      const name = String(payload.name || payload.Name || '').trim()
+      const id = String(payload.id || payload.ID || '').trim()
+      const status = String(payload.status || payload.Status || '').trim().toLowerCase()
+      if (!name && !id) return
+
+      if (status === 'removed' || status === 'deleted') {
+        this.listeners = this.listeners.filter(item => {
+          const itemName = String(item.name || item.Name || '').trim()
+          const itemId = String(item.id || item.ID || '').trim()
+          return !((name && itemName === name) || (id && itemId === id))
+        })
+        return
+      }
+
+      const index = this.listeners.findIndex(item => {
+        const itemName = String(item.name || item.Name || '').trim()
+        const itemId = String(item.id || item.ID || '').trim()
+        return (name && itemName === name) || (id && itemId === id)
+      })
+
+      if (index >= 0) {
+        this.listeners.splice(index, 1, {
+          ...this.listeners[index],
+          ...payload,
+        })
+      } else {
+        this.listeners.unshift(payload)
+      }
+    },
+
     /** 创建监听器 */
     async createListener(config) {
       try {

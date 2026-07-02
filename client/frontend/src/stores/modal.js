@@ -43,6 +43,13 @@ export const useModalStore = defineStore('modal', {
     processBrowserVisible: false,
     activeProcessBrowserBeaconId: null,
 
+    // Migrate Inject 弹窗
+    migrateInjectVisible: false,
+    activeMigrateInject: {
+      beaconid: '',
+      process: null,
+    },
+
     // 网络浏览器
     networkBrowserVisible: false,
     activeNetworkBrowserBeaconId: null,
@@ -108,6 +115,22 @@ export const useModalStore = defineStore('modal', {
     closeProcessBrowser() {
       this.processBrowserVisible = false
       this.activeProcessBrowserBeaconId = null
+    },
+
+    // ─── Migrate Inject 弹窗 ───
+    openMigrateInject(payload = {}) {
+      this.activeMigrateInject = {
+        beaconid: payload.beaconid || '',
+        process: payload.process ? { ...payload.process } : null,
+      }
+      this.migrateInjectVisible = true
+    },
+    closeMigrateInject() {
+      this.migrateInjectVisible = false
+      this.activeMigrateInject = {
+        beaconid: '',
+        process: null,
+      }
     },
 
     // ─── 网络浏览器 ───

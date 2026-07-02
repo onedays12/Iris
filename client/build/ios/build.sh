@@ -4,8 +4,8 @@ set -e
 # Build configuration
 APP_NAME="client.exe"
 BUNDLE_ID="com.example.client"
-VERSION="0.1.0"
-BUILD_NUMBER="0.1.0"
+VERSION="0.1.5"
+BUILD_NUMBER="0.1.5"
 BUILD_DIR="build/ios"
 TARGET="simulator"
 

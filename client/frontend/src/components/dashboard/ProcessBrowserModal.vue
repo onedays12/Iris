@@ -2,7 +2,7 @@
 /**
  * ProcessBrowserModal - 进程浏览器弹窗
  * 展示远程主机的进程列表，支持搜索、排序、
- * 右键菜单操作（终止进程、查看属性）。
+ * 右键菜单操作（终止进程、迁移注入等）。
  */
 
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
@@ -11,6 +11,11 @@ import { useModalStore } from '../../stores/modal.js'
 import { useNotificationStore } from '../../stores/notification.js'
 import { useProcessBrowserStore } from '../../stores/processBrowser.js'
 import { sendKillProcessCommand } from '../../features/beacon/actions/beaconCommandActions.js'
+import {
+  isWindowsBeacon,
+  isX86ToX64Blocked,
+  normalizeMigrateArch,
+} from '../../features/beacon/migrate/migrateOptions.js'
 import { useModalDragResize } from '../../composables/useModalDragResize.js'
 
 const agentStore = useAgentStore()
@@ -122,6 +127,7 @@ const loading = computed(() => processStore.isLoading(props.beaconid))
 const error = computed(() => processStore.getError(props.beaconid))
 const processes = computed(() => processStore.getProcesses(props.beaconid))
 const lastUpdated = computed(() => processStore.getLastUpdated(props.beaconid))
+const currentAgent = computed(() => agentStore.getAgentById(props.beaconid))
 
 const filteredProcesses = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -143,6 +149,22 @@ const filteredProcesses = computed(() => {
 
 function closeContextMenu() {
   contextMenu.value.visible = false
+}
+
+function getMigrateDisabledReason(process) {
+  if (!process) return '未找到目标进程。'
+  if (!isWindowsBeacon(currentAgent.value)) return '仅 Windows Beacon 支持 Migrate Inject。'
+
+  const targetArch = normalizeMigrateArch(process.arch)
+  if (!['x86', 'x64'].includes(targetArch)) {
+    return '目标进程架构不是 x86/x64，当前不能安全生成 migrate_inject。'
+  }
+
+  if (isX86ToX64Blocked(currentAgent.value?.arch, targetArch)) {
+    return '当前 Beacon 不支持 x64 stage 注入。'
+  }
+
+  return ''
 }
 
 function handleProcessContextMenu(event, process) {
@@ -175,6 +197,20 @@ function adjustContextMenuPosition() {
   if (adjustedMenuY.value + rect.height > window.innerHeight - padding) {
     adjustedMenuY.value = Math.max(padding, adjustedMenuY.value - rect.height)
   }
+}
+
+function handleOpenMigrateInject() {
+  const process = contextMenu.value.process
+  const reason = getMigrateDisabledReason(process)
+  closeContextMenu()
+  if (reason) {
+    notificationStore.warn(reason)
+    return
+  }
+  modalStore.openMigrateInject({
+    beaconid: props.beaconid,
+    process,
+  })
 }
 
 async function handleKill() {
@@ -423,9 +459,14 @@ function close() {
               <span>结束进程</span>
               <small>kill</small>
             </button>
-            <button class="process-menu-item" @click="handlePlaceholderAction('inject')">
-              <span>Inject</span>
-              <small>inject</small>
+            <button
+              class="process-menu-item"
+              :class="{ disabled: Boolean(getMigrateDisabledReason(contextMenu.process)) }"
+              :title="getMigrateDisabledReason(contextMenu.process) || '注入新 Beacon 到此进程'"
+              @click="handleOpenMigrateInject"
+            >
+              <span>Migrate Inject</span>
+              <small>迁移到此进程</small>
             </button>
             <button class="process-menu-item" @click="handlePlaceholderAction('steal-token')">
               <span>窃取令牌</span>
@@ -536,8 +577,11 @@ function close() {
   justify-content: space-between;
   gap: 12px;
   padding: 9px 12px;
+  border: none;
   font-size: 13px;
+  text-align: left;
   color: var(--text-secondary);
+  background: transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: var(--transition);
@@ -546,6 +590,16 @@ function close() {
 .process-menu-item:hover {
   background: rgba(0, 0, 0, 0.05);
   color: var(--text-primary);
+}
+
+.process-menu-item.disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.process-menu-item.disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 .process-menu-item.danger {
@@ -590,6 +644,15 @@ function close() {
   color: #f8fafc;
 }
 
+:global(html[data-ui-theme="dark"] .process-menu-item.disabled) {
+  color: rgba(229, 231, 235, 0.58);
+}
+
+:global(html[data-ui-theme="dark"] .process-menu-item.disabled:hover) {
+  background: transparent;
+  color: rgba(229, 231, 235, 0.58);
+}
+
 :global(html[data-ui-theme="dark"] .process-menu-item.danger) {
   color: #fca5a5;
 }
@@ -606,6 +669,11 @@ function close() {
 
 :global(html[data-ui-theme="dark"] .process-menu-item:hover small) {
   color: #c7d2fe;
+}
+
+:global(html[data-ui-theme="dark"] .process-menu-item.disabled small),
+:global(html[data-ui-theme="dark"] .process-menu-item.disabled:hover small) {
+  color: rgba(148, 163, 184, 0.7);
 }
 
 :global(html[data-ui-theme="dark"] .process-menu-item.danger:hover small) {

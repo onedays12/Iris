@@ -74,8 +74,10 @@ x86\ReleaseExe\beacon_http_windows_x86.exe
 Internal 级联模板产物目录：
 
 ```text
+x64\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_amd64.dll
 x64\ReleaseExeTcpInternal\beacon_tcp_internal_amd64.exe
 x64\ReleaseExeSmbInternal\beacon_smb_internal_amd64.exe
+x86\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_x86.dll
 x86\ReleaseExeTcpInternal\beacon_tcp_internal_x86.exe
 x86\ReleaseExeSmbInternal\beacon_smb_internal_x86.exe
 ```
@@ -92,8 +94,12 @@ static\beacon_templates\C-Beacon\
 ├── beacon_tcp_windows_x86.dll           ← TCP external patched DLL
 ├── beacon_tcp_windows_amd64.exe         ← TCP external EXE
 ├── beacon_tcp_windows_x86.exe           ← TCP external EXE
+├── beacon_tcp_internal_amd64.dll        ← TCP internal patched DLL
+├── beacon_tcp_internal_x86.dll          ← TCP internal patched DLL
 ├── beacon_tcp_internal_amd64.exe        ← TCP internal EXE
 ├── beacon_tcp_internal_x86.exe          ← TCP internal EXE
+├── beacon_smb_internal_amd64.dll        ← SMB internal patched DLL
+├── beacon_smb_internal_x86.dll          ← SMB internal patched DLL
 ├── beacon_smb_internal_amd64.exe        ← SMB internal EXE
 └── beacon_smb_internal_x86.exe          ← SMB internal EXE
 ```
@@ -114,8 +120,8 @@ sync_teamserver_templates.bat E:\other\TeamServer
 
 脚本流程：
 1. 调用 `build_all.bat` 构建全部目标
-2. 使用 `PatchBeacon.exe` 对 HTTP/TCP external DLL 打 reflective stub 补丁
-3. 复制 12 个产物到 `C-Beacon`（4 patched DLL + 2 HTTP EXE + 2 TCP external EXE + 2 TCP internal EXE + 2 SMB internal EXE）
+2. 使用 `PatchBeacon.exe` 对 HTTP/TCP external DLL、TCP internal DLL 和 SMB internal DLL 打 reflective stub 补丁
+3. 复制 16 个产物到 `C-Beacon`（8 patched DLL + 2 HTTP EXE + 2 TCP external EXE + 2 TCP internal EXE + 2 SMB internal EXE）
 
 ### TCP external SSL/TLS
 
@@ -291,6 +297,8 @@ build_exe_x64.bat          # External HTTP (Debug-ExHttpExe)
 build_tcp_external_x64.bat # External TCP (Debug-ExTcpExe)
 build_tcp_internal_x64.bat # Internal TCP (Debug-InTcpExe)
 build_smb_internal_x64.bat # Internal SMB (Debug-InSmbExe)
+build_dll_tcp_internal_x64.bat # Internal TCP direct-stage DLL
+build_dll_smb_internal_x64.bat # Internal SMB direct-stage DLL
 ```
 
 产物示例（x64）：

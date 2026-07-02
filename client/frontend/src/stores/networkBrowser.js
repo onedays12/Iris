@@ -9,33 +9,6 @@ import { sendNetworkBrowserCommands } from '../features/beacon/actions/beaconCom
 
 const REQUEST_TIMEOUT = 15000
 
-function parseMaybeJson(value) {
-  if (typeof value !== 'string') return value
-  const text = value.trim()
-  if (!text) return value
-  try {
-    return JSON.parse(text)
-  } catch {
-    return value
-  }
-}
-
-function unwrapPayload(payload, arrayKeys = []) {
-  let value = parseMaybeJson(payload)
-  if (!value || typeof value !== 'object') return value
-
-  for (const key of arrayKeys) {
-    if (Array.isArray(value[key])) return value[key]
-  }
-
-  return parseMaybeJson(
-    value.data || value.Data ||
-    value.result || value.Result ||
-    value.items || value.Items ||
-    value
-  )
-}
-
 function normalizeBoolean(value) {
   if (typeof value === 'boolean') return value
   if (typeof value === 'string') {
@@ -50,47 +23,43 @@ function normalizeInterface(item) {
   if (!item || typeof item !== 'object') return null
 
   return {
-    index: Number(item.index ?? item.Index ?? 0) || 0,
-    name: String(item.name ?? item.Name ?? 'Unknown'),
-    mtu: Number(item.mtu ?? item.MTU ?? 0) || 0,
-    flags: Array.isArray(item.flags ?? item.Flags)
-      ? [...(item.flags ?? item.Flags)]
-      : String(item.flags ?? item.Flags ?? '').split(',').map(flag => flag.trim()).filter(Boolean),
-    hardwareAddr: String(item.hardware_addr ?? item.hardwareAddr ?? item.HardwareAddr ?? item.mac ?? '-'),
-    addrs: Array.isArray(item.addrs ?? item.Addrs)
-      ? [...(item.addrs ?? item.Addrs)]
-      : String(item.addrs ?? item.Addrs ?? '').split(',').map(addr => addr.trim()).filter(Boolean),
-    isUp: normalizeBoolean(item.is_up ?? item.isUp ?? item.IsUp),
-    isLoopback: normalizeBoolean(item.is_loopback ?? item.isLoopback ?? item.IsLoopback),
-    isMulticast: normalizeBoolean(item.is_multicast ?? item.isMulticast ?? item.IsMulticast),
+    index: Number(item.index ?? 0) || 0,
+    name: String(item.name ?? 'Unknown'),
+    mtu: Number(item.mtu ?? 0) || 0,
+    flags: Array.isArray(item.flags) ? [...item.flags] : [],
+    hardwareAddr: String(item.hardware_addr ?? '-'),
+    addrs: Array.isArray(item.addrs) ? [...item.addrs] : [],
+    isUp: normalizeBoolean(item.is_up),
+    isLoopback: normalizeBoolean(item.is_loopback),
+    isMulticast: normalizeBoolean(item.is_multicast),
   }
 }
 
 function normalizeConnection(item) {
   if (!item || typeof item !== 'object') return null
 
-  const localAddress = String(item.local_address ?? item.localAddress ?? item.LocalAddress ?? '-')
-  const remoteAddress = String(item.remote_address ?? item.remoteAddress ?? item.RemoteAddress ?? '-')
+  const localAddress = String(item.local_address ?? '-')
+  const remoteAddress = String(item.remote_address ?? '-')
 
   return {
-    protocol: String(item.protocol ?? item.proto ?? item.Protocol ?? item.Proto ?? 'unk').toUpperCase(),
+    protocol: String(item.protocol ?? 'unk').toUpperCase(),
     localAddress,
-    localPort: Number(item.local_port ?? item.localPort ?? item.LocalPort ?? 0) || 0,
+    localPort: Number(item.local_port ?? 0) || 0,
     remoteAddress,
-    remotePort: Number(item.remote_port ?? item.remotePort ?? item.RemotePort ?? 0) || 0,
-    state: String(item.state ?? item.State ?? '-'),
-    pid: String(item.pid ?? item.PID ?? '-'),
+    remotePort: Number(item.remote_port ?? 0) || 0,
+    state: String(item.state ?? '-'),
+    pid: String(item.pid ?? '-'),
   }
 }
 
 function normalizeInterfaces(payload) {
-  const value = unwrapPayload(payload, ['interfaces', 'Interfaces'])
+  const value = payload?.interfaces
   if (!Array.isArray(value)) return []
   return value.map(normalizeInterface).filter(Boolean).sort((a, b) => a.index - b.index)
 }
 
 function normalizeConnections(payload) {
-  const value = unwrapPayload(payload, ['connections', 'Connections'])
+  const value = payload?.connections
   if (!Array.isArray(value)) return []
   return value
     .map(normalizeConnection)
@@ -172,10 +141,38 @@ export const useNetworkBrowserStore = defineStore('networkBrowser', {
       }
     },
 
+    handleNetInfoError(beaconid, message = '获取网络接口失败') {
+      this.interfaces[beaconid] = []
+      this.lastUpdated[beaconid] = new Date().toISOString()
+      this.errorMessages[beaconid] = message
+      this.pending[beaconid] = {
+        ...(this.pending[beaconid] || { netinfo: true, netstat: true }),
+        netinfo: false,
+      }
+
+      if (!this.pending[beaconid].netinfo && !this.pending[beaconid].netstat) {
+        this.setLoading(beaconid, false)
+      }
+    },
+
     handleNetstatResponse(beaconid, payload) {
       this.connections[beaconid] = normalizeConnections(payload)
       this.lastUpdated[beaconid] = new Date().toISOString()
       this.errorMessages[beaconid] = ''
+      this.pending[beaconid] = {
+        ...(this.pending[beaconid] || { netinfo: true, netstat: true }),
+        netstat: false,
+      }
+
+      if (!this.pending[beaconid].netinfo && !this.pending[beaconid].netstat) {
+        this.setLoading(beaconid, false)
+      }
+    },
+
+    handleNetstatError(beaconid, message = '获取网络连接失败') {
+      this.connections[beaconid] = []
+      this.lastUpdated[beaconid] = new Date().toISOString()
+      this.errorMessages[beaconid] = message
       this.pending[beaconid] = {
         ...(this.pending[beaconid] || { netinfo: true, netstat: true }),
         netstat: false,

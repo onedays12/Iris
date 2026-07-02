@@ -3,6 +3,7 @@
 #include "beacon_context.h"
 #include "beacon_packet.h"
 #include "beacon_bof.h"
+#include "beacon_migrate.h"
 
 /* 通用控制 */
 #define BEACON_COMMAND_SLEEP          1u
@@ -58,6 +59,9 @@
 /* PostEx 子协议 */
 #define BEACON_COMMAND_POSTEX              90u
 #define BEACON_COMMAND_POSTEX_EVENT        93u
+
+/* Migrate 子协议 */
+#define BEACON_COMMAND_MIGRATE             100u
 
 /* 命令分发：根据 command_id 调用对应处理函数 */
 PacketList CommandDispatch(BeaconContext* ctx, UINT32 task_id, UINT32 command_id, const ByteBuf* payload);

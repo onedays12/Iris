@@ -110,6 +110,12 @@
     <ClCompile Include="src\managers\jobs.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\managers\migrate.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\migrate_backend.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="src\managers\postex.c">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -159,6 +165,18 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\core\api.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\inject\inject_pe.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\inject\inject.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\inject\inject_reflective.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\inject\inject_remote.c">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -220,6 +238,9 @@
     <ClInclude Include="include\beacon_jobs.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="include\beacon_migrate.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="include\beacon_reflective_loader.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -242,6 +263,12 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_cascade_internal.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_inject.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\inject\inject_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

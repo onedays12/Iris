@@ -8,32 +8,6 @@ import { sendProcessListCommand } from '../features/beacon/actions/beaconCommand
 
 const REQUEST_TIMEOUT = 15000
 
-function parseMaybeJson(value) {
-  if (typeof value !== 'string') return value
-  const text = value.trim()
-  if (!text) return value
-  try {
-    return JSON.parse(text)
-  } catch {
-    return value
-  }
-}
-
-function unwrapProcessPayload(payload) {
-  let value = parseMaybeJson(payload)
-  if (!value || typeof value !== 'object') return value
-
-  value = value.processes || value.Processes ||
-    value.process_list || value.processList || value.ProcessList ||
-    value.ps_list || value.psList || value.PSList ||
-    value.items || value.Items ||
-    value.data || value.Data ||
-    value.result || value.Result ||
-    value
-
-  return parseMaybeJson(value)
-}
-
 function normalizeArch(value) {
   switch (Number(value)) {
     case 0: return 'x86'
@@ -46,26 +20,25 @@ function normalizeArch(value) {
 function normalizeProcessInfo(process) {
   if (!process || typeof process !== 'object') return null
 
-  const pid = process.pid ?? process.PID ?? process.process_id ?? process.processId ?? process.ProcessID
-  const name = process.name ?? process.Name ?? process.image ?? process.Image ?? process.image_name ?? process.ImageName
+  const pid = process.pid
+  const name = process.name
 
   if (pid === undefined && !name) return null
 
   return {
     pid: String(pid ?? ''),
-    ppid: String(process.ppid ?? process.PPID ?? process.parent_pid ?? process.parentPid ?? process.ParentPID ?? '-'),
-    arch: String(process.arch_name ?? process.ArchName ?? process.Arch_Name ?? '') || normalizeArch(process.arch ?? process.Arch ?? process.architecture ?? process.Architecture),
-    session: String(process.session_id ?? process.sessionId ?? process.SessionID ?? process.session ?? process.Session ?? '-'),
-    user: String(process.user ?? process.User ?? process.username ?? process.Username ?? '-'),
+    ppid: String(process.ppid ?? '-'),
+    arch: String(process.arch_name ?? '') || normalizeArch(process.arch),
+    session: String(process.session_id ?? '-'),
+    user: String(process.user ?? '-'),
     name: String(name ?? 'Unknown'),
-    path: String(process.path ?? process.Path ?? process.exe ?? process.Exe ?? process.command_line ?? process.commandLine ?? process.CommandLine ?? '-'),
+    path: String(process.path ?? '-'),
   }
 }
 
 function normalizeProcessList(payload) {
-  const value = unwrapProcessPayload(payload)
-  if (!Array.isArray(value)) return []
-  return value.map(normalizeProcessInfo).filter(Boolean)
+  if (!Array.isArray(payload)) return []
+  return payload.map(normalizeProcessInfo).filter(Boolean)
 }
 
 export const useProcessBrowserStore = defineStore('processBrowser', {
@@ -163,6 +136,13 @@ export const useProcessBrowserStore = defineStore('processBrowser', {
 
       this.processes[beaconid] = list
       this.errorMessages[beaconid] = list.length ? '' : '未获取到进程数据'
+      this.lastUpdated[beaconid] = new Date().toISOString()
+      this.setLoading(beaconid, false)
+    },
+
+    handleProcessError(beaconid, message = '获取进程数据失败') {
+      this.processes[beaconid] = []
+      this.errorMessages[beaconid] = message
       this.lastUpdated[beaconid] = new Date().toISOString()
       this.setLoading(beaconid, false)
     },

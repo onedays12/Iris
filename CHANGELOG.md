@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.1.5
+
+### Client
+
+- 新增 — `spawnto`、`migrate_spawn`、`migrate_inject` 控制台命令支持，包括参数解析、帮助信息、基础校验和事件面板标记
+- 新增 — 进程浏览器中的 `Migrate Inject` 图形化操作流，支持基于目标进程自动复用架构，并阻止危险的 `x86 parent -> x64 target` 组合
+- 新增 — 图形化迁移流程支持筛选 external 与 internal `TCP/SMB` listener，并补充相应的拓扑行为提示
+- 变更 — 统一命令结果、文件传输、事件面板摘要到 TeamServer 的 `COMMAND_EVENT` 协议模型
+- 变更 — 对齐前端命令参数打包格式，收口命令结果路由与结构化结果处理逻辑
+- 修复 — `ps`、`net_info`、`netstat` 等命令结果在新旧 TeamServer payload 结构下的兼容显示
+- 修复 — 文件浏览器中同一下载任务出现多个 `0%` 进度记录的问题，改为按 `direction + task_id` 合并传输进度
+- 修复 — 统一 websocket 事件别名与历史兼容逻辑，补齐 `tunnel`、`listener` 相关事件同步
+- 修复 — 截图预览删除按钮对比度问题
+- 维护 — 更新 Iris Client 版本显示与各平台打包元数据到 `v0.1.5`
+
+### Server
+
+- 新增 — TeamServer 对 `spawnto`、`migrate_spawn`、`migrate_inject` 的完整任务处理能力
+- 新增 — external listener 的 direct-stage 迁移流程
+- 新增 — internal TCP 迁移支持，为每个任务分配独立的 bind 端口并建立 cascade child 跟踪
+- 新增 — internal SMB `migrate_inject` 支持，为注入后的 child 生成独立的 pipe 名并自动排队后续 `cascade connect/link`
+- 变更 — 将 migrate inject 子命令语义收口为 stage-oriented 命名，同时保持既有 wire value 不变
+- 测试 — 增加 internal `TCP/SMB` migrate inject 行为测试与相关任务校验
+- 变更 — 统一 websocket 事件常量，移除旧的 `TASK_RESULT`、`FILE_TRANSFER_*` 独立事件路径
+- 变更 — 将 listener 状态变更与 tunnel 确认事件改为统一的具名事件常量，减少历史分支逻辑
+
+### C-Beacon
+
+- 新增 — migrate manager，支持 `spawnto`、`spawn`、`inject` 三类迁移路径
+- 新增 — 基于 reflective stage 的远程执行能力，打通 Beacon 侧迁移命令与 TeamServer stage 下发链路
+- 新增 — 目标进程架构校验、父子架构匹配校验以及远程线程/远程进程状态诊断输出
+- 新增 — internal TCP migrate stage 构建脚本与模板同步支持
+- 新增 — internal SMB direct-stage DLL 构建流程，并将 SMB internal DLL 纳入模板 patch/copy 同步链路
+- 变更 — 将 migrate inject 子命令重命名为 stage-oriented 语义，但保持原有协议值兼容
+- 重构 — 整理命令分发与 inject 辅助逻辑，减少迁移路径中的重复实现
+- 文档 — 更新 README 与模板产物说明，补充 internal SMB 相关构建与同步文档
+
 ## v0.1.4
 
 ### Client

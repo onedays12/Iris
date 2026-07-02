@@ -7,40 +7,116 @@
 
 // ─── 进程列表格式化 ───
 
+export const EMPTY_PROCESS_TABLE_TEXT = '未获取到进程数据。'
+export const EMPTY_NETINFO_TEXT = '未获取到网络接口数据。'
+export const EMPTY_NETSTAT_TEXT = '未获取到网络连接数据。'
+
+function normalizeArch(value) {
+  switch (Number(value)) {
+    case 0: return 'x86'
+    case 1: return 'x64'
+    case 2: return 'arm64'
+    default: return value ? String(value) : 'unk'
+  }
+}
+
+function normalizeProcessInfo(process) {
+  if (!process || typeof process !== 'object') return null
+
+  const pid = process.pid
+  const name = process.name
+
+  if (pid === undefined && !name) return null
+
+  return {
+    pid: String(pid ?? ''),
+    ppid: String(process.ppid ?? '-'),
+    arch: String(process.arch_name ?? '') || normalizeArch(process.arch),
+    session: String(process.session_id ?? '-'),
+    user: String(process.user ?? '-'),
+    name: String(name ?? 'Unknown'),
+    path: String(process.path ?? '-'),
+  }
+}
+
+function normalizeProcessList(payload) {
+  if (!Array.isArray(payload)) return []
+  return payload.map(normalizeProcessInfo).filter(Boolean)
+}
+
+function comparePid(a, b) {
+  const left = Number(a.pid)
+  const right = Number(b.pid)
+  if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return left - right
+  return String(a.pid).localeCompare(String(b.pid))
+}
+
 /**
  * 将进程列表格式化为文本表格
  * @param {Array} processes - 进程对象数组
  * @returns {string} 格式化后的文本表格
  */
 export function formatProcessTable(processes) {
-  if (!Array.isArray(processes) || processes.length === 0) return '未获取到进程数据。'
+  const data = normalizeProcessList(processes).sort(comparePid)
+  if (data.length === 0) return EMPTY_PROCESS_TABLE_TEXT
 
-  const headers = ['PID', 'PPID', 'Arch', 'Session', 'User', 'Name']
-  const data = processes.map(p => ({
-    pid: String(p.pid || 0),
-    ppid: String(p.ppid || 0),
-    arch: p.arch_name || (p.arch === 2 ? 'arm64' : p.arch === 1 ? 'x64' : p.arch === 0 ? 'x86' : 'unk'),
-    session: String(p.session_id ?? '-'),
-    user: p.user || 'Unknown',
-    name: p.name || 'Unknown',
-  })).sort((a, b) => parseInt(a.pid) - parseInt(b.pid))
+  const columns = [
+    { key: 'pid', header: 'PID', align: 'right' },
+    { key: 'ppid', header: 'PPID', align: 'right' },
+    { key: 'arch', header: 'Arch' },
+    { key: 'session', header: 'Session', align: 'right' },
+    { key: 'user', header: 'User' },
+    { key: 'name', header: 'Name' },
+    { key: 'path', header: 'Path' },
+  ]
 
-  const colWidths = {}
-  headers.forEach(h => {
-    colWidths[h.toLowerCase()] = Math.max(h.length, ...data.map(row => String(row[h.toLowerCase()]).length))
-  })
+  const widths = Object.fromEntries(columns.map(column => [
+    column.key,
+    Math.max(column.header.length, ...data.map(row => String(row[column.key] ?? '').length)),
+  ]))
 
-  const pad = (str, width) => String(str).padEnd(width + 2)
-  const headerRow = headers.map(h => pad(h, colWidths[h.toLowerCase()])).join('')
-  const separator = headers.map(h => pad('-'.repeat(h.length), colWidths[h.toLowerCase()])).join('')
-  const bodyRows = data.map(row =>
-    headers.map(h => pad(row[h.toLowerCase()], colWidths[h.toLowerCase()])).join('')
-  )
+  const formatCell = (value, column, isLast = false) => {
+    const text = String(value ?? '-')
+    const padded = column.align === 'right'
+      ? text.padStart(widths[column.key])
+      : text.padEnd(widths[column.key])
+    return isLast ? padded : `${padded}  `
+  }
+
+  const formatRow = (row, useHeader = false) => columns.map((column, index) => {
+    const value = useHeader ? column.header : row[column.key]
+    return formatCell(value, { ...column, align: useHeader ? 'left' : column.align }, index === columns.length - 1)
+  }).join('')
+
+  const headerRow = formatRow({}, true)
+  const separator = columns.map((column, index) => {
+    const text = '-'.repeat(widths[column.key])
+    return index === columns.length - 1 ? text : `${text}  `
+  }).join('')
+  const bodyRows = data.map(row => formatRow(row))
 
   return [headerRow, separator, ...bodyRows, '', `总进程数: ${data.length}`].join('\n')
 }
 
 // ─── 网络信息格式化 ───
+
+function formatBoolean(value) {
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  const text = String(value ?? '').trim().toLowerCase()
+  if (['true', '1', 'yes', 'y', 'on'].includes(text)) return 'yes'
+  if (['false', '0', 'no', 'n', 'off'].includes(text)) return 'no'
+  return '-'
+}
+
+function joinList(value) {
+  if (Array.isArray(value)) return value.join(', ')
+  const text = String(value ?? '').trim()
+  return text || '-'
+}
+
+function normalizeInterfaceList(payload) {
+  return Array.isArray(payload?.interfaces) ? payload.interfaces : []
+}
 
 /**
  * 将网络接口列表格式化为文本
@@ -48,21 +124,22 @@ export function formatProcessTable(processes) {
  * @returns {string} 格式化后的文本
  */
 export function formatNetInfo(interfaces) {
-  if (!Array.isArray(interfaces) || interfaces.length === 0) return '未获取到网络接口数据。'
+  const list = normalizeInterfaceList(interfaces)
+  if (list.length === 0) return EMPTY_NETINFO_TEXT
 
-  const sorted = [...interfaces].sort((a, b) => Number(a?.index || 0) - Number(b?.index || 0))
+  const sorted = [...list].sort((a, b) => Number(a?.index ?? a?.Index ?? 0) - Number(b?.index ?? b?.Index ?? 0))
   const lines = [`网络接口数: ${sorted.length}`]
 
   for (const iface of sorted) {
     const index = iface?.index ?? '-'
     const name = iface?.name || 'Unknown'
     const mtu = iface?.mtu ?? '-'
-    const flags = Array.isArray(iface?.flags) ? iface.flags.join(', ') : String(iface?.flags || '-')
-    const mac = iface?.hardware_addr || iface?.hardwareAddr || '-'
-    const addrs = Array.isArray(iface?.addrs) ? iface.addrs.join(', ') : String(iface?.addrs || '-')
-    const up = iface?.is_up === undefined ? '-' : (iface.is_up ? 'yes' : 'no')
-    const loopback = iface?.is_loopback === undefined ? '-' : (iface.is_loopback ? 'yes' : 'no')
-    const multicast = iface?.is_multicast === undefined ? '-' : (iface.is_multicast ? 'yes' : 'no')
+    const flags = joinList(iface?.flags)
+    const mac = iface?.hardware_addr || '-'
+    const addrs = joinList(iface?.addrs)
+    const up = formatBoolean(iface?.is_up)
+    const loopback = formatBoolean(iface?.is_loopback)
+    const multicast = formatBoolean(iface?.is_multicast)
 
     lines.push(
       '',
@@ -78,17 +155,22 @@ export function formatNetInfo(interfaces) {
   return lines.join('\n')
 }
 
+function normalizeConnectionList(payload) {
+  return Array.isArray(payload?.connections) ? payload.connections : []
+}
+
 /**
  * 将网络连接列表格式化为文本表格
  * @param {Array} connections - 网络连接对象数组
  * @returns {string} 格式化后的文本表格
  */
 export function formatNetstatTable(connections) {
-  if (!Array.isArray(connections) || connections.length === 0) return '未获取到网络连接数据。'
+  const list = normalizeConnectionList(connections)
+  if (list.length === 0) return EMPTY_NETSTAT_TEXT
 
   const headers = ['PROTO', 'LOCAL', 'REMOTE', 'STATE', 'PID']
-  const data = connections.map(conn => ({
-    proto: String(conn?.protocol || conn?.proto || 'unk'),
+  const data = list.map(conn => ({
+    proto: String(conn?.protocol || 'unk').toUpperCase(),
     local: `${conn?.local_address || '-'}:${conn?.local_port ?? '-'}`,
     remote: `${conn?.remote_address || '-'}:${conn?.remote_port ?? '-'}`,
     state: String(conn?.state || '-'),

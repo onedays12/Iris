@@ -9,9 +9,10 @@ import { pick, toNumber } from '../utils/object.js'
 
 function calcProgress(receivedBytes, size, receivedChunks, totalChunks, status) {
   if (status === 'completed' || status === 'success') return 100
+  if (status === 'queued') return 0
   
   // 优先基于字节计算
-  if (size > 0 && receivedBytes >= 0) {
+  if (size > 0 && receivedBytes > 0) {
     const p = Math.floor((receivedBytes / size) * 100)
     // 过程中最高 99%，只有完成才 100
     return Math.min(99, p)
@@ -45,13 +46,31 @@ function normalizeName(name) {
   return String(name || '').trim().toLowerCase()
 }
 
+function transferKey(item) {
+  return item.direction && item.taskId ? `${item.direction}:${item.taskId}` : ''
+}
+
+function sameBeacon(left, right) {
+  if (!left.beaconId || !right.beaconId) return left.status === 'queued' || right.status === 'queued'
+  return left.beaconId === right.beaconId ||
+    left.beaconId.startsWith(right.beaconId) ||
+    right.beaconId.startsWith(left.beaconId)
+}
+
+function sameTransferFallback(left, right) {
+  if (left.direction !== right.direction) return false
+  if (!sameBeacon(left, right)) return false
+  if (left.remotePath && right.remotePath && normalizePath(left.remotePath) === normalizePath(right.remotePath)) return true
+  return Boolean(left.fileName && right.fileName && normalizeName(left.fileName) === normalizeName(right.fileName))
+}
+
 function normalizeTransfer(data, fallbackStatus = 'running') {
   const totalChunksRaw = pick(data, [
     'total_chunks', 'total_chunk', 'totalChunks', 'totalChunk', 'TotalChunks', 'TotalChunk', 
     'chunk_count', 'chunkCount', 'ChunkCount', 'chunks_total', 'chunksTotal', 'ChunksTotal'
   ])
   
-  const size = toNumber(pick(data, ['size', 'Size']))
+  const size = toNumber(pick(data, ['size', 'Size', 'queued_bytes', 'queuedBytes', 'QueuedBytes']))
   let totalChunks = toNumber(totalChunksRaw)
   
   // 如果没有总块数，但有文件大小，按 512KB 分块估算
@@ -59,7 +78,7 @@ function normalizeTransfer(data, fallbackStatus = 'running') {
     totalChunks = Math.ceil(size / 524288)
   }
 
-  const rawReceivedChunks = pick(data, ['received_chunks', 'receivedChunks', 'ReceivedChunks', 'acked_chunks', 'queued_chunks'], null)
+  const rawReceivedChunks = pick(data, ['received_chunks', 'receivedChunks', 'ReceivedChunks', 'acked_chunks', 'ackedChunks', 'AckedChunks'], null)
   const chunkIndex = pick(data, ['chunk_index', 'chunkIndex', 'ChunkIndex'], null)
   const receivedChunks = rawReceivedChunks !== null
     ? toNumber(rawReceivedChunks)
@@ -82,7 +101,7 @@ function normalizeTransfer(data, fallbackStatus = 'running') {
     remotePath: String(pick(data, ['remote_path', 'remotePath', 'RemotePath'])),
     totalChunks,
     receivedChunks,
-    receivedBytes: toNumber(pick(data, ['received_bytes', 'receivedBytes', 'ReceivedBytes', 'acked_bytes', 'queued_bytes'])),
+    receivedBytes: toNumber(pick(data, ['received_bytes', 'receivedBytes', 'ReceivedBytes', 'acked_bytes', 'ackedBytes', 'AckedBytes', 'written_bytes', 'writtenBytes', 'WrittenBytes'])),
     size,
     status,
     error: String(pick(data, ['error', 'Error', 'error_message', 'errorMessage', 'message', 'Message'])),
@@ -95,34 +114,21 @@ function normalizeTransfer(data, fallbackStatus = 'running') {
   }
 
   res.progress = calcProgress(res.receivedBytes, res.size, res.receivedChunks, res.totalChunks, res.status)
+  res.transferKey = transferKey(res)
   return res
 }
 
 function sameTransfer(left, right) {
-  // 1. 如果有 taskId 且一致，绝对是同一个
-  if (left.taskId && right.taskId && left.taskId === right.taskId) return true
+  const leftKey = transferKey(left)
+  const rightKey = transferKey(right)
+
+  if (leftKey && rightKey) return leftKey === rightKey
+  if (leftKey || rightKey) return sameTransferFallback(left, right)
   
-  // 2. 如果有 fileId 且一致，通常也是同一个
+  // 本地 queued 记录可能早于 task_id 返回，保留路径/文件名兜底匹配。
   if (left.fileId && right.fileId && left.fileId === right.fileId) return true
   
-  // 3. 基本属性必须一致
-  if (left.direction !== right.direction) return false
-
-  // 4. Beacon 匹配：处理 UUID 与短 ID 的混合场景
-  // 如果其中一个是排队状态，或者其中一方缺失 ID，或者 ID 相等，则视为相关
-  const sameBeacon = left.beaconId && right.beaconId && (
-    left.beaconId === right.beaconId || 
-    left.beaconId.startsWith(right.beaconId) || 
-    right.beaconId.startsWith(left.beaconId)
-  )
-  const compatibleBeacon = sameBeacon || !left.beaconId || !right.beaconId || left.status === 'queued' || right.status === 'queued'
-  if (!compatibleBeacon) return false
-
-  // 5. 路径匹配（归一化）
-  if (left.remotePath && right.remotePath && normalizePath(left.remotePath) === normalizePath(right.remotePath)) return true
-  
-  // 6. 文件名匹配（归一化）
-  return Boolean(left.fileName && right.fileName && normalizeName(left.fileName) === normalizeName(right.fileName))
+  return sameTransferFallback(left, right)
 }
 
 export const useFileTransferStore = defineStore('fileTransfer', {
@@ -191,7 +197,7 @@ export const useFileTransferStore = defineStore('fileTransfer', {
         if (normalizePath(t.remotePath) !== normPath) return false
         
         // 只锁定正在进行的任务
-        return ['queued', 'running'].includes(t.status)
+        return ['queued', 'running', 'receiving', 'uploading'].includes(t.status)
       })
     },
 
@@ -207,6 +213,7 @@ export const useFileTransferStore = defineStore('fileTransfer', {
         this.transfers.splice(index, 1, {
           ...current,
           ...next,
+          transferKey: transferKey(next) || transferKey(current),
           taskId: next.taskId || current.taskId,
           fileId: next.fileId || current.fileId,
           fileName: next.fileName || current.fileName,
@@ -215,9 +222,12 @@ export const useFileTransferStore = defineStore('fileTransfer', {
           size: next.size || current.size,
           totalChunks: next.totalChunks || current.totalChunks,
           receivedChunks: next.receivedChunks !== undefined ? next.receivedChunks : current.receivedChunks,
+          receivedBytes: next.receivedBytes !== undefined ? next.receivedBytes : current.receivedBytes,
           status: mergedStatus,
           progress: calcProgress(
-            next.receivedChunks !== undefined ? next.receivedChunks : current.receivedChunks, 
+            next.receivedBytes !== undefined ? next.receivedBytes : current.receivedBytes,
+            next.size || current.size,
+            next.receivedChunks !== undefined ? next.receivedChunks : current.receivedChunks,
             next.totalChunks || current.totalChunks, 
             mergedStatus
           ),

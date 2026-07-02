@@ -31,6 +31,11 @@ function normalizeTime(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function hasAny(item, keys) {
+  if (!item || typeof item !== 'object') return false
+  return keys.some(key => item[key] !== undefined && item[key] !== null && item[key] !== '')
+}
+
 const TUNNEL_TYPE_LABELS = {
   socks5: 'SOCKS5',
   port_forward: 'Port Forward',
@@ -130,6 +135,48 @@ function sameTunnel(left, right) {
   )
 }
 
+const TUNNEL_FIELD_KEYS = {
+  beaconId: ['beacon_id', 'beaconId', 'BeaconID', 'BeaconId'],
+  mode: ['mode', 'Mode', 'type', 'Type'],
+  bindHost: ['bind_host', 'bindHost', 'BindHost', 'listen_host', 'listenHost'],
+  bindPort: ['bind_port', 'bindPort', 'BindPort', 'listen_port', 'listenPort'],
+  remoteHost: ['remote_host', 'remoteHost', 'RemoteHost', 'target_host', 'targetHost'],
+  remotePort: ['remote_port', 'remotePort', 'RemotePort', 'target_port', 'targetPort'],
+  socksAuthMode: ['socks_auth_mode', 'socksAuthMode', 'SocksAuthMode'],
+  socksUsername: ['socks_username', 'socksUsername', 'SocksUsername'],
+  socksUdpAssociate: ['socks_udp_associate', 'socksUdpAssociate', 'SocksUdpAssociate'],
+  activeChannels: ['active_channels', 'activeChannels', 'ActiveChannels', 'connections', 'Connections', 'conn_count', 'connCount'],
+  bytesIn: ['bytes_in', 'bytesIn', 'BytesIn', 'in_bytes', 'inBytes'],
+  bytesOut: ['bytes_out', 'bytesOut', 'BytesOut', 'out_bytes', 'outBytes'],
+  status: ['status', 'Status', 'state', 'State'],
+  errorMessage: ['error_message', 'errorMessage', 'ErrorMessage'],
+  channelId: ['channel_id', 'channelId', 'ChannelID', 'ChannelId'],
+  queueDepth: ['queue_depth', 'queueDepth', 'QueueDepth'],
+  dropCount: ['drop_count', 'dropCount', 'DropCount'],
+  timeoutCount: ['timeout_count', 'timeoutCount', 'TimeoutCount'],
+  openLatencyMs: ['open_latency_ms', 'openLatencyMs', 'OpenLatencyMs'],
+  createdAt: ['created_at', 'createdAt', 'CreatedAt', 'start_time', 'startTime', 'StartTime'],
+  updatedAt: ['updated_at', 'updatedAt', 'UpdatedAt', 'last_seen', 'lastSeen', 'LastSeen'],
+}
+
+function mergeTunnel(current, next) {
+  const raw = next.raw || {}
+  const merged = { ...current, ...next }
+  for (const [field, keys] of Object.entries(TUNNEL_FIELD_KEYS)) {
+    merged[field] = hasAny(raw, keys) ? next[field] : current[field]
+  }
+
+  merged.tunnelId = next.tunnelId || current.tunnelId
+  merged.channelCount = merged.activeChannels
+  merged.type = merged.mode
+  merged.typeLabel = TUNNEL_TYPE_LABELS[merged.mode] || merged.mode || '-'
+  merged.raw = {
+    ...(current.raw || {}),
+    ...(next.raw || {}),
+  }
+  return merged
+}
+
 export const useTunnelStore = defineStore('tunnel', {
   state: () => ({
     tunnels: [],
@@ -139,6 +186,7 @@ export const useTunnelStore = defineStore('tunnel', {
     channelsLoading: {},
     channelsError: {},
     activeTunnelId: '',
+    tunnelAcks: [],
     lastUpdated: 0,
   }),
 
@@ -228,6 +276,7 @@ export const useTunnelStore = defineStore('tunnel', {
       delete this.channelsByTunnelId[key]
       delete this.channelsLoading[key]
       delete this.channelsError[key]
+      this.tunnelAcks = this.tunnelAcks.filter(item => item.tunnelId !== key)
       this.lastUpdated = Date.now()
     },
 
@@ -267,15 +316,56 @@ export const useTunnelStore = defineStore('tunnel', {
 
       const index = this.tunnels.findIndex(current => sameTunnel(current, next))
       if (index >= 0) {
-        this.tunnels.splice(index, 1, {
-          ...this.tunnels[index],
-          ...next,
-        })
+        this.tunnels.splice(index, 1, mergeTunnel(this.tunnels[index], next))
       } else {
         this.tunnels.unshift(next)
       }
       this.tunnels.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
       this.lastUpdated = Date.now()
+    },
+
+    upsertChannel(item) {
+      const next = normalizeChannel(item)
+      if (!next.tunnelId || !next.channelId) return
+
+      const key = String(next.tunnelId)
+      const list = this.channelsByTunnelId[key] || []
+      const index = list.findIndex(current => current.channelId === next.channelId)
+
+      if (index >= 0) {
+        list.splice(index, 1, {
+          ...list[index],
+          ...next,
+          raw: {
+            ...(list[index].raw || {}),
+            ...(next.raw || {}),
+          },
+        })
+      } else {
+        list.unshift(next)
+      }
+
+      list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      this.channelsByTunnelId[key] = list
+      this.lastUpdated = Date.now()
+    },
+
+    recordTunnelAck(item) {
+      if (!item || typeof item !== 'object') return
+      const tunnelId = String(pick(item, ['tunnel_id', 'tunnelId', 'TunnelID', 'TunnelId'], ''))
+      if (!tunnelId) return
+
+      this.tunnelAcks.unshift({
+        tunnelId,
+        channelId: String(pick(item, ['channel_id', 'channelId', 'ChannelID', 'ChannelId'], '')),
+        action: String(pick(item, ['action', 'Action'], '')),
+        receivedAt: Date.now(),
+        raw: item,
+      })
+
+      if (this.tunnelAcks.length > 40) {
+        this.tunnelAcks.length = 40
+      }
     },
 
     clear() {
@@ -285,6 +375,7 @@ export const useTunnelStore = defineStore('tunnel', {
       this.channelsLoading = {}
       this.channelsError = {}
       this.activeTunnelId = ''
+      this.tunnelAcks = []
       this.lastUpdated = 0
     },
   },

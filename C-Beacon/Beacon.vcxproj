@@ -329,11 +329,11 @@
     <IntDir>$(ProjectDir)x64\$(Configuration)TcpExternal\obj\</IntDir>
     <TargetName>beacon_tcp_windows_amd64</TargetName>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32' and '$(InternalTransport)'==''">
     <OutDir>$(ProjectDir)x86\ReleaseDllTcpExternal\</OutDir>
     <IntDir>$(ProjectDir)x86\ReleaseDllTcpExternal\obj\</IntDir>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|x64'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|x64' and '$(InternalTransport)'==''">
     <OutDir>$(ProjectDir)x64\ReleaseDllTcpExternal\</OutDir>
     <IntDir>$(ProjectDir)x64\ReleaseDllTcpExternal\obj\</IntDir>
   </PropertyGroup>
@@ -533,6 +533,10 @@
     <ClCompile Include="src\core\runtime.c" />
     <ClCompile Include="src\core\sleep.c" />
     <ClCompile Include="src\core\sysinfo.c" />
+    <ClCompile Include="src\inject\inject.c" />
+    <ClCompile Include="src\inject\inject_pe.c" />
+    <ClCompile Include="src\inject\inject_reflective.c" />
+    <ClCompile Include="src\inject\inject_remote.c" />
     <ClCompile Include="src\loader\reflective_loader.c" />
     <ClCompile Include="src\managers\cascade.c" />
     <ClCompile Include="src\managers\cascade_channel.c" />
@@ -541,6 +545,8 @@
     <ClCompile Include="src\managers\cascade_io_smb.c" />
     <ClCompile Include="src\managers\cascade_io_tcp.c" />
     <ClCompile Include="src\managers\jobs.c" />
+    <ClCompile Include="src\managers\migrate.c" />
+    <ClCompile Include="src\managers\migrate_backend.c" />
     <ClCompile Include="src\managers\postex.c" />
     <ClCompile Include="src\managers\postex_backend.c" />
     <ClCompile Include="src\managers\postex_frame.c" />
@@ -568,7 +574,9 @@
     <ClInclude Include="include\beacon_common.h" />
     <ClInclude Include="include\beacon_context.h" />
     <ClInclude Include="include\beacon_crypto.h" />
+    <ClInclude Include="include\beacon_inject.h" />
     <ClInclude Include="include\beacon_jobs.h" />
+    <ClInclude Include="include\beacon_migrate.h" />
     <ClInclude Include="include\beacon_outbox.h" />
     <ClInclude Include="include\beacon_packet.h" />
     <ClInclude Include="include\beacon_postex.h" />
@@ -584,6 +592,7 @@
     <ClInclude Include="include\beacon_tunnel.h" />
     <ClInclude Include="include\beacon_transport.h" />
     <ClInclude Include="include\beacon.h" />
+    <ClInclude Include="src\inject\inject_internal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

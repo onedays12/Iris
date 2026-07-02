@@ -1,5 +1,5 @@
 /**
- * 命令事件处理模块 - 处理 COMMANDEVENT 类型的 WS 事件
+ * 命令事件处理模块 - 处理 COMMAND_EVENT 类型的 WS 事件
  *
  * 根据命令结果类型（进程列表、网络信息、截图、文件传输等）
  * 分发到对应的 store 进行状态更新和 UI 刷新。
@@ -7,20 +7,91 @@
 
 // ─── 导入 ───
 
-import { formatNetInfo, formatNetstatTable, formatProcessTable } from './commandResultFormatters.js'
+import {
+  formatNetInfo,
+  formatNetstatTable,
+  formatProcessTable,
+} from './commandResultFormatters.js'
+import {
+  COMMAND_RESULT_TYPE,
+  isCommandResultComplete,
+  isNetInfoResult,
+  isNetstatResult,
+  isPostExEventResult,
+  isProcessResult,
+  isTransferResult,
+} from './commandResultProtocol.js'
 import {
   getBeaconId,
+  getCommandError,
   getCommandResultPayload,
   getTextResultContent,
   getTransferDirection,
   getTransferError,
   getTransferFileName,
   isZipSuccessResult,
-  normalizeEventType,
+  normalizeResultType,
 } from './eventPayload.js'
 import { saveCompletedDownload } from './downloadSave.js'
+import { COMMAND_ID } from '../../constants/commands.js'
 
 // ─── 事件处理入口 ───
+
+/**
+ * 处理文件传输事件：同时支持独立 FILE_TRANSFER_* 事件和 COMMAND_EVENT 包装事件
+ * @param {Object} params - 事件参数
+ * @param {Object} params.data - 文件传输数据
+ * @param {string} params.phase - 执行阶段
+ * @param {string} params.status - 执行状态
+ * @param {string} params.resultType - 结果类型或传输方向
+ */
+export async function handleFileTransferEvent({ data, phase = '', status = '', resultType = '' }) {
+  const { useNotificationStore } = await import('../../stores/notification.js')
+  const { useFileTransferStore } = await import('../../stores/fileTransfer.js')
+  const notificationStore = useNotificationStore()
+  const fileTransferStore = useFileTransferStore()
+  const transferData = data && typeof data === 'object' ? data : {}
+  const normalizedPhase = String(phase || '').toLowerCase()
+  const normalizedStatus = String(status || transferData.status || transferData.Status || '').toLowerCase()
+  const normalizedResultType = normalizeResultType(resultType || getTransferDirection(transferData))
+  const payloadDirection = getTransferDirection(transferData)
+  const direction = isTransferResult(payloadDirection)
+    ? payloadDirection
+    : (isTransferResult(normalizedResultType) ? normalizedResultType : '')
+  const normalizedTransferData = {
+    ...transferData,
+    direction: transferData.direction || transferData.Direction || direction,
+    status: transferData.status || transferData.Status || normalizedStatus,
+  }
+  const transferStatus = normalizedStatus || (
+    normalizedPhase === 'progress'
+      ? (direction === 'upload' ? 'uploading' : 'receiving')
+      : normalizedPhase === 'result'
+        ? 'completed'
+        : 'running'
+  )
+
+  fileTransferStore.handleTransferEvent(normalizedTransferData, transferStatus)
+
+  if (transferStatus === 'error') {
+    notificationStore.error(getTransferError(normalizedTransferData))
+  } else if (transferStatus === 'completed' || normalizedPhase === 'result') {
+    if (direction === 'download') {
+      try {
+        const saved = await saveCompletedDownload(normalizedTransferData)
+        if (saved) {
+          notificationStore.success(`下载完成并已保存: ${getTransferFileName(normalizedTransferData)}`)
+        } else {
+          notificationStore.info(`下载已完成，已取消本地保存: ${getTransferFileName(normalizedTransferData)}`)
+        }
+      } catch (err) {
+        notificationStore.error(`保存下载文件失败: ${err.message || err}`)
+      }
+    } else {
+      notificationStore.success(`文件传输完成: ${getTransferFileName(normalizedTransferData)}`)
+    }
+  }
+}
 
 /**
  * 处理命令事件：根据结果类型分发到对应处理器
@@ -38,25 +109,31 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
 
   const normalizedPhase = String(phase || '').toLowerCase()
   const normalizedStatus = String(status || '').toLowerCase()
-  const normalizedResultType = normalizeEventType(resultType)
+  const normalizedResultType = normalizeResultType(resultType)
   const numericCommandId = Number(commandId)
   const commandPayload = getCommandResultPayload(data)
   const resultPayload = commandPayload
   const { useConsoleStore } = await import('../../stores/console.js')
   const consoleStore = useConsoleStore()
   const textResult = getTextResultContent(resultPayload)
+  const eventError = getCommandError(data, raw)
+  const isError = normalizedStatus === 'error'
 
-  if (numericCommandId === 22 && textResult) {
+  if (numericCommandId === COMMAND_ID.PWD && textResult) {
     const { useExplorerStore } = await import('../../stores/explorer.js')
     useExplorerStore().handlePwdResponse(String(bid), resultPayload)
   }
 
-  if (normalizedResultType === 'SCREENSHOT') {
+  if (normalizedResultType === COMMAND_RESULT_TYPE.SCREENSHOT) {
     const { useScreenshotStore } = await import('../../stores/screenshot.js')
     const screenshotStore = useScreenshotStore()
 
-    if (normalizedStatus !== 'error' && resultPayload && typeof resultPayload === 'object') {
+    if (!isError && resultPayload && typeof resultPayload === 'object') {
       screenshotStore.upsertScreenshot(resultPayload)
+    }
+
+    if (isError && eventError) {
+      consoleStore.pushCommandResult(bid, eventError)
     }
 
     if (normalizedStatus === 'completed' || normalizedPhase === 'result') {
@@ -64,40 +141,43 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
         console.warn('[SCREENSHOT] 列表刷新失败:', err)
       })
     }
-  } else if (normalizedResultType === 'EXPLORERFILES') {
+  } else if (normalizedResultType === COMMAND_RESULT_TYPE.EXPLORER_FILES) {
     const { useExplorerStore } = await import('../../stores/explorer.js')
     useExplorerStore().handleExplorerResponse(String(bid), resultPayload)
-  } else if (['PSLIST', 'PROCESSLIST', 'PROCESSES', 'PS'].includes(normalizedResultType)) {
+  } else if (isProcessResult(normalizedResultType, numericCommandId)) {
     const { useProcessBrowserStore } = await import('../../stores/processBrowser.js')
-    useProcessBrowserStore().handleProcessResponse(String(bid), resultPayload)
-
-    if (Array.isArray(resultPayload)) {
-      consoleStore.pushCommandResult(bid, formatProcessTable(resultPayload))
+    const processStore = useProcessBrowserStore()
+    if (isError) {
+      const message = eventError || '获取进程数据失败'
+      processStore.handleProcessError(String(bid), message)
+      consoleStore.pushCommandResult(bid, message)
     } else {
-      const text = typeof resultPayload === 'string' ? resultPayload : JSON.stringify(resultPayload)
-      if (text && text !== 'undefined') {
-        consoleStore.pushCommandResult(bid, text)
-      }
+      processStore.handleProcessResponse(String(bid), resultPayload)
+      consoleStore.pushCommandResult(bid, formatProcessTable(resultPayload))
     }
-  } else if (['NETINFO', 'NET_INFO'].includes(normalizedResultType) || numericCommandId === 52) {
-    const interfaces = Array.isArray(resultPayload)
-      ? resultPayload
-      : (resultPayload && typeof resultPayload === 'object'
-        ? (resultPayload.interfaces || resultPayload.Interfaces || [])
-        : [])
+  } else if (isNetInfoResult(normalizedResultType, numericCommandId)) {
     const { useNetworkBrowserStore } = await import('../../stores/networkBrowser.js')
-    useNetworkBrowserStore().handleNetInfoResponse(String(bid), resultPayload)
-    consoleStore.pushCommandResult(bid, formatNetInfo(interfaces))
-  } else if (['NETSTAT'].includes(normalizedResultType) || numericCommandId === 53) {
-    const connections = Array.isArray(resultPayload)
-      ? resultPayload
-      : (resultPayload && typeof resultPayload === 'object'
-        ? (resultPayload.connections || resultPayload.Connections || [])
-        : [])
+    const networkStore = useNetworkBrowserStore()
+    if (isError) {
+      const message = eventError || '获取网络接口失败'
+      networkStore.handleNetInfoError(String(bid), message)
+      consoleStore.pushCommandResult(bid, message)
+    } else {
+      networkStore.handleNetInfoResponse(String(bid), resultPayload)
+      consoleStore.pushCommandResult(bid, formatNetInfo(resultPayload))
+    }
+  } else if (isNetstatResult(normalizedResultType, numericCommandId)) {
     const { useNetworkBrowserStore } = await import('../../stores/networkBrowser.js')
-    useNetworkBrowserStore().handleNetstatResponse(String(bid), resultPayload)
-    consoleStore.pushCommandResult(bid, formatNetstatTable(connections))
-  } else if (normalizedResultType === 'TEXT') {
+    const networkStore = useNetworkBrowserStore()
+    if (isError) {
+      const message = eventError || '获取网络连接失败'
+      networkStore.handleNetstatError(String(bid), message)
+      consoleStore.pushCommandResult(bid, message)
+    } else {
+      networkStore.handleNetstatResponse(String(bid), resultPayload)
+      consoleStore.pushCommandResult(bid, formatNetstatTable(resultPayload))
+    }
+  } else if (normalizedResultType === COMMAND_RESULT_TYPE.TEXT) {
     if (textResult) {
       consoleStore.pushCommandResult(bid, textResult)
     } else {
@@ -106,7 +186,7 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
         consoleStore.pushCommandResult(bid, fallback)
       }
     }
-  } else if (normalizedResultType === 'POSTEXARTIFACT' || resultType === 'postex_artifact') {
+  } else if (normalizedResultType === COMMAND_RESULT_TYPE.POSTEX_ARTIFACT) {
     const jobId = resultPayload?.job_id ?? resultPayload?.JobID ?? '?'
     const desc = resultPayload?.description || resultPayload?.Description || 'postex'
     const artifactId = resultPayload?.artifact_id || resultPayload?.artifactId || resultPayload?.ArtifactID || ''
@@ -121,7 +201,7 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('downloads:refresh'))
     }
-  } else if (normalizedResultType === 'POSTEXFRAME' || resultType === 'postex_frame') {
+  } else if (normalizedResultType === COMMAND_RESULT_TYPE.POSTEX_FRAME) {
     // event_type=4: Post-Ex 帧事件（metadata / progress / artifact）
     // Server 转发字段：job_id, description, frame_type(u32), frame_name, flags, seq, text, payload_base64
     const jobId = resultPayload?.job_id ?? resultPayload?.JobID ?? '?'
@@ -179,9 +259,9 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
       // 未知 frame_name，显示 text 原文
       consoleStore.pushCommandResult(bid, `${label} ${frameName || 'frame'}: ${text || '(empty)'}`)
     }
-  } else if (normalizedResultType === 'POSTEX_EVENT' || numericCommandId === 93) {
+  } else if (isPostExEventResult(normalizedResultType, numericCommandId)) {
     // event_type=2/3: postex_output / postex_dead
-    const isDead = resultType === 'postex_dead'
+    const isDead = normalizedResultType === COMMAND_RESULT_TYPE.POSTEX_DEAD
     const jobId = resultPayload?.job_id ?? resultPayload?.JobID ?? '?'
     const desc = resultPayload?.description || resultPayload?.Description || 'postex'
     if (isDead) {
@@ -192,40 +272,32 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
       const label = `[postex:${jobId}/${desc}]`
       consoleStore.pushCommandResult(bid, text ? `${label} ${text}` : label)
     }
-  } else if (['DOWNLOAD', 'UPLOAD'].includes(normalizedResultType)) {
-    const { useNotificationStore } = await import('../../stores/notification.js')
-    const { useFileTransferStore } = await import('../../stores/fileTransfer.js')
-    const notificationStore = useNotificationStore()
-    const fileTransferStore = useFileTransferStore()
-    const transferData = resultPayload && typeof resultPayload === 'object' ? resultPayload : data
-    const transferStatus = normalizedStatus || (
-      normalizedPhase === 'progress'
-        ? (normalizedResultType === 'UPLOAD' ? 'uploading' : 'receiving')
-        : normalizedPhase === 'result'
-          ? 'completed'
-          : 'running'
-    )
-
-    fileTransferStore.handleTransferEvent(transferData, transferStatus)
-
-    if (transferStatus === 'error') {
-      notificationStore.error(getTransferError(transferData))
-    } else if (transferStatus === 'completed' || normalizedPhase === 'result') {
-      if (getTransferDirection(transferData) === 'download' || normalizedResultType === 'DOWNLOAD') {
-        try {
-          const saved = await saveCompletedDownload(transferData)
-          if (saved) {
-            notificationStore.success(`下载完成并已保存: ${getTransferFileName(transferData)}`)
-          } else {
-            notificationStore.info(`下载已完成，已取消本地保存: ${getTransferFileName(transferData)}`)
-          }
-        } catch (err) {
-          notificationStore.error(`保存下载文件失败: ${err.message || err}`)
-        }
-      } else {
-        notificationStore.success(`文件传输完成: ${getTransferFileName(transferData)}`)
-      }
+  } else if (normalizedResultType === COMMAND_RESULT_TYPE.CASCADE) {
+    const action = String(resultPayload?.action || resultPayload?.Action || '').toLowerCase()
+    const childId = resultPayload?.child_id || resultPayload?.childId || resultPayload?.ChildID || ''
+    if (action === 'dead') {
+      const reason = resultPayload?.reason || resultPayload?.Reason || 'unknown'
+      consoleStore.pushCommandResult(bid, `[cascade:${childId || '?'}] dead: ${reason}`)
+    } else if (action === 'ping') {
+      const text = resultPayload?.data || resultPayload?.Data || ''
+      consoleStore.pushCommandResult(bid, `[cascade:${childId || '?'}] ping: ${text || 'ok'}`)
+    } else {
+      consoleStore.pushCommandResult(bid, `[cascade:${childId || '?'}] ${action || 'event'}`)
     }
+  } else if (isTransferResult(normalizedResultType)) {
+    const transferPayload = resultPayload && typeof resultPayload === 'object' ? resultPayload : {}
+    const transferData = {
+      ...transferPayload,
+      direction: transferPayload.direction || transferPayload.Direction || normalizedResultType,
+      task_id: transferPayload.task_id ?? transferPayload.taskId ?? data?.task_id ?? data?.taskId ?? '',
+      beacon_id: transferPayload.beacon_id || transferPayload.beaconId || bid,
+    }
+    await handleFileTransferEvent({
+      data: transferData,
+      phase: normalizedPhase,
+      status: normalizedStatus,
+      resultType: normalizedResultType,
+    })
   } else {
     const text = getTextResultContent(resultPayload) || (typeof resultPayload === 'string' ? resultPayload : JSON.stringify(resultPayload))
     if (text && text !== 'undefined') {
@@ -233,7 +305,7 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
     }
   }
 
-  if (Number(commandId) === 32 && isZipSuccessResult(textResult)) {
+  if (numericCommandId === COMMAND_ID.ZIP && isZipSuccessResult(textResult)) {
     const { useModalStore } = await import('../../stores/modal.js')
     const modalStore = useModalStore()
     if (modalStore.fileBrowserVisible && String(modalStore.activeFileBrowserBeaconId || '') === String(bid)) {
@@ -245,7 +317,7 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
     }
   }
 
-  if (Number(commandId) === 25 && (normalizedStatus === 'completed' || normalizedPhase === 'result' || normalizedResultType === 'TEXT' || !normalizedStatus)) {
+  if (numericCommandId === COMMAND_ID.RM && isCommandResultComplete({ status: normalizedStatus, phase: normalizedPhase, resultType: normalizedResultType })) {
     const { useExplorerStore } = await import('../../stores/explorer.js')
     const explorerStore = useExplorerStore()
     const currentPath = explorerStore.uiCurrentPath[bid] || ''
@@ -253,7 +325,7 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
     explorerStore.loadDirectory(String(bid), currentPath, true)
   }
 
-  if (Number(commandId) === 42 && (normalizedStatus === 'completed' || normalizedPhase === 'result' || normalizedResultType === 'TEXT' || !normalizedStatus)) {
+  if (numericCommandId === COMMAND_ID.KILL && isCommandResultComplete({ status: normalizedStatus, phase: normalizedPhase, resultType: normalizedResultType })) {
     const { useProcessBrowserStore } = await import('../../stores/processBrowser.js')
     const processStore = useProcessBrowserStore()
     if (processStore.consumeRefreshAfterKill(String(bid))) {

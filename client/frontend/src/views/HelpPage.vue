@@ -205,7 +205,7 @@ async function copyText(text) {
       <div class="diag-grid">
         <div class="diag-item">
           <span class="diag-label">版本</span>
-          <span class="diag-value">v0.0.1</span>
+          <span class="diag-value">v0.1.5</span>
         </div>
         <div class="diag-item">
           <span class="diag-label">平台</span>
@@ -241,7 +241,7 @@ async function copyText(text) {
       </div>
 
       <!-- 关于 -->
-      <div class="about-line">Iris Client v0.0.1 · Wails 3 + Vue 3 · Windows / macOS / Linux</div>
+      <div class="about-line">Iris Client v0.1.5 · Wails 3 + Vue 3 · Windows / macOS / Linux</div>
       <div class="about-line">作者：<button type="button" class="about-link" @click="Browser.OpenURL('https://github.com/onedays12')">oneday</button></div>
 
     </div>

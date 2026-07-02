@@ -11,6 +11,27 @@ import { COMMAND_ID, PLUGIN_COMMAND_ID } from '../../../constants/commands.js'
 
 // ─── 参数类型判断与构造 ───
 
+const ARG_KIND = Object.freeze({
+  STRING: 'string',
+  INT32: 'int32',
+  SHORT: 'short',
+  BOOL: 'bool',
+  BYTES: 'bytes',
+})
+
+const FILE_CHUNK_SIZE_DEFAULT = 524288
+const FILE_CHUNK_SIZE_MIN = 65536
+const FILE_CHUNK_SIZE_MAX = 1048576
+const CHUNKS_PER_HEARTBEAT_DEFAULT = 3
+const CHUNKS_PER_HEARTBEAT_MAX = 5
+
+function normalizeArgKind(kind) {
+  const normalized = String(kind || ARG_KIND.STRING).trim().toLowerCase()
+  if (normalized === 'int16') return ARG_KIND.SHORT
+  if (Object.values(ARG_KIND).includes(normalized)) return normalized
+  throw new Error(`不支持的命令参数类型: ${kind}`)
+}
+
 /**
  * 判断值是否为标准的 Beacon 类型化参数对象
  * @param {*} value - 待检测值
@@ -33,7 +54,7 @@ export function isBeaconArg(value) {
  * @returns {{kind: string, value: *}}
  */
 export function makeBeaconArg(kind, value) {
-  return { kind, value }
+  return { kind: normalizeArgKind(kind), value }
 }
 
 // ─── 数值解析 ───
@@ -99,20 +120,6 @@ export function parseUint32Arg(value, label = '参数') {
 }
 
 /**
- * 可选 int32 参数解析，空值时返回 fallback
- * @param {*} value - 待解析值
- * @param {number} fallback - 默认值
- * @param {string} label - 参数标签
- * @returns {number} 解析结果或默认值
- */
-export function parseOptionalInt32Arg(value, fallback, label) {
-  if (value === undefined || value === null) return fallback
-  const text = String(value).trim()
-  if (!text) return fallback
-  return parseInt32Arg(text, label)
-}
-
-/**
  * 将值解析为布尔值
  * @param {*} value - 待解析值
  * @param {string} label - 参数标签
@@ -128,6 +135,28 @@ export function parseBoolArg(value, label = '参数') {
   throw new Error(`${label} 必须是布尔值`)
 }
 
+function parseInt32RangeArg(value, label, min, max) {
+  const numeric = parseInt32Arg(value, label)
+  if (numeric < min || numeric > max) {
+    throw new Error(`${label} 必须在 ${min}-${max} 之间`)
+  }
+  return numeric
+}
+
+function normalizeFileChunkSize(value) {
+  const numeric = optionalInt32Value(value, FILE_CHUNK_SIZE_DEFAULT, 'chunk_size')
+  if (numeric <= 0) return FILE_CHUNK_SIZE_DEFAULT
+  if (numeric < FILE_CHUNK_SIZE_MIN) return FILE_CHUNK_SIZE_MIN
+  if (numeric > FILE_CHUNK_SIZE_MAX) return FILE_CHUNK_SIZE_MAX
+  return numeric
+}
+
+function normalizeChunksPerHeartbeat(value) {
+  const numeric = optionalInt32Value(value, CHUNKS_PER_HEARTBEAT_DEFAULT, 'chunks_per_heartbeat')
+  if (numeric <= 0) return CHUNKS_PER_HEARTBEAT_DEFAULT
+  return Math.min(numeric, CHUNKS_PER_HEARTBEAT_MAX)
+}
+
 // ─── 参数归一化 ───
 
 /**
@@ -137,31 +166,194 @@ export function parseBoolArg(value, label = '参数') {
  */
 export function normalizeBeaconArg(arg) {
   if (isBeaconArg(arg)) {
-    const kind = String(arg.kind || 'string').trim().toLowerCase()
-    if (kind === 'bool') {
-      return makeBeaconArg('bool', parseBoolArg(arg.value))
+    const kind = normalizeArgKind(arg.kind)
+    if (kind === ARG_KIND.BOOL) {
+      return makeBeaconArg(ARG_KIND.BOOL, parseBoolArg(arg.value))
     }
-    if (kind === 'int32') {
-      return makeBeaconArg('int32', parseInt32Arg(arg.value))
+    if (kind === ARG_KIND.INT32) {
+      return makeBeaconArg(ARG_KIND.INT32, parseInt32Arg(arg.value))
     }
-    if (kind === 'short' || kind === 'int16') {
-      return makeBeaconArg('short', parseInt16Arg(arg.value))
+    if (kind === ARG_KIND.SHORT) {
+      return makeBeaconArg(ARG_KIND.SHORT, parseInt16Arg(arg.value))
     }
-    if (kind === 'bytes') {
-      return makeBeaconArg('bytes', String(arg.value ?? '').trim())
+    if (kind === ARG_KIND.BYTES) {
+      return makeBeaconArg(ARG_KIND.BYTES, String(arg.value ?? '').trim())
     }
-    return makeBeaconArg('string', String(arg.value ?? ''))
+    return makeBeaconArg(ARG_KIND.STRING, String(arg.value ?? ''))
   }
 
   if (typeof arg === 'boolean') {
-    return makeBeaconArg('bool', arg)
+    return makeBeaconArg(ARG_KIND.BOOL, arg)
   }
 
   if (typeof arg === 'number') {
-    return makeBeaconArg('int32', parseInt32Arg(arg))
+    return makeBeaconArg(ARG_KIND.INT32, parseInt32Arg(arg))
   }
 
-  return makeBeaconArg('string', String(arg ?? ''))
+  return makeBeaconArg(ARG_KIND.STRING, String(arg ?? ''))
+}
+
+function assertArgCount(source, min, max, label) {
+  if (source.length < min) {
+    throw new Error(`${label} 至少需要 ${min} 个参数`)
+  }
+  if (max >= 0 && source.length > max) {
+    throw new Error(`${label} 最多接受 ${max} 个参数`)
+  }
+}
+
+function typedValue(arg, expectedKind, label) {
+  if (!isBeaconArg(arg)) return undefined
+  const typed = normalizeBeaconArg(arg)
+  if (typed.kind !== expectedKind) {
+    throw new Error(`${label} 必须是 ${expectedKind}`)
+  }
+  return typed.value
+}
+
+function stringArg(arg, label, { required = true } = {}) {
+  const typed = typedValue(arg, ARG_KIND.STRING, label)
+  const value = typed === undefined ? String(arg ?? '') : String(typed ?? '')
+  if (required && !value.trim()) {
+    throw new Error(`${label} 不能为空`)
+  }
+  return makeBeaconArg(ARG_KIND.STRING, value)
+}
+
+function stringValue(arg, label, options = {}) {
+  return stringArg(arg, label, options).value
+}
+
+function int32Value(arg, label) {
+  const typed = typedValue(arg, ARG_KIND.INT32, label)
+  return typed === undefined ? parseInt32Arg(arg, label) : typed
+}
+
+function optionalInt32Value(arg, fallback, label) {
+  if (arg === undefined || arg === null) return fallback
+  if (!isBeaconArg(arg) && String(arg).trim() === '') return fallback
+  return int32Value(arg, label)
+}
+
+function bytesArg(arg, label) {
+  const typed = typedValue(arg, ARG_KIND.BYTES, label)
+  if (typed === undefined) {
+    throw new Error(`${label} 必须是 bytes`)
+  }
+  if (!String(typed || '').trim()) {
+    throw new Error(`${label} 不能为空`)
+  }
+  return makeBeaconArg(ARG_KIND.BYTES, typed)
+}
+
+function noArgs(source, label) {
+  assertArgCount(source, 0, 0, label)
+  return []
+}
+
+function countedStringArgs(source, label, count) {
+  assertArgCount(source, count, count, label)
+  return source.map((arg, index) => stringArg(arg, `${label} arg[${index}]`))
+}
+
+function optionalSingleStringArg(source, label) {
+  assertArgCount(source, 0, 1, label)
+  return source.length === 0 ? [] : [stringArg(source[0], `${label} path`, { required: false })]
+}
+
+function uint32WireInt32(value, label) {
+  const typed = typedValue(value, ARG_KIND.INT32, label)
+  const unsigned = parseUint32Arg(typed === undefined ? value : typed, label)
+  return new Int32Array(new Uint32Array([unsigned]).buffer)[0]
+}
+
+function binaryFlagValue(value, fallback, label) {
+  const numeric = optionalInt32Value(value, fallback, label)
+  if (![0, 1].includes(numeric)) {
+    throw new Error(`${label} 只能是 0 或 1`)
+  }
+  return numeric
+}
+
+function normalizeMigrateArch(value) {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (text === 'x86') return 'x86'
+  if (['x64', 'amd64', 'x86_64'].includes(text)) return 'x64'
+  throw new Error('migrate arch 必须是 x86 或 x64')
+}
+
+function buildPostExArgs(source) {
+  const subcmd = int32Value(source[0], 'postex subcmd')
+  if (subcmd === 6) {
+    assertArgCount(source, 8, 8, 'postex_inject_dll')
+    const waitMs = parseInt32RangeArg(int32Value(source[1], 'wait_ms'), 'wait_ms', 1, 2147483647)
+    const maxRuntimeMs = parseInt32RangeArg(optionalInt32Value(source[2], 0, 'max_runtime_ms'), 'max_runtime_ms', 0, 2147483647)
+    const idleTimeoutMs = parseInt32RangeArg(optionalInt32Value(source[3], 0, 'idle_timeout_ms'), 'idle_timeout_ms', 0, 2147483647)
+    const pid = parseInt32RangeArg(int32Value(source[6], 'pid'), 'pid', 1, 2147483647)
+    return [
+      makeBeaconArg(ARG_KIND.INT32, 6),
+      makeBeaconArg(ARG_KIND.INT32, waitMs),
+      makeBeaconArg(ARG_KIND.INT32, maxRuntimeMs),
+      makeBeaconArg(ARG_KIND.INT32, idleTimeoutMs),
+      stringArg(source[4] ?? 'postex', 'description'),
+      stringArg(source[5] ?? '', 'module_args', { required: false }),
+      makeBeaconArg(ARG_KIND.INT32, pid),
+      bytesArg(source[7], 'dll_bytes'),
+    ]
+  }
+
+  if (subcmd === 5) {
+    assertArgCount(source, 9, 9, 'postex_spawn_dll')
+    const waitMs = parseInt32RangeArg(int32Value(source[1], 'wait_ms'), 'wait_ms', 1, 2147483647)
+    const maxRuntimeMs = parseInt32RangeArg(optionalInt32Value(source[2], 0, 'max_runtime_ms'), 'max_runtime_ms', 0, 2147483647)
+    const idleTimeoutMs = parseInt32RangeArg(optionalInt32Value(source[3], 0, 'idle_timeout_ms'), 'idle_timeout_ms', 0, 2147483647)
+    return [
+      makeBeaconArg(ARG_KIND.INT32, 5),
+      makeBeaconArg(ARG_KIND.INT32, waitMs),
+      makeBeaconArg(ARG_KIND.INT32, maxRuntimeMs),
+      makeBeaconArg(ARG_KIND.INT32, idleTimeoutMs),
+      stringArg(source[4] ?? 'postex', 'description'),
+      stringArg(source[5] ?? '', 'module_args', { required: false }),
+      stringArg(source[6], 'spawn_path'),
+      stringArg(source[7] ?? '', 'spawn_args', { required: false }),
+      bytesArg(source[8], 'dll_bytes'),
+    ]
+  }
+
+  throw new Error(`未知 postex subcmd: ${subcmd}`)
+}
+
+function buildMigrateArgs(source) {
+  const subcmd = int32Value(source[0], 'migrate subcmd')
+  if (subcmd === 1) {
+    assertArgCount(source, 3, 3, 'spawnto')
+    return [
+      makeBeaconArg(ARG_KIND.INT32, 1),
+      makeBeaconArg(ARG_KIND.STRING, normalizeMigrateArch(stringValue(source[1], 'arch'))),
+      stringArg(source[2], 'spawn_path'),
+    ]
+  }
+  if (subcmd === 2) {
+    assertArgCount(source, 3, 5, 'migrate_spawn')
+    return [
+      makeBeaconArg(ARG_KIND.INT32, 2),
+      stringArg(source[1], 'listener'),
+      makeBeaconArg(ARG_KIND.STRING, normalizeMigrateArch(stringValue(source[2], 'arch'))),
+      stringArg(source[3] ?? '', 'spawn_path', { required: false }),
+      stringArg(source[4] ?? '', 'spawn_args', { required: false }),
+    ]
+  }
+  if (subcmd === 3) {
+    assertArgCount(source, 4, 4, 'migrate_inject')
+    const pid = parseInt32RangeArg(int32Value(source[3], 'pid'), 'pid', 1, 2147483647)
+    return [
+      makeBeaconArg(ARG_KIND.INT32, 3),
+      stringArg(source[1], 'listener'),
+      makeBeaconArg(ARG_KIND.STRING, normalizeMigrateArch(stringValue(source[2], 'arch'))),
+      makeBeaconArg(ARG_KIND.INT32, pid),
+    ]
+  }
+  throw new Error(`未知 migrate subcmd: ${subcmd}`)
 }
 
 // ─── 特殊命令参数构建 ───
@@ -177,15 +369,15 @@ export function buildSetAttrArgs(args = []) {
     throw new Error('setattr 任务参数不完整')
   }
 
-  const targetPath = String(source[0] ?? '').trim()
+  const targetPath = stringValue(source[0], 'targetPath').trim()
   if (!targetPath) {
     throw new Error('targetPath 不能为空')
   }
 
-  const flag = parseInt32Arg(source[1], 'ModifyFlag')
+  const flag = int32Value(source[1], 'ModifyFlag')
   const typedArgs = [
-    makeBeaconArg('string', targetPath),
-    makeBeaconArg('int32', flag),
+    makeBeaconArg(ARG_KIND.STRING, targetPath),
+    makeBeaconArg(ARG_KIND.INT32, flag),
   ]
 
   let index = 2
@@ -199,22 +391,22 @@ export function buildSetAttrArgs(args = []) {
   }
 
   if (flag & 1) {
-    typedArgs.push(makeBeaconArg('string', String(nextValue('new_name') ?? '')))
+    typedArgs.push(stringArg(nextValue('new_name'), 'new_name'))
   }
   if (flag & 2) {
-    typedArgs.push(makeBeaconArg('string', String(nextValue('MTime') ?? '')))
+    typedArgs.push(stringArg(nextValue('MTime'), 'MTime'))
   }
   if (flag & 4) {
-    typedArgs.push(makeBeaconArg('string', String(nextValue('ATime') ?? '')))
+    typedArgs.push(stringArg(nextValue('ATime'), 'ATime'))
   }
   if (flag & 8) {
-    typedArgs.push(makeBeaconArg('string', String(nextValue('CTime') ?? '')))
+    typedArgs.push(stringArg(nextValue('CTime'), 'CTime'))
   }
   if (flag & 16) {
-    typedArgs.push(makeBeaconArg('int32', parseInt32Arg(nextValue('WinAttributes'), 'WinAttributes')))
+    typedArgs.push(makeBeaconArg(ARG_KIND.INT32, int32Value(nextValue('WinAttributes'), 'WinAttributes')))
   }
   if (flag & 32) {
-    typedArgs.push(makeBeaconArg('int32', parseInt32Arg(nextValue('LinuxMode'), 'LinuxMode')))
+    typedArgs.push(makeBeaconArg(ARG_KIND.INT32, int32Value(nextValue('LinuxMode'), 'LinuxMode')))
   }
 
   if (index !== source.length) {
@@ -234,135 +426,131 @@ export function buildBeaconCommandArgs(commandId, args = []) {
   const source = Array.isArray(args) ? args : []
 
   switch (Number(commandId)) {
+    case COMMAND_ID.EXIT:
+      return noArgs(source, 'exit')
+
     case COMMAND_ID.SHELL:
     case COMMAND_ID.POWERSHELL: {
-      if (source.length !== 1) {
-        throw new Error('Shell / PowerShell 命令必须只传 1 个 raw command 字符串')
-      }
-      const rawArg = normalizeBeaconArg(source[0])
-      if (rawArg.kind !== 'string') {
-        throw new Error('Shell / PowerShell 命令参数必须是 string')
-      }
-      if (!String(rawArg.value || '').trim()) {
-        throw new Error('Shell / PowerShell raw command 不能为空')
-      }
-      return [makeBeaconArg('string', String(rawArg.value))]
+      assertArgCount(source, 1, 1, 'Shell / PowerShell')
+      return [stringArg(source[0], 'raw command')]
     }
 
-    default:
-      break
-  }
+    case COMMAND_ID.CD:
+    case COMMAND_ID.CAT:
+    case COMMAND_ID.MKDIR:
+    case COMMAND_ID.RM:
+      return countedStringArgs(source, '文件命令', 1)
 
-  if (source.length === 0) return []
+    case COMMAND_ID.MV:
+    case COMMAND_ID.CP:
+      return countedStringArgs(source, '文件命令', 2)
 
-  if (source.every(isBeaconArg)) {
-    const normalized = source.map(normalizeBeaconArg)
-    if (Number(commandId) === PLUGIN_COMMAND_ID.EXECUTION_BOF && normalized[0]?.kind !== 'bytes') {
-      throw new Error('BOF 命令第一个参数必须是 bytes 工件内容')
-    }
-    return normalized
-  }
+    case COMMAND_ID.LS:
+      return optionalSingleStringArg(source, 'ls')
 
-  switch (Number(commandId)) {
+    case COMMAND_ID.PWD:
+    case COMMAND_ID.PS:
+    case COMMAND_ID.JOBS:
+    case COMMAND_ID.WHOAMI:
+    case COMMAND_ID.NETINFO:
+    case COMMAND_ID.NETSTAT:
+      return noArgs(source, '无参数命令')
+
     case PLUGIN_COMMAND_ID.EXECUTION_BOF:
-      throw new Error('BOF 命令必须使用 typed args：bytes 工件 + BOF 参数规格')
+      assertArgCount(source, 1, -1, 'BOF')
+      return [bytesArg(source[0], 'BOF 工件内容'), ...source.slice(1).map(normalizeBeaconArg)]
 
     case COMMAND_ID.SLEEP:
+      assertArgCount(source, 1, 2, 'sleep')
       return [
-        makeBeaconArg('int32', parseInt32Arg(source[0], 'sleep_ms')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[1], 0, 'jitter')),
+        makeBeaconArg(ARG_KIND.INT32, parseInt32RangeArg(int32Value(source[0], 'sleep_ms'), 'sleep_ms', 1, 2147483647)),
+        makeBeaconArg(ARG_KIND.INT32, parseInt32RangeArg(optionalInt32Value(source[1], 0, 'jitter'), 'jitter', 0, 2147483647)),
       ]
 
     case COMMAND_ID.DOWNLOAD:
+      assertArgCount(source, 1, 3, 'download')
       return [
-        makeBeaconArg('string', String(source[0] ?? '')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[1], 524288, 'chunk_size')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 3, 'chunks_per_heartbeat')),
+        stringArg(source[0], 'remote_path'),
+        makeBeaconArg(ARG_KIND.INT32, normalizeFileChunkSize(source[1])),
+        makeBeaconArg(ARG_KIND.INT32, normalizeChunksPerHeartbeat(source[2])),
       ]
 
     case COMMAND_ID.UPLOAD:
+      assertArgCount(source, 2, 3, 'upload')
       return [
-        makeBeaconArg('string', String(source[0] ?? '')),
-        makeBeaconArg('string', String(source[1] ?? '')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 524288, 'chunk_size')),
+        stringArg(source[0], 'source_file'),
+        stringArg(source[1], 'remote_path'),
+        makeBeaconArg(ARG_KIND.INT32, normalizeFileChunkSize(source[2])),
       ]
 
     case COMMAND_ID.KILLJOB:
+      assertArgCount(source, 1, 1, 'killjob')
       return [
-        makeBeaconArg('int32', new Int32Array(new Uint32Array([parseUint32Arg(source[0], 'job_id')]).buffer)[0]),
+        makeBeaconArg(ARG_KIND.INT32, uint32WireInt32(source[0], 'job_id')),
       ]
 
     case COMMAND_ID.CASCADE_CONNECT_TCP:
+      assertArgCount(source, 3, 3, 'connect')
       return [
-        makeBeaconArg('string', String(source[0] || '')),
-        makeBeaconArg('string', String(source[1] || '')),
-        makeBeaconArg('int32', parseInt32Arg(source[2], 'port')),
+        stringArg(source[0], 'child_hint', { required: false }),
+        stringArg(source[1], 'host'),
+        makeBeaconArg(ARG_KIND.INT32, parseInt32RangeArg(int32Value(source[2], 'port'), 'port', 1, 65535)),
       ]
     case COMMAND_ID.CASCADE_LINK_SMB:
+      assertArgCount(source, 2, 2, 'link')
       return [
-        makeBeaconArg('string', String(source[0] || '')),
-        makeBeaconArg('string', String(source[1] || '')),
+        stringArg(source[0], 'child_hint', { required: false }),
+        stringArg(source[1], 'pipe_path'),
       ]
+    case COMMAND_ID.CASCADE_ROUTE:
+      assertArgCount(source, 2, 2, 'cascade_route')
+      return [
+        stringArg(source[0], 'child_id'),
+        bytesArg(source[1], 'encrypted_task_blob'),
+      ]
+    case COMMAND_ID.CASCADE_CLOSE:
+    case COMMAND_ID.CASCADE_PING:
+      return countedStringArgs(source, 'cascade', 1)
+
     case COMMAND_ID.KILL:
     case COMMAND_ID.STEAL_TOKEN:
+      assertArgCount(source, 1, 1, 'pid 命令')
       return [
-        makeBeaconArg('int32', parseInt32Arg(source[0], 'pid')),
+        makeBeaconArg(ARG_KIND.INT32, parseInt32RangeArg(int32Value(source[0], 'pid'), 'pid', 1, 2147483647)),
       ]
 
     case COMMAND_ID.SCREENSHOT:
+      assertArgCount(source, 0, 2, 'screenshot')
       return [
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[0], 0, 'monitor_id')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[1], 80, 'quality')),
+        makeBeaconArg(ARG_KIND.INT32, parseInt32RangeArg(optionalInt32Value(source[0], 0, 'monitor_id'), 'monitor_id', 0, 2147483647)),
+        makeBeaconArg(ARG_KIND.INT32, parseInt32RangeArg(optionalInt32Value(source[1], 80, 'quality'), 'quality', 1, 100)),
       ]
 
     case COMMAND_ID.SETATTR:
       return buildSetAttrArgs(source)
 
     case COMMAND_ID.ZIP:
+      assertArgCount(source, 2, 4, 'zip')
       return [
-        makeBeaconArg('string', String(source[0] ?? '')),
-        makeBeaconArg('string', String(source[1] ?? '')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 0, 'overwrite')),
-        makeBeaconArg('int32', parseOptionalInt32Arg(source[3], 1, 'include_root')),
+        stringArg(source[0], 'source_path'),
+        stringArg(source[1], 'zip_path'),
+        makeBeaconArg(ARG_KIND.INT32, binaryFlagValue(source[2], 0, 'overwrite')),
+        makeBeaconArg(ARG_KIND.INT32, binaryFlagValue(source[3], 1, 'include_root')),
       ]
 
     case COMMAND_ID.POSTEX:
     case COMMAND_ID.POSTEX_SPAWN_DLL:
     case COMMAND_ID.POSTEX_INJECT_DLL:
-      // Args 已由 ConsolePanel 预构建：[subcmd, wait_ms, max_runtime_ms, idle_timeout_ms, ...]
-      // postex_spawn_dll:  [5, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_args, spawn_path, spawn_args, {kind:'bytes',value:b64}]
-      // postex_inject_dll: [6, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_args, pid, {kind:'bytes',value:b64}]
-      {
-        const subcmd = parseInt(source[0]) || 5
-        if (subcmd === 6) {
-          const injectDllBytes = source[7]
-          return [
-            makeBeaconArg('int32', 6),
-            makeBeaconArg('int32', parseInt(source[1]) || 3000),
-            makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 0, 'max_runtime_ms')),
-            makeBeaconArg('int32', parseOptionalInt32Arg(source[3], 0, 'idle_timeout_ms')),
-            makeBeaconArg('string', String(source[4] || 'postex')),
-            makeBeaconArg('string', String(source[5] || '')),
-            makeBeaconArg('int32', parseInt(source[6]) || 0),
-            ...(injectDllBytes && injectDllBytes.kind === 'bytes' ? [injectDllBytes] : []),
-          ]
-        }
-        // postex_spawn_dll (subcmd=5)
-        const spawnDllBytes = source[8]
-        return [
-          makeBeaconArg('int32', 5),
-          makeBeaconArg('int32', parseInt(source[1]) || 3000),
-          makeBeaconArg('int32', parseOptionalInt32Arg(source[2], 0, 'max_runtime_ms')),
-          makeBeaconArg('int32', parseOptionalInt32Arg(source[3], 0, 'idle_timeout_ms')),
-          makeBeaconArg('string', String(source[4] || 'postex')),
-          makeBeaconArg('string', String(source[5] || '')),
-          makeBeaconArg('string', String(source[6] || '')),
-          makeBeaconArg('string', String(source[7] || '')),
-          ...(spawnDllBytes && spawnDllBytes.kind === 'bytes' ? [spawnDllBytes] : []),
-        ]
-      }
+      return buildPostExArgs(source)
+
+    case COMMAND_ID.MIGRATE:
+    case COMMAND_ID.SPAWNTO:
+    case COMMAND_ID.MIGRATE_SPAWN:
+    case COMMAND_ID.MIGRATE_INJECT:
+      return buildMigrateArgs(source)
 
     default:
+      if (source.length === 0) return []
       return source.map(normalizeBeaconArg)
   }
 }

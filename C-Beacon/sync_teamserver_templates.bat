@@ -48,6 +48,32 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM TCP internal DLL
+"%PATCHER%" "%SCRIPT_DIR%x64\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_amd64.dll" "%SCRIPT_DIR%x64\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_amd64_patched.dll" REFLoader
+if errorlevel 1 (
+    echo [!] Patch TCP internal x64 DLL failed
+    exit /b 1
+)
+
+"%PATCHER%" "%SCRIPT_DIR%x86\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_x86.dll" "%SCRIPT_DIR%x86\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_x86_patched.dll" REFLoader
+if errorlevel 1 (
+    echo [!] Patch TCP internal x86 DLL failed
+    exit /b 1
+)
+
+REM SMB internal DLL
+"%PATCHER%" "%SCRIPT_DIR%x64\ReleaseDllTcpExternalSmbInternal\beacon_smb_internal_amd64.dll" "%SCRIPT_DIR%x64\ReleaseDllTcpExternalSmbInternal\beacon_smb_internal_amd64_patched.dll" REFLoader
+if errorlevel 1 (
+    echo [!] Patch SMB internal x64 DLL failed
+    exit /b 1
+)
+
+"%PATCHER%" "%SCRIPT_DIR%x86\ReleaseDllTcpExternalSmbInternal\beacon_smb_internal_x86.dll" "%SCRIPT_DIR%x86\ReleaseDllTcpExternalSmbInternal\beacon_smb_internal_x86_patched.dll" REFLoader
+if errorlevel 1 (
+    echo [!] Patch SMB internal x86 DLL failed
+    exit /b 1
+)
+
 REM 3. Copy all artifacts to C-Beacon
 echo [*] Copying to %DEST%...
 
@@ -63,11 +89,15 @@ copy /Y "%SCRIPT_DIR%x86\ReleaseDllTcpExternal\beacon_tcp_windows_x86_patched.dl
 copy /Y "%SCRIPT_DIR%x64\ReleaseExeTcpExternal\beacon_tcp_windows_amd64.exe"           "%DEST%\" >nul
 copy /Y "%SCRIPT_DIR%x86\ReleaseExeTcpExternal\beacon_tcp_windows_x86.exe"             "%DEST%\" >nul
 
-REM TCP internal: EXE (x64 + x86)
+REM TCP internal: patched DLL + EXE (x64 + x86)
+copy /Y "%SCRIPT_DIR%x64\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_amd64_patched.dll"  "%DEST%\beacon_tcp_internal_amd64.dll" >nul
+copy /Y "%SCRIPT_DIR%x86\ReleaseDllTcpExternalTcpInternal\beacon_tcp_internal_x86_patched.dll"    "%DEST%\beacon_tcp_internal_x86.dll" >nul
 copy /Y "%SCRIPT_DIR%x64\ReleaseExeTcpInternal\beacon_tcp_internal_amd64.exe"  "%DEST%\" >nul
 copy /Y "%SCRIPT_DIR%x86\ReleaseExeTcpInternal\beacon_tcp_internal_x86.exe"    "%DEST%\" >nul
 
-REM SMB internal: EXE (x64 + x86)
+REM SMB internal: patched DLL + EXE (x64 + x86)
+copy /Y "%SCRIPT_DIR%x64\ReleaseDllTcpExternalSmbInternal\beacon_smb_internal_amd64_patched.dll"  "%DEST%\beacon_smb_internal_amd64.dll" >nul
+copy /Y "%SCRIPT_DIR%x86\ReleaseDllTcpExternalSmbInternal\beacon_smb_internal_x86_patched.dll"    "%DEST%\beacon_smb_internal_x86.dll" >nul
 copy /Y "%SCRIPT_DIR%x64\ReleaseExeSmbInternal\beacon_smb_internal_amd64.exe"  "%DEST%\" >nul
 copy /Y "%SCRIPT_DIR%x86\ReleaseExeSmbInternal\beacon_smb_internal_x86.exe"    "%DEST%\" >nul
 

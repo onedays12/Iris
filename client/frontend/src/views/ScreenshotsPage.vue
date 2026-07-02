@@ -475,13 +475,15 @@ onMounted(refreshScreenshots)
   border-color: rgba(var(--color-primary-rgb), 0.16);
 }
 
-.btn-danger {
+.btn-danger,
+.preview-footer .btn-danger {
   background: rgba(239, 68, 68, 0.08);
   color: #dc2626;
   border-color: rgba(239, 68, 68, 0.18);
 }
 
-.btn-danger:hover:not(:disabled) {
+.btn-danger:hover:not(:disabled),
+.preview-footer .btn-danger:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.14);
   color: #b91c1c;
 }

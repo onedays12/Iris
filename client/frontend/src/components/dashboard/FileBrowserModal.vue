@@ -815,7 +815,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
       <div v-if="activeTransfers.length" class="transfer-panel-compact shadow-lg">
         <div class="transfer-compact-header">
           <span class="title">传输监控</span>
-          <span class="count">{{ activeTransfers.length }} 个任务进行中</span>
+          <span class="count">{{ activeTransfers.length }} 个传输记录</span>
         </div>
         <div class="transfer-compact-list">
           <div

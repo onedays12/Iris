@@ -1,12 +1,14 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build:dev": "vite build --minify false --mode development",
     "build": "vite build --mode production",
+    "check:command-args": "node scripts/check-command-args.mjs",
+    "check:command-results": "node scripts/check-command-results.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

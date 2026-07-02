@@ -8,23 +8,31 @@
 // ─── 导入 ───
 
 import {
+  EVENT_TYPE,
   getBeaconId,
   getCommandPhase,
   getCommandResultType,
   getCommandStatus,
   getTaskCommandId,
-  normalizeEventData,
-  normalizeEventType,
+  normalizeWsEvent,
 } from './eventPayload.js'
 import { handleCommandEvent } from './commandEventHandler.js'
 import { handleTunnelEvent } from './tunnelEventHandler.js'
 
 // ─── 常量 ───
 
+const CURRENT_EVENT_TYPES = new Set(Object.values(EVENT_TYPE))
+
 /**
  * 不记入事件面板的静默事件类型列表
  */
-const QUIET_EVENT_TYPES = ['BEACONTICK', 'TUNNELCHANNELOPEN', 'TUNNELCHANNELCLOSE', 'TUNNELCHANNELRECYCLED', 'TUNNELSTATS']
+const QUIET_EVENT_TYPES = [
+  EVENT_TYPE.BEACON_TICK,
+  EVENT_TYPE.TUNNEL_CHANNEL_OPEN,
+  EVENT_TYPE.TUNNEL_CHANNEL_CLOSE,
+  EVENT_TYPE.TUNNEL_CHANNEL_RECYCLED,
+  EVENT_TYPE.TUNNEL_STATS,
+]
 
 // ─── 事件路由入口 ───
 
@@ -33,10 +41,7 @@ const QUIET_EVENT_TYPES = ['BEACONTICK', 'TUNNELCHANNELOPEN', 'TUNNELCHANNELCLOS
  * @param {string} rawData - WebSocket 接收的原始 JSON 字符串
  */
 export async function handleWsEventMessage(rawData) {
-  const msg = JSON.parse(rawData)
-  const rawType = msg.type || msg.Type || msg.event || msg.Event || msg.event_type || msg.EventType
-  const type = normalizeEventType(rawType)
-  const data = normalizeEventData(msg.data ?? msg.Data ?? msg.payload ?? msg.Payload)
+  const { raw: msg, rawType, type, data } = normalizeWsEvent(rawData)
 
   console.log('[WS EVENT]', {
     type: rawType,
@@ -45,7 +50,12 @@ export async function handleWsEventMessage(rawData) {
     raw: msg,
   })
 
-  if (type !== 'BEACONTICK' && !QUIET_EVENT_TYPES.includes(type)) {
+  if (!CURRENT_EVENT_TYPES.has(type)) {
+    console.warn('[WS EVENT] unsupported event type ignored:', rawType)
+    return
+  }
+
+  if (type !== EVENT_TYPE.BEACON_TICK && !QUIET_EVENT_TYPES.includes(type)) {
     const { useEventPanelStore } = await import('../../stores/eventPanel.js')
     useEventPanelStore().recordEvent({
       rawType,
@@ -62,15 +72,14 @@ export async function handleWsEventMessage(rawData) {
   if (!data) return
 
   switch (type) {
-    case 'BEACONREGISTERED':
-    case 'BEACONONLINE':
+    case EVENT_TYPE.BEACON_REGISTERED:
       {
         const { useAgentStore } = await import('../../stores/agent.js')
         useAgentStore().addAgent(data)
       }
       break
 
-    case 'BEACONTICK':
+    case EVENT_TYPE.BEACON_TICK:
       {
         const { useAgentStore } = await import('../../stores/agent.js')
         const agentStore = useAgentStore()
@@ -83,7 +92,7 @@ export async function handleWsEventMessage(rawData) {
       }
       break
 
-    case 'BEACONREMOVED':
+    case EVENT_TYPE.BEACON_REMOVED:
       {
         const bid = getBeaconId(data)
         const { useAgentStore } = await import('../../stores/agent.js')
@@ -91,7 +100,7 @@ export async function handleWsEventMessage(rawData) {
       }
       break
 
-    case 'COMMANDEVENT':
+    case EVENT_TYPE.COMMAND_EVENT:
       await handleCommandEvent({
         data,
         raw: msg,
@@ -102,30 +111,26 @@ export async function handleWsEventMessage(rawData) {
       })
       break
 
-    case 'LISTENERSTATECHANGE':
-    case 'LISTENERSTATECHANGED':
+    case EVENT_TYPE.LISTENER_STATE_CHANGED:
       {
         const { useListenerStore } = await import('../../stores/listener.js')
-        useListenerStore().fetchListeners()
+        useListenerStore().upsertListener(data)
       }
       break
 
-    case 'TUNNELSTARTED':
-    case 'TUNNELPAUSED':
-    case 'TUNNELRESUMED':
-    case 'TUNNELCLEARED':
-    case 'TUNNELSTOPPED':
-    case 'TUNNELUPDATED':
-    case 'TUNNELCHANNELOPEN':
-    case 'TUNNELCHANNELCLOSE':
-    case 'TUNNELCHANNELRECYCLED':
-    case 'TUNNELSTATS':
-    case 'TUNNELERROR':
+    case EVENT_TYPE.TUNNEL_STARTED:
+    case EVENT_TYPE.TUNNEL_PAUSED:
+    case EVENT_TYPE.TUNNEL_RESUMED:
+    case EVENT_TYPE.TUNNEL_CLEARED:
+    case EVENT_TYPE.TUNNEL_STOPPED:
+    case EVENT_TYPE.TUNNEL_UPDATED:
+    case EVENT_TYPE.TUNNEL_CHANNEL_OPEN:
+    case EVENT_TYPE.TUNNEL_CHANNEL_CLOSE:
+    case EVENT_TYPE.TUNNEL_CHANNEL_RECYCLED:
+    case EVENT_TYPE.TUNNEL_STATS:
+    case EVENT_TYPE.TUNNEL_ACK:
       await handleTunnelEvent({ type, data })
       break
 
-    case 'SYSTEMLOG':
-      console.log('[SYSTEM]', data.content || data)
-      break
   }
 }

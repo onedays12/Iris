@@ -7,14 +7,136 @@
 
 // ─── 事件类型与数据归一化 ───
 
+export const EVENT_TYPE = Object.freeze({
+  USER_ONLINE: 'USER_ONLINE',
+  BEACON_REGISTERED: 'BEACON_REGISTERED',
+  BEACON_TICK: 'BEACON_TICK',
+  BEACON_REMOVED: 'BEACON_REMOVED',
+  COMMAND_EVENT: 'COMMAND_EVENT',
+  LISTENER_STATE_CHANGED: 'LISTENER_STATE_CHANGED',
+  TUNNEL_STARTED: 'TUNNEL_STARTED',
+  TUNNEL_PAUSED: 'TUNNEL_PAUSED',
+  TUNNEL_RESUMED: 'TUNNEL_RESUMED',
+  TUNNEL_STOPPED: 'TUNNEL_STOPPED',
+  TUNNEL_CLEARED: 'TUNNEL_CLEARED',
+  TUNNEL_CHANNEL_OPEN: 'TUNNEL_CHANNEL_OPEN',
+  TUNNEL_CHANNEL_CLOSE: 'TUNNEL_CHANNEL_CLOSE',
+  TUNNEL_CHANNEL_RECYCLED: 'TUNNEL_CHANNEL_RECYCLED',
+  TUNNEL_STATS: 'TUNNEL_STATS',
+  TUNNEL_UPDATED: 'TUNNEL_UPDATED',
+  TUNNEL_ACK: 'TUNNEL_ACK',
+})
+
+const EVENT_TYPE_ALIASES = Object.freeze({
+  USER_ONLINE: EVENT_TYPE.USER_ONLINE,
+  USERONLINE: EVENT_TYPE.USER_ONLINE,
+  BEACON_REGISTERED: EVENT_TYPE.BEACON_REGISTERED,
+  BEACONREGISTERED: EVENT_TYPE.BEACON_REGISTERED,
+  BEACON_ONLINE: EVENT_TYPE.BEACON_REGISTERED,
+  BEACONONLINE: EVENT_TYPE.BEACON_REGISTERED,
+  BEACON_TICK: EVENT_TYPE.BEACON_TICK,
+  BEACONTICK: EVENT_TYPE.BEACON_TICK,
+  BEACON_REMOVED: EVENT_TYPE.BEACON_REMOVED,
+  BEACONREMOVED: EVENT_TYPE.BEACON_REMOVED,
+  COMMAND_EVENT: EVENT_TYPE.COMMAND_EVENT,
+  COMMANDEVENT: EVENT_TYPE.COMMAND_EVENT,
+  LISTENER_STATE_CHANGED: EVENT_TYPE.LISTENER_STATE_CHANGED,
+  LISTENERSTATECHANGED: EVENT_TYPE.LISTENER_STATE_CHANGED,
+  TUNNEL_STARTED: EVENT_TYPE.TUNNEL_STARTED,
+  TUNNELSTARTED: EVENT_TYPE.TUNNEL_STARTED,
+  TUNNEL_PAUSED: EVENT_TYPE.TUNNEL_PAUSED,
+  TUNNELPAUSED: EVENT_TYPE.TUNNEL_PAUSED,
+  TUNNEL_RESUMED: EVENT_TYPE.TUNNEL_RESUMED,
+  TUNNELRESUMED: EVENT_TYPE.TUNNEL_RESUMED,
+  TUNNEL_STOPPED: EVENT_TYPE.TUNNEL_STOPPED,
+  TUNNELSTOPPED: EVENT_TYPE.TUNNEL_STOPPED,
+  TUNNEL_CLEARED: EVENT_TYPE.TUNNEL_CLEARED,
+  TUNNELCLEARED: EVENT_TYPE.TUNNEL_CLEARED,
+  TUNNEL_CHANNEL_OPEN: EVENT_TYPE.TUNNEL_CHANNEL_OPEN,
+  TUNNELCHANNELOPEN: EVENT_TYPE.TUNNEL_CHANNEL_OPEN,
+  TUNNEL_CHANNEL_CLOSE: EVENT_TYPE.TUNNEL_CHANNEL_CLOSE,
+  TUNNELCHANNELCLOSE: EVENT_TYPE.TUNNEL_CHANNEL_CLOSE,
+  TUNNEL_CHANNEL_RECYCLED: EVENT_TYPE.TUNNEL_CHANNEL_RECYCLED,
+  TUNNELCHANNELRECYCLED: EVENT_TYPE.TUNNEL_CHANNEL_RECYCLED,
+  TUNNEL_STATS: EVENT_TYPE.TUNNEL_STATS,
+  TUNNELSTATS: EVENT_TYPE.TUNNEL_STATS,
+  TUNNEL_UPDATED: EVENT_TYPE.TUNNEL_UPDATED,
+  TUNNELUPDATED: EVENT_TYPE.TUNNEL_UPDATED,
+  TUNNEL_ACK: EVENT_TYPE.TUNNEL_ACK,
+  TUNNELACK: EVENT_TYPE.TUNNEL_ACK,
+})
+
+const RESULT_TYPE_ALIASES = Object.freeze({
+  EXPLORERFILES: 'explorer_files',
+  EXPLORER_FILES: 'explorer_files',
+  NETINFO: 'net_info',
+  NET_INFO: 'net_info',
+  PSLIST: 'ps_list',
+  PS_LIST: 'ps_list',
+  POSTEXARTIFACT: 'postex_artifact',
+  POSTEX_ARTIFACT: 'postex_artifact',
+  POSTEXFRAME: 'postex_frame',
+  POSTEX_FRAME: 'postex_frame',
+  POSTEXOUTPUT: 'postex_output',
+  POSTEX_OUTPUT: 'postex_output',
+  POSTEXDEAD: 'postex_dead',
+  POSTEX_DEAD: 'postex_dead',
+  CASCADE: 'cascade',
+})
+
+function normalizeKey(value) {
+  return String(value || '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_')
+    .toUpperCase()
+}
+
 /**
- * 归一化事件类型字符串：去除特殊字符、转大写、去掉 EVENT 前缀
+ * 归一化事件类型字符串：统一为文档中的大写下划线事件名
  * @param {string} type - 原始事件类型
  * @returns {string} 归一化后的事件类型
  */
 export function normalizeEventType(type) {
-  const normalized = String(type || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
-  return normalized.startsWith('EVENT') ? normalized.slice(5) : normalized
+  const key = normalizeKey(type)
+  const withoutEventPrefix = key.startsWith('EVENT_') ? key.slice(6) : key
+  const compact = withoutEventPrefix.replace(/_/g, '')
+  const compactWithoutEventPrefix = compact.startsWith('EVENT') ? compact.slice(5) : compact
+  return EVENT_TYPE_ALIASES[withoutEventPrefix]
+    || EVENT_TYPE_ALIASES[compact]
+    || EVENT_TYPE_ALIASES[compactWithoutEventPrefix]
+    || withoutEventPrefix
+}
+
+/**
+ * 归一化命令结果类型：统一为小写下划线，兼容历史紧凑写法
+ * @param {string} type - 原始结果类型
+ * @returns {string} 归一化后的结果类型
+ */
+export function normalizeResultType(type) {
+  const key = normalizeKey(type)
+  const compact = key.replace(/_/g, '')
+  const normalized = RESULT_TYPE_ALIASES[key] || RESULT_TYPE_ALIASES[compact] || key.toLowerCase()
+  return normalized
+}
+
+/**
+ * 解析 WebSocket 原始消息，并归一化事件 envelope
+ * @param {string|Object} rawData - WebSocket 接收的原始消息
+ * @returns {{raw: Object, rawType: string, type: string, data: *}}
+ */
+export function normalizeWsEvent(rawData) {
+  const raw = typeof rawData === 'string' ? JSON.parse(rawData) : (rawData || {})
+  const rawType = raw.type || raw.Type || raw.event || raw.Event || raw.event_type || raw.EventType || ''
+  const data = normalizeEventData(raw.data ?? raw.Data ?? raw.payload ?? raw.Payload)
+  return {
+    raw,
+    rawType,
+    type: normalizeEventType(rawType),
+    data,
+  }
 }
 
 /**
@@ -137,6 +259,16 @@ export function getCommandPhase(data, raw = null) {
  */
 export function getCommandStatus(data, raw = null) {
   return String(getCommandField(data, raw, ['status', 'Status'])).toLowerCase()
+}
+
+/**
+ * 提取命令错误信息。TeamServer 标准错误字段位于 CommandEvent.error。
+ * @param {Object} data - 事件数据
+ * @param {Object} raw - 原始消息
+ * @returns {string} 错误信息
+ */
+export function getCommandError(data, raw = null) {
+  return String(getCommandField(data, raw, ['error', 'Error'], '') || '').trim()
 }
 
 /**

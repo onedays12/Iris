@@ -72,18 +72,22 @@ function formatTime(ts) {
 
 function formatTypeLabel(type) {
   const labels = {
-    BEACONREGISTERED: 'Beacon 上线',
-    BEACONREMOVED: 'Beacon 下线',
-    COMMANDEVENT: '命令事件',
-    LISTENERSTATECHANGE: '监听器状态',
-    LISTENERSTATECHANGED: '监听器状态',
-    TUNNELSTARTED: 'Tunnel 启动',
-    TUNNELSTOPPED: 'Tunnel 停止',
-    TUNNELCHANNELOPEN: 'Tunnel 连接打开',
-    TUNNELCHANNELCLOSE: 'Tunnel 连接关闭',
-    TUNNELERROR: 'Tunnel 异常',
-    PLUGINNOTIFY: '插件通知',
-    SYSTEMLOG: '系统日志',
+    USER_ONLINE: '用户上线',
+    BEACON_REGISTERED: 'Beacon 上线',
+    BEACON_REMOVED: 'Beacon 下线',
+    COMMAND_EVENT: '命令事件',
+    LISTENER_STATE_CHANGED: '监听器状态',
+    TUNNEL_STARTED: 'Tunnel 启动',
+    TUNNEL_PAUSED: 'Tunnel 暂停',
+    TUNNEL_RESUMED: 'Tunnel 恢复',
+    TUNNEL_UPDATED: 'Tunnel 更新',
+    TUNNEL_CLEARED: 'Tunnel 清除',
+    TUNNEL_STOPPED: 'Tunnel 停止',
+    TUNNEL_CHANNEL_OPEN: 'Tunnel 连接打开',
+    TUNNEL_CHANNEL_CLOSE: 'Tunnel 连接关闭',
+    TUNNEL_CHANNEL_RECYCLED: 'Tunnel 连接回收',
+    TUNNEL_STATS: 'Tunnel 指标',
+    TUNNEL_ACK: 'Tunnel 确认',
   }
   return labels[type] || type
 }

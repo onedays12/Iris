@@ -59,6 +59,12 @@ export const COMMAND_ID = {
   POSTEX_SPAWN_DLL: 90,
   POSTEX_INJECT_DLL: 90,
   POSTEX_EVENT: 93,
+
+  // Migrate (100)
+  MIGRATE: 100,
+  SPAWNTO: 100,
+  MIGRATE_SPAWN: 100,
+  MIGRATE_INJECT: 100,
 };
 
 /**
@@ -79,6 +85,9 @@ export const COMMAND_NAME = Object.fromEntries(
     ...Object.entries(PLUGIN_COMMAND_ID),
   ].map(([key, value]) => [value, key.toLowerCase()])
 );
+
+COMMAND_NAME[String(COMMAND_ID.POSTEX)] = 'postex';
+COMMAND_NAME[String(COMMAND_ID.MIGRATE)] = 'migrate';
 
 /**
  * 字符串指令名到 ID 的查找助手
@@ -115,9 +124,9 @@ export const COMMAND_HELP = {
     notes: '固定只传 1 个原始命令字符串；前端不会按空格拆分。路径建议使用 -LiteralPath 并保留引号。例如: powershell Copy-Item -LiteralPath "C:\\Users\\Administrator\\Desktop\\inject (2).exe" -Destination "C:\\Users\\Administrator\\Desktop\\message111.exe"'
   },
   CD: {
-    usage: 'cd [path]',
-    desc: '切换工作目录或查看当前路径',
-    notes: '支持绝对/相对路径；不带参数时返回当前工作目录'
+    usage: 'cd <path>',
+    desc: '切换工作目录',
+    notes: '支持绝对/相对路径；查看当前路径请使用 pwd'
   },
   LS: {
     usage: 'ls [path]',
@@ -293,6 +302,43 @@ export const COMMAND_HELP = {
     notes: [
       'PostEx job 已接入 jobs 管理器，此命令等同 killjob。',
       '示例：postex_kill 123'
+    ].join('\n')
+  },
+  SPAWNTO: {
+    usage: 'spawnto <x86|x64> <spawn_path>',
+    desc: '设置当前 Beacon 内存中的默认 migrate spawn path',
+    notes: [
+      'x64 常用: C:\\Windows\\System32\\cmd.exe',
+      'x86 常用: C:\\Windows\\SysWOW64\\cmd.exe',
+      '示例: spawnto x64 "C:\\Windows\\System32\\cmd.exe"'
+    ].join('\n')
+  },
+  MIGRATE_SPAWN: {
+    usage: 'migrate_spawn <listener> <x86|x64> [spawn_path] [spawn_args]',
+    desc: '生成 listener 对应的 direct-stage DLL，并在新进程中执行新 Beacon',
+    notes: [
+      'listener 是监听器名称，不是 ID；支持 started 的 external HTTP/HTTPS/TCP、internal TCP、internal SMB listener。',
+      'external listener 会让新 Beacon 直接回连 TeamServer。',
+      'internal TCP listener 会启动 child Beacon，并由父 Beacon 自动 connect；迁移时使用任务专属动态端口，避免误连旧 child。',
+      'internal SMB listener 会启动 child Beacon，并由父 Beacon 自动 link 到对应 pipe。',
+      'spawn_path 为空字符串时，Beacon 使用当前 arch 对应的 spawnto 默认值。',
+      'external 示例: migrate_spawn http-listener x64 "" "/c ping -n 120 127.0.0.1"',
+      'internal TCP 示例: migrate_spawn 4444 x64 "" "/c ping -n 120 127.0.0.1"',
+      'internal SMB 示例: migrate_spawn beacon_internal x64 "" "/c ping -n 120 127.0.0.1"'
+    ].join('\n')
+  },
+  MIGRATE_INJECT: {
+    usage: 'migrate_inject <listener> <x86|x64> <pid>',
+    desc: '生成 listener 对应的 direct-stage DLL，并注入到指定 PID 执行新 Beacon',
+    notes: [
+      'listener 是监听器名称，不是 ID；支持 started 的 external HTTP/HTTPS/TCP、internal TCP、internal SMB listener。',
+      'external listener 会让新 Beacon 直接回连 TeamServer。',
+      'internal TCP listener 会让新 Beacon 作为当前 Beacon 的 child，通过 TCP 级联上线。',
+      'internal SMB listener 会让新 Beacon 作为当前 Beacon 的 child，通过 SMB pipe 级联上线。',
+      'pid 架构必须与 x86/x64 参数匹配；x86 Beacon 不能向 x64 目标生成 x64 stage 注入。',
+      '示例: migrate_inject http-listener x64 1234',
+      '示例: migrate_inject 4444 x64 1234',
+      '示例: migrate_inject beacon_internal x86 4321'
     ].join('\n')
   },
 };

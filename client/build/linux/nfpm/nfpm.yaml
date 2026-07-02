@@ -6,7 +6,7 @@
 name: "client"
 arch: ${GOARCH}
 platform: "linux"
-version: "0.0.1"
+version: "0.1.5"
 section: "default"
 priority: "extra"
 maintainer: "Iris Client Maintainers <noreply@example.com>"
