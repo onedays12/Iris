@@ -8,6 +8,14 @@
 import { ref, computed, watch } from 'vue'
 import { useNotificationStore } from '../../stores/notification.js'
 import { useListenerStore } from '../../stores/listener.js'
+import {
+  parseListenerConfig,
+  splitHostPort,
+  validateHostOnly,
+  parsePort,
+  inferProfile,
+  generateEncryptKey as genKey,
+} from '../../utils/listenerForm.js'
 
 const props = defineProps({
   editData: { type: Object, default: null }
@@ -63,80 +71,8 @@ const isInternal = computed(() => form.value.listener_type === 'internal')
 const isExternalTcp = computed(() => form.value.listener_type === 'external' && form.value.protocol === 'tcp')
 const availableProtocols = computed(() => isInternal.value ? internalProtocols : protocols)
 
-function parseListenerConfig(config) {
-  if (!config) return {}
-  if (typeof config === 'string') {
-    try {
-      return JSON.parse(config)
-    } catch {
-      return {}
-    }
-  }
-  if (typeof config === 'object' && !Array.isArray(config)) {
-    return config
-  }
-  return {}
-}
-
-function splitHostPort(value, fallbackPort) {
-  const text = String(value || '').trim()
-  if (!text) return { host: '', port: fallbackPort }
-
-  const bracket = text.match(/^\[([^\]]+)\]:(\d+)$/)
-  if (bracket) {
-    return { host: bracket[1], port: Number(bracket[2]) || fallbackPort }
-  }
-
-  const lastColon = text.lastIndexOf(':')
-  if (lastColon > 0 && text.indexOf(':') === lastColon) {
-    const maybePort = text.slice(lastColon + 1)
-    if (/^\d+$/.test(maybePort)) {
-      return { host: text.slice(0, lastColon), port: Number(maybePort) || fallbackPort }
-    }
-  }
-
-  return { host: text, port: fallbackPort }
-}
-
-function hostHasPort(value) {
-  const text = String(value || '').trim()
-  if (/^\[[^\]]+\]:\d+$/.test(text)) return true
-  const lastColon = text.lastIndexOf(':')
-  if (lastColon <= 0 || text.indexOf(':') !== lastColon) return false
-  return /^\d+$/.test(text.slice(lastColon + 1))
-}
-
-function validateHostOnly(value, label, { allowUnspecified = true } = {}) {
-  const host = String(value || '').trim()
-  if (!host) {
-    notificationStore.error(`${label}不能为空`)
-    return ''
-  }
-  if (host.includes('://') || hostHasPort(host)) {
-    notificationStore.error(`${label}只能填写 host/IP，不能包含协议或端口`)
-    return ''
-  }
-  if (!allowUnspecified && (host === '0.0.0.0' || host === '::')) {
-    notificationStore.error(`${label}必须是 Beacon 可访问的地址，不能使用 0.0.0.0 或 ::`)
-    return ''
-  }
-  return host
-}
-
-function parsePort(value, label) {
-  const port = parseInt(value, 10)
-  if (isNaN(port) || port < 1 || port > 65535) {
-    notificationStore.error(`${label}必须在 1-65535 之间`)
-    return null
-  }
-  return port
-}
-
-function inferProfile(config) {
-  if (typeof config.profile === 'string' && config.profile.trim()) return config.profile.trim()
-  if (config.stager && typeof config.stager === 'object' && Object.keys(config.stager).length) return 'http-stager'
-  return 'http-default'
-}
+// onError 回调:统一用 notificationStore.error
+const onError = (msg) => notificationStore.error(msg)
 
 // 监听编辑数据并还原表单
 watch(() => props.editData, (newVal) => {
@@ -182,15 +118,7 @@ const showAdvanced = ref(false)
 const loading = ref(false)
 
 function generateEncryptKey() {
-  const bytes = new Uint8Array(16)
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(bytes)
-  } else {
-    for (let i = 0; i < bytes.length; i += 1) {
-      bytes[i] = Math.floor(Math.random() * 256)
-    }
-  }
-  form.value.encrypt_key = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+  form.value.encrypt_key = genKey()
 }
 
 async function handleConfirm() {
@@ -222,9 +150,9 @@ async function handleConfirm() {
 
       let payload
       if (protocol === 'tcp') {
-        const host = validateHostOnly(form.value.host, '绑定地址 (Host)')
+        const host = validateHostOnly(form.value.host, '绑定地址 (Host)', onError)
         if (!host) return
-        const port = parsePort(form.value.port, '监听端口')
+        const port = parsePort(form.value.port, '监听端口', onError)
         if (port === null) return
         payload = {
           name,
@@ -271,13 +199,13 @@ async function handleConfirm() {
 
     // External TCP 模式
     if (isExternalTcp.value) {
-      const host = validateHostOnly(form.value.host, '绑定地址 (Host)')
+      const host = validateHostOnly(form.value.host, '绑定地址 (Host)', onError)
       if (!host) return
-      const port = parsePort(form.value.port, '监听端口')
+      const port = parsePort(form.value.port, '监听端口', onError)
       if (port === null) return
-      const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', { allowUnspecified: false })
+      const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', onError, { allowUnspecified: false })
       if (!callbackHost) return
-      const callbackPort = parsePort(form.value.callback_port, '回连端口')
+      const callbackPort = parsePort(form.value.callback_port, '回连端口', onError)
       if (callbackPort === null) return
 
       const payload = {
@@ -320,25 +248,25 @@ async function handleConfirm() {
       notificationStore.error('请选择 C2 Profile')
       return
     }
-    const host = validateHostOnly(form.value.host, '绑定地址 (Host)')
+    const host = validateHostOnly(form.value.host, '绑定地址 (Host)', onError)
     if (!host) return
-    const port = parsePort(form.value.port, '监听端口')
+    const port = parsePort(form.value.port, '监听端口', onError)
     if (port === null) return
-    const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', { allowUnspecified: false })
+    const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', onError, { allowUnspecified: false })
     if (!callbackHost) return
-    const callbackPort = parsePort(form.value.callback_port, '回连端口')
+    const callbackPort = parsePort(form.value.callback_port, '回连端口', onError)
     if (callbackPort === null) return
 
     let stagerConfig = undefined
     if (profileRequiresStager.value) {
       const stager = form.value.stager || {}
-      const stagerBindHost = validateHostOnly(stager.bind_host, 'Stager 监听地址 (Bind Host)')
+      const stagerBindHost = validateHostOnly(stager.bind_host, 'Stager 监听地址 (Bind Host)', onError)
       if (!stagerBindHost) return
-      const stagerBindPort = parsePort(stager.bind_port, 'Stager 监听端口')
+      const stagerBindPort = parsePort(stager.bind_port, 'Stager 监听端口', onError)
       if (stagerBindPort === null) return
-      const stagerCallbackHost = validateHostOnly(stager.callback_host, 'Stager 下载地址 (Callback Host)', { allowUnspecified: false })
+      const stagerCallbackHost = validateHostOnly(stager.callback_host, 'Stager 下载地址 (Callback Host)', onError, { allowUnspecified: false })
       if (!stagerCallbackHost) return
-      const stagerCallbackPort = parsePort(stager.callback_port, 'Stager 下载端口')
+      const stagerCallbackPort = parsePort(stager.callback_port, 'Stager 下载端口', onError)
       if (stagerCallbackPort === null) return
 
       stagerConfig = {

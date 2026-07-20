@@ -13,48 +13,43 @@ import (
 	"time"
 )
 
-// 传输参数常量
 const (
-	transferMinChunkSize       = 4 * 1024      // 最小分块大小（4KB）
-	transferDefaultChunkSize   = 512 * 1024    // 默认分块大小（512KB）
-	transferMaxChunkSize       = 1024 * 1024   // 最大分块大小（1MB）
-	transferDefaultChunksPerHB = 3             // 每心跳默认传输块数
-	transferMaxChunksPerHB     = 16            // 每心跳最大传输块数
-	transferMaxTotalChunks     = 1048576       // 单文件最大分块数（~1TB@1MB）
-	transferMaxPollPlans       = 16            // 每次心跳最多处理的下载计划数
+	transferMinChunkSize       = 4 * 1024
+	transferDefaultChunkSize   = 512 * 1024
+	transferMaxChunkSize       = 1024 * 1024
+	transferDefaultChunksPerHB = 3
+	transferMaxChunksPerHB     = 16
+	transferMaxTotalChunks     = 1048576
+	transferMaxPollPlans       = 16
 )
 
-// DownloadRequest 描述服务端发起的文件下载请求。
 type DownloadRequest struct {
-	TaskID             string // 传输任务的唯一 ID
-	RemotePath         string // 目标机器上的文件路径
-	ChunkSize          int    // 每块大小（字节）
-	ChunksPerHeartbeat int    // 每心跳传输的块数
+	TaskID             string
+	RemotePath         string
+	ChunkSize          int
+	ChunksPerHeartbeat int
 }
 
-// FileChunk 描述一个文件分块，用于下载和上传。
 type FileChunk struct {
-	TaskID      string // 所属传输任务 ID
-	FileID      string // 文件 SHA-256 校验和
-	ChunkIndex  int    // 当前块索引（从 0 开始）
-	TotalChunks int    // 文件总块数
-	Data        []byte // 块数据
+	TaskID      string
+	FileID      string
+	ChunkIndex  int
+	TotalChunks int
+	Data        []byte
 }
 
-// DownloadState 跟踪一个活跃的文件下载任务的状态。
 type DownloadState struct {
-	OriginalTaskID     uint32    // 原始任务 ID（用于响应包组包）
-	TaskID             string    // 传输任务 ID
-	RemotePath         string    // 源文件路径
-	FileID             string    // 文件 SHA-256
-	ChunkSize          int       // 每块大小
-	NextChunkIndex     int       // 下一块待读索引
-	TotalChunks        int       // 总块数
-	ChunksPerHeartbeat int       // 每心跳传输块数
-	StartedAt          time.Time // 开始时间
+	OriginalTaskID     uint32
+	TaskID             string
+	RemotePath         string
+	FileID             string
+	ChunkSize          int
+	NextChunkIndex     int
+	TotalChunks        int
+	ChunksPerHeartbeat int
+	StartedAt          time.Time
 }
 
-// downloadReadPlan 是一次心跳内要读取的文件块范围。
 type downloadReadPlan struct {
 	OriginalTaskID uint32
 	TaskID         string
@@ -62,74 +57,80 @@ type downloadReadPlan struct {
 	FileID         string
 	ChunkSize      int
 	TotalChunks    int
-	FirstChunk     int // 本次起始块索引
-	ChunkCount     int // 本次读取块数
+	FirstChunk     int
+	ChunkCount     int
 }
 
-// UploadChunk 描述服务端发来的一个上传分块。
 type UploadChunk struct {
-	RemotePath string   // 目标写入路径
-	Chunk      FileChunk // 分块数据
+	RemotePath string
+	Chunk      FileChunk
 }
 
-// UploadAck 是上传分块的确认回包。
 type UploadAck struct {
-	TransferTaskID string // 传输任务 ID
-	FileID         string // 文件 SHA-256
-	ChunkIndex     int    // 已确认的块索引
-	WrittenBytes   int    // 实际写入字节数
-	OK             bool   // 是否成功
-	ErrorMessage   string // 错误信息（失败时）
+	TransferTaskID string
+	FileID         string
+	ChunkIndex     int
+	WrittenBytes   int
+	OK             bool
+	ErrorMessage   string
 }
 
-// UploadState 跟踪一个活跃的文件上传任务的状态。
 type UploadState struct {
-	OriginalTaskID uint32    // 原始任务 ID
-	RemotePath     string    // 目标文件路径
-	FileID         string    // 文件 SHA-256
-	ChunkSize      int       // 每块大小
-	TotalChunks    int       // 总块数
-	ReceivedChunks int       // 已接收块数
-	ReceivedMap    []bool    // 各块是否已接收（用于去重）
-	StartedAt      time.Time // 开始时间
+	OriginalTaskID uint32
+	RemotePath     string
+	FileID         string
+	ChunkSize      int
+	TotalChunks    int
+	ReceivedChunks int
+	ReceivedMap    []bool
+	StartedAt      time.Time
 }
 
-var (
-	uploadStates   = make(map[string]*UploadState)
+type TransferManager struct {
 	uploadMu       sync.Mutex
-	downloadStates = make(map[string]*DownloadState)
+	uploadStates   map[string]*UploadState
 	downloadMu     sync.Mutex
-)
+	downloadStates map[string]*DownloadState
+}
 
-// Download 处理文件下载请求：解析参数 → 创建/获取下载状态 → 构建读取计划 → 读取文件块 → 返回结果包。
-func Download(p *packet.Parser, originalTaskID uint32, acp int) ([][]byte, error) {
+func NewTransferManager() *TransferManager {
+	return &TransferManager{
+		uploadStates:   make(map[string]*UploadState),
+		downloadStates: make(map[string]*DownloadState),
+	}
+}
+
+func (tm *TransferManager) Download(p *packet.Parser, originalTaskID uint32, acp int) ([][]byte, error) {
 	req, err := parseDownloadRequest(p)
 	if err != nil {
 		return downloadErrorPacket(originalTaskID, err.Error()), nil
 	}
 
-	state, err := getOrCreateDownloadState(req, originalTaskID)
+	state, err := tm.getOrCreateDownloadState(req, originalTaskID)
 	if err != nil {
 		return downloadErrorPacket(originalTaskID, err.Error()), nil
 	}
 
-	plan, ok := buildDownloadReadPlan(state.TaskID)
+	plan, ok := tm.buildDownloadReadPlan(state.TaskID)
 	if !ok {
 		return nil, nil
 	}
 
 	results, chunksDone, fatal := readDownloadPlan(plan)
-	commitDownloadReadPlan(plan, chunksDone, fatal)
+	tm.commitDownloadReadPlan(plan, chunksDone, fatal)
 	return results, nil
 }
 
-// GetPendingDownloadPackets 轮询所有活跃的下载任务，读取并返回下一批文件块。
-func GetPendingDownloadPackets() [][]byte {
+func (tm *TransferManager) GetPendingDownloadPackets() [][]byte {
+	if tm == nil {
+		return nil
+	}
+
 	plans := make([]downloadReadPlan, 0, transferMaxPollPlans)
 
-	downloadMu.Lock()
-	ids := make([]string, 0, len(downloadStates))
-	for id := range downloadStates {
+	tm.downloadMu.Lock()
+	ids := make([]string, 0, len(tm.downloadStates))
+	for id := range tm.downloadStates {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
@@ -137,23 +138,22 @@ func GetPendingDownloadPackets() [][]byte {
 		if len(plans) >= transferMaxPollPlans {
 			break
 		}
-		if plan, ok := buildDownloadReadPlanLocked(id); ok {
+		if plan, ok := tm.buildDownloadReadPlanLocked(id); ok {
 			plans = append(plans, plan)
 		}
 	}
-	downloadMu.Unlock()
+	tm.downloadMu.Unlock()
 
 	var all [][]byte
 	for _, plan := range plans {
 		results, chunksDone, fatal := readDownloadPlan(plan)
-		commitDownloadReadPlan(plan, chunksDone, fatal)
+		tm.commitDownloadReadPlan(plan, chunksDone, fatal)
 		all = append(all, results...)
 	}
 	return all
 }
 
-// Upload 处理文件上传分块：解析参数 → 验证 → 写入文件 → 返回确认包。
-func Upload(p *packet.Parser, originalTaskID uint32, acp int) ([]byte, error) {
+func (tm *TransferManager) Upload(p *packet.Parser, originalTaskID uint32, acp int) ([]byte, error) {
 	uploadChunk, err := parseUploadChunk(p)
 	if err != nil {
 		taskID := uploadChunk.Chunk.TaskID
@@ -168,7 +168,7 @@ func Upload(p *packet.Parser, originalTaskID uint32, acp int) ([]byte, error) {
 		return ackPayload, nil
 	}
 
-	written, err := writeUploadChunk(uploadChunk, originalTaskID)
+	written, err := tm.writeUploadChunk(uploadChunk, originalTaskID)
 	ack := UploadAck{
 		TransferTaskID: uploadChunk.Chunk.TaskID,
 		FileID:         uploadChunk.Chunk.FileID,
@@ -182,6 +182,76 @@ func Upload(p *packet.Parser, originalTaskID uint32, acp int) ([]byte, error) {
 
 	ackPayload, _ := packUploadAck(ack)
 	return ackPayload, nil
+}
+
+func (tm *TransferManager) TransferJobRows() []jobs.Row {
+	if tm == nil {
+		return nil
+	}
+
+	now := time.Now()
+	rows := make([]jobs.Row, 0)
+
+	tm.downloadMu.Lock()
+	for _, state := range tm.downloadStates {
+		rows = append(rows, jobs.Row{
+			ID:        state.OriginalTaskID,
+			Type:      "download",
+			State:     "running",
+			Age:       int64(now.Sub(state.StartedAt).Seconds()),
+			CommandID: CommandDownload,
+			Name:      "download",
+			Ref:       state.TaskID,
+			Detail:    state.RemotePath,
+		})
+	}
+	tm.downloadMu.Unlock()
+
+	tm.uploadMu.Lock()
+	for taskID, state := range tm.uploadStates {
+		rows = append(rows, jobs.Row{
+			ID:        state.OriginalTaskID,
+			Type:      "upload",
+			State:     "running",
+			Age:       int64(now.Sub(state.StartedAt).Seconds()),
+			CommandID: CommandUpload,
+			Name:      "upload",
+			Ref:       taskID,
+			Detail:    state.RemotePath,
+		})
+	}
+	tm.uploadMu.Unlock()
+
+	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
+	return rows
+}
+
+func (tm *TransferManager) CancelTransferJob(jobID uint32) (string, bool) {
+	if tm == nil {
+		return "", false
+	}
+
+	tm.downloadMu.Lock()
+	for taskID, state := range tm.downloadStates {
+		if state.OriginalTaskID == jobID {
+			delete(tm.downloadStates, taskID)
+			tm.downloadMu.Unlock()
+			return "download job canceled", true
+		}
+	}
+	tm.downloadMu.Unlock()
+
+	tm.uploadMu.Lock()
+	for taskID, state := range tm.uploadStates {
+		if state.OriginalTaskID == jobID {
+			delete(tm.uploadStates, taskID)
+			tm.uploadMu.Unlock()
+			return "upload job canceled", true
+		}
+	}
+	tm.uploadMu.Unlock()
+
+	return "", false
 }
 
 func parseDownloadRequest(p *packet.Parser) (DownloadRequest, error) {
@@ -206,10 +276,10 @@ func parseDownloadRequest(p *packet.Parser) (DownloadRequest, error) {
 	return req, nil
 }
 
-func getOrCreateDownloadState(req DownloadRequest, originalTaskID uint32) (*DownloadState, error) {
-	downloadMu.Lock()
-	state := downloadStates[req.TaskID]
-	downloadMu.Unlock()
+func (tm *TransferManager) getOrCreateDownloadState(req DownloadRequest, originalTaskID uint32) (*DownloadState, error) {
+	tm.downloadMu.Lock()
+	state := tm.downloadStates[req.TaskID]
+	tm.downloadMu.Unlock()
 	if state != nil {
 		return state, nil
 	}
@@ -226,9 +296,9 @@ func getOrCreateDownloadState(req DownloadRequest, originalTaskID uint32) (*Down
 		return nil, errors.New("download has too many chunks")
 	}
 
-	downloadMu.Lock()
-	defer downloadMu.Unlock()
-	if state = downloadStates[req.TaskID]; state != nil {
+	tm.downloadMu.Lock()
+	defer tm.downloadMu.Unlock()
+	if state = tm.downloadStates[req.TaskID]; state != nil {
 		return state, nil
 	}
 
@@ -242,23 +312,23 @@ func getOrCreateDownloadState(req DownloadRequest, originalTaskID uint32) (*Down
 		ChunksPerHeartbeat: req.ChunksPerHeartbeat,
 		StartedAt:          time.Now(),
 	}
-	downloadStates[req.TaskID] = state
+	tm.downloadStates[req.TaskID] = state
 	return state, nil
 }
 
-func buildDownloadReadPlan(taskID string) (downloadReadPlan, bool) {
-	downloadMu.Lock()
-	defer downloadMu.Unlock()
-	return buildDownloadReadPlanLocked(taskID)
+func (tm *TransferManager) buildDownloadReadPlan(taskID string) (downloadReadPlan, bool) {
+	tm.downloadMu.Lock()
+	defer tm.downloadMu.Unlock()
+	return tm.buildDownloadReadPlanLocked(taskID)
 }
 
-func buildDownloadReadPlanLocked(taskID string) (downloadReadPlan, bool) {
-	state := downloadStates[taskID]
+func (tm *TransferManager) buildDownloadReadPlanLocked(taskID string) (downloadReadPlan, bool) {
+	state := tm.downloadStates[taskID]
 	if state == nil {
 		return downloadReadPlan{}, false
 	}
 	if state.NextChunkIndex >= state.TotalChunks {
-		delete(downloadStates, taskID)
+		delete(tm.downloadStates, taskID)
 		return downloadReadPlan{}, false
 	}
 
@@ -318,16 +388,16 @@ func readDownloadPlan(plan downloadReadPlan) ([][]byte, int, bool) {
 	return results, chunksDone, false
 }
 
-func commitDownloadReadPlan(plan downloadReadPlan, chunksDone int, fatal bool) {
-	downloadMu.Lock()
-	defer downloadMu.Unlock()
+func (tm *TransferManager) commitDownloadReadPlan(plan downloadReadPlan, chunksDone int, fatal bool) {
+	tm.downloadMu.Lock()
+	defer tm.downloadMu.Unlock()
 
-	state := downloadStates[plan.TaskID]
+	state := tm.downloadStates[plan.TaskID]
 	if state == nil {
 		return
 	}
 	if fatal {
-		delete(downloadStates, plan.TaskID)
+		delete(tm.downloadStates, plan.TaskID)
 		return
 	}
 	if chunksDone <= 0 || state.NextChunkIndex != plan.FirstChunk {
@@ -335,7 +405,7 @@ func commitDownloadReadPlan(plan downloadReadPlan, chunksDone int, fatal bool) {
 	}
 	state.NextChunkIndex += chunksDone
 	if state.NextChunkIndex >= state.TotalChunks {
-		delete(downloadStates, plan.TaskID)
+		delete(tm.downloadStates, plan.TaskID)
 	}
 }
 
@@ -395,8 +465,8 @@ func parseUploadChunk(p *packet.Parser) (UploadChunk, error) {
 	return chunk, nil
 }
 
-func writeUploadChunk(chunk UploadChunk, originalTaskID uint32) (int, error) {
-	state, chunkSize, alreadyReceived, err := prepareUploadChunk(chunk, originalTaskID)
+func (tm *TransferManager) writeUploadChunk(chunk UploadChunk, originalTaskID uint32) (int, error) {
+	state, chunkSize, alreadyReceived, err := tm.prepareUploadChunk(chunk, originalTaskID)
 	if err != nil {
 		return 0, err
 	}
@@ -419,15 +489,15 @@ func writeUploadChunk(chunk UploadChunk, originalTaskID uint32) (int, error) {
 		return n, errors.New("write upload chunk failed")
 	}
 
-	commitUploadChunk(chunk.Chunk.TaskID, chunk.Chunk.ChunkIndex, state)
+	tm.commitUploadChunk(chunk.Chunk.TaskID, chunk.Chunk.ChunkIndex, state)
 	return n, nil
 }
 
-func prepareUploadChunk(chunk UploadChunk, originalTaskID uint32) (*UploadState, int, bool, error) {
-	uploadMu.Lock()
-	defer uploadMu.Unlock()
+func (tm *TransferManager) prepareUploadChunk(chunk UploadChunk, originalTaskID uint32) (*UploadState, int, bool, error) {
+	tm.uploadMu.Lock()
+	defer tm.uploadMu.Unlock()
 
-	state := uploadStates[chunk.Chunk.TaskID]
+	state := tm.uploadStates[chunk.Chunk.TaskID]
 	if state == nil {
 		if chunk.Chunk.ChunkIndex != 0 {
 			return nil, 0, false, errors.New("missing initial chunk to determine chunk size")
@@ -444,7 +514,7 @@ func prepareUploadChunk(chunk UploadChunk, originalTaskID uint32) (*UploadState,
 			OriginalTaskID: originalTaskID,
 			StartedAt:      time.Now(),
 		}
-		uploadStates[chunk.Chunk.TaskID] = state
+		tm.uploadStates[chunk.Chunk.TaskID] = state
 	}
 
 	if state.FileID != chunk.Chunk.FileID || state.TotalChunks != chunk.Chunk.TotalChunks {
@@ -463,11 +533,11 @@ func prepareUploadChunk(chunk UploadChunk, originalTaskID uint32) (*UploadState,
 	return state, state.ChunkSize, state.ReceivedMap[chunk.Chunk.ChunkIndex], nil
 }
 
-func commitUploadChunk(taskID string, chunkIndex int, expected *UploadState) {
-	uploadMu.Lock()
-	defer uploadMu.Unlock()
+func (tm *TransferManager) commitUploadChunk(taskID string, chunkIndex int, expected *UploadState) {
+	tm.uploadMu.Lock()
+	defer tm.uploadMu.Unlock()
 
-	state := uploadStates[taskID]
+	state := tm.uploadStates[taskID]
 	if state == nil || state != expected || state.ReceivedMap[chunkIndex] {
 		return
 	}
@@ -475,7 +545,7 @@ func commitUploadChunk(taskID string, chunkIndex int, expected *UploadState) {
 	state.ReceivedMap[chunkIndex] = true
 	state.ReceivedChunks++
 	if state.ReceivedChunks >= state.TotalChunks {
-		delete(uploadStates, taskID)
+		delete(tm.uploadStates, taskID)
 	}
 }
 
@@ -530,68 +600,4 @@ func clampChunksPerHeartbeat(value int) int {
 		return transferMaxChunksPerHB
 	}
 	return value
-}
-
-// TransferJobRows 返回所有活跃传输任务的 Job 行信息（用于 jobs 命令展示）。
-func TransferJobRows() []jobs.Row {
-	now := time.Now()
-	rows := make([]jobs.Row, 0)
-
-	downloadMu.Lock()
-	for _, state := range downloadStates {
-		rows = append(rows, jobs.Row{
-			ID:        state.OriginalTaskID,
-			Type:      "download",
-			State:     "running",
-			Age:       int64(now.Sub(state.StartedAt).Seconds()),
-			CommandID: CommandDownload,
-			Name:      "download",
-			Ref:       state.TaskID,
-			Detail:    state.RemotePath,
-		})
-	}
-	downloadMu.Unlock()
-
-	uploadMu.Lock()
-	for taskID, state := range uploadStates {
-		rows = append(rows, jobs.Row{
-			ID:        state.OriginalTaskID,
-			Type:      "upload",
-			State:     "running",
-			Age:       int64(now.Sub(state.StartedAt).Seconds()),
-			CommandID: CommandUpload,
-			Name:      "upload",
-			Ref:       taskID,
-			Detail:    state.RemotePath,
-		})
-	}
-	uploadMu.Unlock()
-
-	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
-	return rows
-}
-
-// CancelTransferJob 根据 Job ID 取消一个活跃的传输任务（下载或上传）。
-func CancelTransferJob(jobID uint32) (string, bool) {
-	downloadMu.Lock()
-	for taskID, state := range downloadStates {
-		if state.OriginalTaskID == jobID {
-			delete(downloadStates, taskID)
-			downloadMu.Unlock()
-			return "download job canceled", true
-		}
-	}
-	downloadMu.Unlock()
-
-	uploadMu.Lock()
-	for taskID, state := range uploadStates {
-		if state.OriginalTaskID == jobID {
-			delete(uploadStates, taskID)
-			uploadMu.Unlock()
-			return "upload job canceled", true
-		}
-	}
-	uploadMu.Unlock()
-
-	return "", false
 }

@@ -1,6 +1,52 @@
 #include "beacon_cascade.h"
 
+#include "beacon_cascade_internal.h"
 #include "beacon_context.h"
+
+/* 命名管道读写缓冲区大小 */
+#define CASCADE_PIPE_BUFFER_SIZE 65536u
+
+/* ===== CascadeIoOps PIPE 后端实现 ===== */
+
+/* 关闭命名管道：取消未完成 I/O 并关闭句柄。*/
+static VOID PipeIoClose(CascadeIo* io)
+{
+    if (!io || io->pipe == INVALID_HANDLE_VALUE) return;
+    if (io->read_pending) {
+        CancelIo(io->pipe);
+        io->read_pending = FALSE;
+    }
+    CloseHandle(io->pipe);
+    io->pipe = INVALID_HANDLE_VALUE;
+}
+
+/* 返回 PIPE 的读完成事件句柄。*/
+static HANDLE PipeIoGetEvent(CascadeIo* io)
+{
+    if (!io) return NULL;
+    return io->read_event;
+}
+
+/* 阻塞读取 len 字节（overlapped 感知）。*/
+static BOOL PipeIoReadRaw(CascadeIo* io, BYTE8* buf, SIZE_T len)
+{
+    if (!io || io->pipe == INVALID_HANDLE_VALUE) return FALSE;
+    return CascadePipeReadAll(io, buf, len);
+}
+
+/* 阻塞写入 len 字节（overlapped 感知）。*/
+static BOOL PipeIoWriteRaw(CascadeIo* io, const BYTE8* buf, SIZE_T len)
+{
+    if (!io || io->pipe == INVALID_HANDLE_VALUE) return FALSE;
+    return CascadePipeWriteAll(io, buf, len);
+}
+
+const CascadeIoOps g_cascade_io_pipe_ops = {
+    PipeIoClose,
+    PipeIoGetEvent,
+    PipeIoReadRaw,
+    PipeIoWriteRaw,
+};
 
 /* ===== Pipe 连接与监听 ===== */
 
@@ -64,8 +110,8 @@ BOOL CascadeIoAcceptPipe(const CHAR* pipe_name, CascadeIo* out)
                          PIPE_ACCESS_DUPLEX,
                          PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
                          1,
-                         65536,
-                         65536,
+                         CASCADE_PIPE_BUFFER_SIZE,
+                         CASCADE_PIPE_BUFFER_SIZE,
                          0,
                          NULL);
     HeapFree(GetProcessHeap(), 0, wide);
@@ -128,13 +174,13 @@ static BOOL CascadePipeCreateAndListen(const CHAR* pipe_name, CascadePipeListene
                          PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
                          PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
                          1,
-                         65536,
-                         65536,
+                         CASCADE_PIPE_BUFFER_SIZE,
+                         CASCADE_PIPE_BUFFER_SIZE,
                          0,
                          NULL);
     HeapFree(GetProcessHeap(), 0, wide);
     if (h == INVALID_HANDLE_VALUE) {
-        DebugPrintf("[!] CreateNamedPipeW failed: %lu\n", (unsigned long)GetLastError());
+        DebugPrintf("[!] CreateNamedPipeW failed: %lu\n", (ULONG)GetLastError());
         return FALSE;
     }
     DebugPrintf("[*] CreateNamedPipeW success: handle=%p\n", h);
@@ -161,7 +207,7 @@ static BOOL CascadePipeCreateAndListen(const CHAR* pipe_name, CascadePipeListene
 
     {
         DWORD err = GetLastError();
-        DebugPrintf("[*] ConnectNamedPipe: error=%lu\n", (unsigned long)err);
+        DebugPrintf("[*] ConnectNamedPipe: error=%lu\n", (ULONG)err);
         if (err == ERROR_IO_PENDING) {
             out->pending_connect = TRUE;
             return TRUE;
@@ -173,7 +219,7 @@ static BOOL CascadePipeCreateAndListen(const CHAR* pipe_name, CascadePipeListene
         }
     }
 
-    DebugPrintf("[!] ConnectNamedPipe failed: %lu\n", (unsigned long)GetLastError());
+    DebugPrintf("[!] ConnectNamedPipe failed: %lu\n", (ULONG)GetLastError());
     CloseHandle(h);
     out->pipe = INVALID_HANDLE_VALUE;
     return FALSE;

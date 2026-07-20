@@ -8,7 +8,7 @@ import (
 )
 
 func TestDownloadEmptyFileEmitsOneEmptyChunk(t *testing.T) {
-	resetTransferState()
+	manager := newTransferManagerForTest()
 
 	path := tempFile(t, nil)
 	payload, err := packet.PackArray([]any{"dl-empty", path, int32(0), int32(1)})
@@ -16,7 +16,7 @@ func TestDownloadEmptyFileEmitsOneEmptyChunk(t *testing.T) {
 		t.Fatalf("pack download request: %v", err)
 	}
 
-	results, err := Download(packet.CreateParser(payload), 77, 65001)
+	results, err := manager.Download(packet.CreateParser(payload), 77, 65001)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
@@ -32,17 +32,17 @@ func TestDownloadEmptyFileEmitsOneEmptyChunk(t *testing.T) {
 	if chunk.TaskID != "dl-empty" || chunk.ChunkIndex != 0 || chunk.TotalChunks != 1 || len(chunk.Data) != 0 {
 		t.Fatalf("unexpected chunk: %+v", chunk)
 	}
-	if len(downloadStates) != 0 {
+	if len(manager.downloadStates) != 0 {
 		t.Fatalf("download state should be removed after empty file completion")
 	}
 }
 
 func TestUploadRejectsOutOfOrderFirstChunkWithoutStateLeak(t *testing.T) {
-	resetTransferState()
+	manager := newTransferManagerForTest()
 
 	path := tempFile(t, nil)
 	payload := packUploadPayload(t, path, "up1", "file1", 1, 2, []byte("late"))
-	ackBytes, err := Upload(packet.CreateParser(payload), 88, 65001)
+	ackBytes, err := manager.Upload(packet.CreateParser(payload), 88, 65001)
 	if err != nil {
 		t.Fatalf("Upload failed: %v", err)
 	}
@@ -51,24 +51,24 @@ func TestUploadRejectsOutOfOrderFirstChunkWithoutStateLeak(t *testing.T) {
 	if ack.OK || !strings.Contains(ack.ErrorMessage, "missing initial chunk") {
 		t.Fatalf("unexpected ack: %+v", ack)
 	}
-	if len(uploadStates) != 0 {
+	if len(manager.uploadStates) != 0 {
 		t.Fatalf("upload state leaked after invalid first chunk")
 	}
 }
 
 func TestUploadDuplicateChunkDoesNotAdvanceReceivedCount(t *testing.T) {
-	resetTransferState()
+	manager := newTransferManagerForTest()
 
 	path := tempFile(t, nil)
 	payload := packUploadPayload(t, path, "up2", "file2", 0, 2, []byte("abc"))
-	if _, err := Upload(packet.CreateParser(payload), 89, 65001); err != nil {
+	if _, err := manager.Upload(packet.CreateParser(payload), 89, 65001); err != nil {
 		t.Fatalf("first Upload failed: %v", err)
 	}
-	if uploadStates["up2"].ReceivedChunks != 1 {
-		t.Fatalf("expected one received chunk, got %d", uploadStates["up2"].ReceivedChunks)
+	if manager.uploadStates["up2"].ReceivedChunks != 1 {
+		t.Fatalf("expected one received chunk, got %d", manager.uploadStates["up2"].ReceivedChunks)
 	}
 
-	ackBytes, err := Upload(packet.CreateParser(payload), 89, 65001)
+	ackBytes, err := manager.Upload(packet.CreateParser(payload), 89, 65001)
 	if err != nil {
 		t.Fatalf("duplicate Upload failed: %v", err)
 	}
@@ -76,18 +76,13 @@ func TestUploadDuplicateChunkDoesNotAdvanceReceivedCount(t *testing.T) {
 	if !ack.OK || ack.WrittenBytes != 3 {
 		t.Fatalf("unexpected duplicate ack: %+v", ack)
 	}
-	if uploadStates["up2"].ReceivedChunks != 1 {
+	if manager.uploadStates["up2"].ReceivedChunks != 1 {
 		t.Fatalf("duplicate chunk advanced received count")
 	}
 }
 
-func resetTransferState() {
-	downloadMu.Lock()
-	downloadStates = make(map[string]*DownloadState)
-	downloadMu.Unlock()
-	uploadMu.Lock()
-	uploadStates = make(map[string]*UploadState)
-	uploadMu.Unlock()
+func newTransferManagerForTest() *TransferManager {
+	return NewTransferManager()
 }
 
 func tempFile(t *testing.T, data []byte) string {

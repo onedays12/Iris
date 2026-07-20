@@ -1,47 +1,27 @@
 #include "beacon_cascade.h"
 
+#include "beacon_cascade_internal.h"
 #include "beacon_context.h"
 
 
 #define CASCADE_FRAME_MAGIC   0x43415331u /* CAS1 */
 #define CASCADE_FRAME_VERSION 1u
 
+/* WSAEWOULDBLOCK 重试上限与重试间隔（TCP 非阻塞读写） */
+#define CASCADE_WOULDBLOCK_MAX_RETRIES    500
+#define CASCADE_WOULDBLOCK_RETRY_SLEEP_MS 10
 
-/* 从大端字节序读取 16 位整数 */
-static UINT16 ReadBe16(const BYTE8* p)
-{
-    return (UINT16)(((UINT16)p[0] << 8) | (UINT16)p[1]);
-}
+/* 管道无数据时的轮询间隔 */
+#define CASCADE_PIPE_POLL_SLEEP_MS 20
 
-/* 从大端字节序读取 32 位整数 */
-static UINT32 ReadBe32(const BYTE8* p)
-{
-    return ((UINT32)p[0] << 24) |
-           ((UINT32)p[1] << 16) |
-           ((UINT32)p[2] << 8)  |
-           (UINT32)p[3];
-}
+/* 单次 I/O 分块上限，避免大块传输长时间占用 */
+#define CASCADE_IO_CHUNK_SIZE 0x100000
 
-/* 将 16 位整数写入大端字节序 */
-static VOID WriteBe16(BYTE8* p, UINT16 v)
-{
-    p[0] = (BYTE8)((v >> 8) & 0xff);
-    p[1] = (BYTE8)(v & 0xff);
-}
 
-/* 将 32 位整数写入大端字节序 */
-static VOID WriteBe32(BYTE8* p, UINT32 v)
-{
-    p[0] = (BYTE8)((v >> 24) & 0xff);
-    p[1] = (BYTE8)((v >> 16) & 0xff);
-    p[2] = (BYTE8)((v >> 8) & 0xff);
-    p[3] = (BYTE8)(v & 0xff);
-}
-
-/* ===== 底层 I/O 辅助函数 ===== */
+/* ===== 底层 I/O 辅助函数（供 ops 实现复用） ===== */
 
 /* 接收指定字节数，处理 WSAEWOULDBLOCK 并自动重试 */
-static BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
+BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
 {
     SIZE_T off = 0;
     INT retries = 0;
@@ -54,8 +34,8 @@ static BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
         } else if (n == 0) {
             return FALSE;
         } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
-            if (++retries > 500) return FALSE;
-            Sleep(10);
+            if (++retries > CASCADE_WOULDBLOCK_MAX_RETRIES) return FALSE;
+            Sleep(CASCADE_WOULDBLOCK_RETRY_SLEEP_MS);
         } else {
             return FALSE;
         }
@@ -64,7 +44,7 @@ static BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
 }
 
 /* 发送指定字节数，处理 WSAEWOULDBLOCK 并自动重试 */
-static BOOL CascadeSendAll(SOCKET s, const BYTE8* buf, SIZE_T len)
+BOOL CascadeSendAll(SOCKET s, const BYTE8* buf, SIZE_T len)
 {
     SIZE_T off = 0;
     INT retries = 0;
@@ -75,8 +55,8 @@ static BOOL CascadeSendAll(SOCKET s, const BYTE8* buf, SIZE_T len)
             off += (SIZE_T)n;
             retries = 0;
         } else if (n == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-            if (++retries > 500) return FALSE;
-            Sleep(10);
+            if (++retries > CASCADE_WOULDBLOCK_MAX_RETRIES) return FALSE;
+            Sleep(CASCADE_WOULDBLOCK_RETRY_SLEEP_MS);
         } else {
             return FALSE;
         }
@@ -84,8 +64,8 @@ static BOOL CascadeSendAll(SOCKET s, const BYTE8* buf, SIZE_T len)
     return TRUE;
 }
 /*
- * 使用 ReadFile 从管道/文件句柄读取指定字节数。
- * 通过 PeekNamedPipe 检查可用数据，无数据时休眠等待。
+ * 使用 ReadFile 从管道/文件句柄读取指定字节数（无 overlapped，仅阻塞模式用）。
+ * 当前 ops 实现走 CascadePipeReadAll（overlapped 感知），此函数保留作历史参考。
  */
 static BOOL CascadeReadFileAll(HANDLE h, BYTE8* buf, SIZE_T len)
 {
@@ -100,13 +80,13 @@ static BOOL CascadeReadFileAll(HANDLE h, BYTE8* buf, SIZE_T len)
             return FALSE;
         }
         if (avail == 0) {
-            Sleep(20);
+            Sleep(CASCADE_PIPE_POLL_SLEEP_MS);
             continue;
         }
 
         chunk = (DWORD)(len - off);
         if (chunk > avail) chunk = avail;
-        if (chunk > 0x100000) chunk = 0x100000;
+        if (chunk > CASCADE_IO_CHUNK_SIZE) chunk = CASCADE_IO_CHUNK_SIZE;
         if (!ReadFile(h, buf + off, chunk, &read, NULL) || read == 0) {
             return FALSE;
         }
@@ -121,7 +101,7 @@ static BOOL CascadeWriteFileAll(HANDLE h, const BYTE8* buf, SIZE_T len)
 
     while (off < len) {
         DWORD written = 0;
-        DWORD chunk = (DWORD)((len - off) > 0x100000 ? 0x100000 : (len - off));
+        DWORD chunk = (DWORD)((len - off) > CASCADE_IO_CHUNK_SIZE ? CASCADE_IO_CHUNK_SIZE : (len - off));
         if (!WriteFile(h, buf + off, chunk, &written, NULL) || written == 0) {
             return FALSE;
         }
@@ -134,7 +114,7 @@ static BOOL CascadeWriteFileAll(HANDLE h, const BYTE8* buf, SIZE_T len)
  * 同步读管道（overlapped 感知）。
  * 若 CascadeIo 已关联事件对象，则使用 overlapped I/O 等待完成。
  */
-static BOOL CascadePipeReadAll(CascadeIo* io, BYTE8* buf, SIZE_T len)
+BOOL CascadePipeReadAll(CascadeIo* io, BYTE8* buf, SIZE_T len)
 {
     SIZE_T off = 0;
     HANDLE ev;
@@ -144,7 +124,7 @@ static BOOL CascadePipeReadAll(CascadeIo* io, BYTE8* buf, SIZE_T len)
 
     while (off < len) {
         DWORD read_bytes = 0;
-        DWORD chunk = (DWORD)((len - off) > 0x100000 ? 0x100000 : (len - off));
+        DWORD chunk = (DWORD)((len - off) > CASCADE_IO_CHUNK_SIZE ? CASCADE_IO_CHUNK_SIZE : (len - off));
 
         if (ev) {
             ZeroMemory(&io->read_olap, sizeof(io->read_olap));
@@ -170,7 +150,7 @@ static BOOL CascadePipeReadAll(CascadeIo* io, BYTE8* buf, SIZE_T len)
  * 同步写管道（overlapped 感知）。
  * 若 CascadeIo 已关联事件对象，则使用 overlapped I/O 等待完成。
  */
-static BOOL CascadePipeWriteAll(CascadeIo* io, const BYTE8* buf, SIZE_T len)
+BOOL CascadePipeWriteAll(CascadeIo* io, const BYTE8* buf, SIZE_T len)
 {
     SIZE_T off = 0;
     HANDLE ev;
@@ -180,7 +160,7 @@ static BOOL CascadePipeWriteAll(CascadeIo* io, const BYTE8* buf, SIZE_T len)
 
     while (off < len) {
         DWORD written = 0;
-        DWORD chunk = (DWORD)((len - off) > 0x100000 ? 0x100000 : (len - off));
+        DWORD chunk = (DWORD)((len - off) > CASCADE_IO_CHUNK_SIZE ? CASCADE_IO_CHUNK_SIZE : (len - off));
 
         if (ev) {
             ZeroMemory(&io->write_olap, sizeof(io->write_olap));
@@ -201,6 +181,8 @@ static BOOL CascadePipeWriteAll(CascadeIo* io, const BYTE8* buf, SIZE_T len)
     }
     return TRUE;
 }
+
+/* 初始化增量 cascade frame 读取器。 */
 VOID CascadeFrameReaderInit(CascadeFrameReader* reader)
 {
     if (!reader) return;
@@ -241,10 +223,10 @@ INT CascadeFrameReaderFeed(CascadeFrameReader* reader, const BYTE8* data, SIZE_T
             if (reader->hdr_off < 16) break;
 
             {
-                UINT32 length = ReadBe32(reader->hdr_buf);
-                UINT32 magic = ReadBe32(reader->hdr_buf + 4);
-                UINT16 version = ReadBe16(reader->hdr_buf + 8);
-                UINT32 body_len = ReadBe32(reader->hdr_buf + 12);
+                UINT32 length = BeReadU32(reader->hdr_buf);
+                UINT32 magic = BeReadU32(reader->hdr_buf + 4);
+                UINT16 version = BeReadU16(reader->hdr_buf + 8);
+                UINT32 body_len = BeReadU32(reader->hdr_buf + 12);
 
                 if (magic != CASCADE_FRAME_MAGIC || version != CASCADE_FRAME_VERSION ||
                     length < 12 || length > CASCADE_MAX_FRAME_SIZE ||
@@ -255,7 +237,7 @@ INT CascadeFrameReaderFeed(CascadeFrameReader* reader, const BYTE8* data, SIZE_T
                 reader->body_len = body_len;
 
                 if (body_len == 0) {
-                    *cmd = ReadBe16(reader->hdr_buf + 10);
+                    *cmd = BeReadU16(reader->hdr_buf + 10);
                     BbInit(body);
                     reader->hdr_off = 0;
                     reader->state = 0;
@@ -281,7 +263,7 @@ INT CascadeFrameReaderFeed(CascadeFrameReader* reader, const BYTE8* data, SIZE_T
 
             if (reader->body_off >= reader->body_len) {
                 reader->body.len = reader->body_len;
-                *cmd = ReadBe16(reader->hdr_buf + 10);
+                *cmd = BeReadU16(reader->hdr_buf + 10);
                 *body = reader->body;
                 BbInit(&reader->body);
                 reader->hdr_off = 0;
@@ -300,6 +282,7 @@ INT CascadeFrameReaderFeed(CascadeFrameReader* reader, const BYTE8* data, SIZE_T
  */
 BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
 {
+    const CascadeIoOps* ops;
     BYTE8 hdr[4];
     BYTE8 fixed[12];
     UINT32 length;
@@ -310,29 +293,22 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
     if (!io || !cmd || !body) return FALSE;
     BbInit(body);
 
-    if (io->kind == CASCADE_IO_TCP) {
-        if (!CascadeRecvAll(io->sock, hdr, sizeof(hdr))) return FALSE;
-    } else if (io->kind == CASCADE_IO_PIPE) {
-        if (!CascadePipeReadAll(io, hdr, sizeof(hdr))) return FALSE;
-    } else {
-        return FALSE;
-    }
+    ops = CascadeIoOpsForKind(io->kind);
+    if (!ops || !ops->ReadRaw) return FALSE;
 
-    length = ReadBe32(hdr);
+    if (!ops->ReadRaw(io, hdr, sizeof(hdr))) return FALSE;
+
+    length = BeReadU32(hdr);
     if (length < sizeof(fixed) || length > CASCADE_MAX_FRAME_SIZE) {
         return FALSE;
     }
 
-    if (io->kind == CASCADE_IO_TCP) {
-        if (!CascadeRecvAll(io->sock, fixed, sizeof(fixed))) return FALSE;
-    } else {
-        if (!CascadePipeReadAll(io, fixed, sizeof(fixed))) return FALSE;
-    }
+    if (!ops->ReadRaw(io, fixed, sizeof(fixed))) return FALSE;
 
-    magic = ReadBe32(fixed);
-    version = ReadBe16(fixed + 4);
-    *cmd = ReadBe16(fixed + 6);
-    body_len = ReadBe32(fixed + 8);
+    magic = BeReadU32(fixed);
+    version = BeReadU16(fixed + 4);
+    *cmd = BeReadU16(fixed + 6);
+    body_len = BeReadU32(fixed + 8);
 
     if (magic != CASCADE_FRAME_MAGIC || version != CASCADE_FRAME_VERSION ||
         body_len != length - sizeof(fixed)) {
@@ -343,16 +319,9 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
         if (!BbReserve(body, body_len)) {
             return FALSE;
         }
-        if (io->kind == CASCADE_IO_TCP) {
-            if (!CascadeRecvAll(io->sock, body->data, body_len)) {
-                BbFree(body);
-                return FALSE;
-            }
-        } else {
-            if (!CascadePipeReadAll(io, body->data, body_len)) {
-                BbFree(body);
-                return FALSE;
-            }
+        if (!ops->ReadRaw(io, body->data, body_len)) {
+            BbFree(body);
+            return FALSE;
         }
         body->len = body_len;
     }
@@ -366,6 +335,7 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
  */
 BOOL CascadeIoWriteFrame(CascadeIo* io, UINT16 cmd, const ByteBuf* body)
 {
+    const CascadeIoOps* ops;
     ByteBuf frame;
     BYTE8 outer[4];
     BYTE8 fixed[12];
@@ -373,29 +343,28 @@ BOOL CascadeIoWriteFrame(CascadeIo* io, UINT16 cmd, const ByteBuf* body)
     BOOL ok = FALSE;
 
     if (!io) return FALSE;
+    ops = CascadeIoOpsForKind(io->kind);
+    if (!ops || !ops->WriteRaw) return FALSE;
+
     body_len = (UINT32)(body ? body->len : 0);
     if (body_len > CASCADE_MAX_FRAME_SIZE - sizeof(fixed)) return FALSE;
 
     BbInit(&frame);
-    WriteBe32(outer, sizeof(fixed) + body_len);
-    WriteBe32(fixed, CASCADE_FRAME_MAGIC);
-    WriteBe16(fixed + 4, CASCADE_FRAME_VERSION);
-    WriteBe16(fixed + 6, cmd);
-    WriteBe32(fixed + 8, body_len);
+    BeWriteU32(outer, sizeof(fixed) + body_len);
+    BeWriteU32(fixed, CASCADE_FRAME_MAGIC);
+    BeWriteU16(fixed + 4, CASCADE_FRAME_VERSION);
+    BeWriteU16(fixed + 6, cmd);
+    BeWriteU32(fixed + 8, body_len);
 
     if (!BbAppend(&frame, outer, sizeof(outer)) ||
         !BbAppend(&frame, fixed, sizeof(fixed)) ||
-        (body_len && !BbAppend(&frame, body->data, body_len))) {
+        (body_len && !BbAppend(&frame, body->data, body->len))) {
         BbFree(&frame);
         return FALSE;
     }
 
     EnterCriticalSection(&io->write_lock);
-    if (io->kind == CASCADE_IO_TCP) {
-        ok = CascadeSendAll(io->sock, frame.data, frame.len);
-    } else if (io->kind == CASCADE_IO_PIPE) {
-        ok = CascadePipeWriteAll(io, frame.data, frame.len);
-    }
+    ok = ops->WriteRaw(io, frame.data, frame.len);
     LeaveCriticalSection(&io->write_lock);
 
     BbFree(&frame);

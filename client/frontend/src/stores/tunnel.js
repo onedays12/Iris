@@ -7,6 +7,8 @@
 import { defineStore } from 'pinia'
 import * as tunnelApi from '../features/tunnel/api/tunnelApi.js'
 import { pick, toNumber } from '../utils/object.js'
+import { pickTunnel as adaptTunnel, pickChannel as adaptChannel } from '../shared/protocol/adapter.js'
+import { TUNNEL_FIELDS } from '../shared/protocol/fieldMap.js'
 
 function toCount(value) {
   const number = toNumber(value)
@@ -66,56 +68,56 @@ function normalizePagePayload(payload) {
 }
 
 function normalizeTunnel(item) {
-  const tunnelId = String(pick(item, ['tunnel_id', 'tunnelId', 'TunnelID', 'TunnelId', 'id', 'ID']))
-  const mode = String(pick(item, ['mode', 'Mode', 'type', 'Type'], 'unknown')).toLowerCase()
-  const activeChannels = toCount(pick(item, ['active_channels', 'activeChannels', 'ActiveChannels', 'connections', 'Connections', 'conn_count', 'connCount'], 0))
+  const c = adaptTunnel(item)
   const metricsSource = pick(item, ['metrics', 'Metrics', 'stats', 'Stats'], item)
+  const mode = String(c.mode || 'unknown').toLowerCase()
+  const activeChannels = toCount(c.activeChannels)
   return {
-    tunnelId,
-    beaconId: String(pick(item, ['beacon_id', 'beaconId', 'BeaconID', 'BeaconId'])),
+    tunnelId: String(c.tunnelId),
+    beaconId: String(c.beaconId),
     mode,
     type: mode,
     typeLabel: TUNNEL_TYPE_LABELS[mode] || mode || '-',
-    bindHost: String(pick(item, ['bind_host', 'bindHost', 'BindHost', 'listen_host', 'listenHost'], '127.0.0.1')),
-    bindPort: toNumber(pick(item, ['bind_port', 'bindPort', 'BindPort', 'listen_port', 'listenPort'], 0)),
-    remoteHost: String(pick(item, ['remote_host', 'remoteHost', 'RemoteHost', 'target_host', 'targetHost'], '')),
-    remotePort: toNumber(pick(item, ['remote_port', 'remotePort', 'RemotePort', 'target_port', 'targetPort'], 0)),
-    socksAuthMode: String(pick(item, ['socks_auth_mode', 'socksAuthMode', 'SocksAuthMode'], 'no_auth')).toLowerCase(),
-    socksUsername: String(pick(item, ['socks_username', 'socksUsername', 'SocksUsername'], '')),
-    socksUdpAssociate: toBool(pick(item, ['socks_udp_associate', 'socksUdpAssociate', 'SocksUdpAssociate'], false)),
+    bindHost: String(c.bindHost || '127.0.0.1'),
+    bindPort: toNumber(c.bindPort),
+    remoteHost: String(c.remoteHost),
+    remotePort: toNumber(c.remotePort),
+    socksAuthMode: String(c.socksAuthMode || 'no_auth').toLowerCase(),
+    socksUsername: String(c.socksUsername),
+    socksUdpAssociate: toBool(c.socksUdpAssociate),
     activeChannels,
     channelCount: activeChannels,
-    bytesIn: toNumber(pick(item, ['bytes_in', 'bytesIn', 'BytesIn', 'in_bytes', 'inBytes'], 0)),
-    bytesOut: toNumber(pick(item, ['bytes_out', 'bytesOut', 'BytesOut', 'out_bytes', 'outBytes'], 0)),
-    status: String(pick(item, ['status', 'Status', 'state', 'State'], 'unknown')).toLowerCase(),
-    errorMessage: String(pick(item, ['error_message', 'errorMessage', 'ErrorMessage'], '')),
+    bytesIn: toNumber(c.bytesIn),
+    bytesOut: toNumber(c.bytesOut),
+    status: String(c.status || 'unknown').toLowerCase(),
+    errorMessage: String(c.errorMessage),
     channelId: String(pick(metricsSource, ['channel_id', 'channelId', 'ChannelID', 'ChannelId'], '')),
     queueDepth: toCount(pick(metricsSource, ['queue_depth', 'queueDepth', 'QueueDepth'], 0)),
     dropCount: toCount(pick(metricsSource, ['drop_count', 'dropCount', 'DropCount'], 0)),
     timeoutCount: toCount(pick(metricsSource, ['timeout_count', 'timeoutCount', 'TimeoutCount'], 0)),
     openLatencyMs: toCount(pick(metricsSource, ['open_latency_ms', 'openLatencyMs', 'OpenLatencyMs'], 0)),
-    createdAt: normalizeTime(pick(item, ['created_at', 'createdAt', 'CreatedAt', 'start_time', 'startTime', 'StartTime'], 0)),
-    updatedAt: normalizeTime(pick(item, ['updated_at', 'updatedAt', 'UpdatedAt', 'last_seen', 'lastSeen', 'LastSeen'], 0)),
+    createdAt: normalizeTime(c.createdAt),
+    updatedAt: normalizeTime(c.updatedAt),
     raw: item,
   }
 }
 
 function normalizeChannel(item) {
-  const targetAddress = String(pick(item, ['target_address', 'targetAddress', 'TargetAddress', 'target', 'Target'], ''))
+  const c = adaptChannel(item)
   return {
-    channelId: String(pick(item, ['channel_id', 'channelId', 'ChannelID', 'ChannelId', 'id', 'ID'])),
-    tunnelId: String(pick(item, ['tunnel_id', 'tunnelId', 'TunnelID', 'TunnelId'])),
-    targetAddress,
-    remoteHost: String(pick(item, ['remote_host', 'remoteHost', 'RemoteHost', 'dst_addr', 'dstAddr', 'target_host', 'targetHost'], '')),
-    remotePort: toNumber(pick(item, ['remote_port', 'remotePort', 'RemotePort', 'dst_port', 'dstPort', 'target_port', 'targetPort'], 0)),
-    localHost: String(pick(item, ['local_host', 'localHost', 'LocalHost', 'src_addr', 'srcAddr', 'client_addr', 'clientAddr'], '')),
-    localPort: toNumber(pick(item, ['local_port', 'localPort', 'LocalPort', 'src_port', 'srcPort', 'client_port', 'clientPort'], 0)),
-    status: String(pick(item, ['status', 'Status', 'state', 'State'], 'unknown')).toLowerCase(),
-    bytesIn: toNumber(pick(item, ['bytes_in', 'bytesIn', 'BytesIn', 'in_bytes', 'inBytes'])),
-    bytesOut: toNumber(pick(item, ['bytes_out', 'bytesOut', 'BytesOut', 'out_bytes', 'outBytes'])),
-    reason: String(pick(item, ['reason', 'Reason'], '')),
-    createdAt: normalizeTime(pick(item, ['created_at', 'createdAt', 'CreatedAt', 'time', 'Time'], 0)),
-    updatedAt: normalizeTime(pick(item, ['updated_at', 'updatedAt', 'UpdatedAt', 'last_seen', 'lastSeen', 'LastSeen'], 0)),
+    channelId: String(c.channelId),
+    tunnelId: String(c.tunnelId),
+    targetAddress: String(c.targetAddress),
+    remoteHost: String(c.remoteHost),
+    remotePort: toNumber(c.remotePort),
+    localHost: String(c.localHost),
+    localPort: toNumber(c.localPort),
+    status: String(c.status || 'unknown').toLowerCase(),
+    bytesIn: toNumber(c.bytesIn),
+    bytesOut: toNumber(c.bytesOut),
+    reason: String(c.reason),
+    createdAt: normalizeTime(c.createdAt),
+    updatedAt: normalizeTime(c.updatedAt),
     raw: item,
   }
 }
@@ -135,38 +137,15 @@ function sameTunnel(left, right) {
   )
 }
 
-const TUNNEL_FIELD_KEYS = {
-  beaconId: ['beacon_id', 'beaconId', 'BeaconID', 'BeaconId'],
-  mode: ['mode', 'Mode', 'type', 'Type'],
-  bindHost: ['bind_host', 'bindHost', 'BindHost', 'listen_host', 'listenHost'],
-  bindPort: ['bind_port', 'bindPort', 'BindPort', 'listen_port', 'listenPort'],
-  remoteHost: ['remote_host', 'remoteHost', 'RemoteHost', 'target_host', 'targetHost'],
-  remotePort: ['remote_port', 'remotePort', 'RemotePort', 'target_port', 'targetPort'],
-  socksAuthMode: ['socks_auth_mode', 'socksAuthMode', 'SocksAuthMode'],
-  socksUsername: ['socks_username', 'socksUsername', 'SocksUsername'],
-  socksUdpAssociate: ['socks_udp_associate', 'socksUdpAssociate', 'SocksUdpAssociate'],
-  activeChannels: ['active_channels', 'activeChannels', 'ActiveChannels', 'connections', 'Connections', 'conn_count', 'connCount'],
-  bytesIn: ['bytes_in', 'bytesIn', 'BytesIn', 'in_bytes', 'inBytes'],
-  bytesOut: ['bytes_out', 'bytesOut', 'BytesOut', 'out_bytes', 'outBytes'],
-  status: ['status', 'Status', 'state', 'State'],
-  errorMessage: ['error_message', 'errorMessage', 'ErrorMessage'],
-  channelId: ['channel_id', 'channelId', 'ChannelID', 'ChannelId'],
-  queueDepth: ['queue_depth', 'queueDepth', 'QueueDepth'],
-  dropCount: ['drop_count', 'dropCount', 'DropCount'],
-  timeoutCount: ['timeout_count', 'timeoutCount', 'TimeoutCount'],
-  openLatencyMs: ['open_latency_ms', 'openLatencyMs', 'OpenLatencyMs'],
-  createdAt: ['created_at', 'createdAt', 'CreatedAt', 'start_time', 'startTime', 'StartTime'],
-  updatedAt: ['updated_at', 'updatedAt', 'UpdatedAt', 'last_seen', 'lastSeen', 'LastSeen'],
-}
-
 function mergeTunnel(current, next) {
   const raw = next.raw || {}
   const merged = { ...current, ...next }
-  for (const [field, keys] of Object.entries(TUNNEL_FIELD_KEYS)) {
+  // 遍历 TUNNEL_FIELDS(单一来源:fieldMap.js)决定字段取 next 还是 current:
+  // raw 里有该字段别名的任一个,说明 next 携带了新值,取 next;否则保留 current。
+  for (const [field, keys] of Object.entries(TUNNEL_FIELDS)) {
     merged[field] = hasAny(raw, keys) ? next[field] : current[field]
   }
 
-  merged.tunnelId = next.tunnelId || current.tunnelId
   merged.channelCount = merged.activeChannels
   merged.type = merged.mode
   merged.typeLabel = TUNNEL_TYPE_LABELS[merged.mode] || merged.mode || '-'
@@ -352,7 +331,8 @@ export const useTunnelStore = defineStore('tunnel', {
 
     recordTunnelAck(item) {
       if (!item || typeof item !== 'object') return
-      const tunnelId = String(pick(item, ['tunnel_id', 'tunnelId', 'TunnelID', 'TunnelId'], ''))
+      const ack = adaptTunnel(item)
+      const tunnelId = String(ack.tunnelId)
       if (!tunnelId) return
 
       this.tunnelAcks.unshift({

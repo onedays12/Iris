@@ -7,7 +7,7 @@
 
 import { computed, onMounted, ref, watch } from 'vue'
 import { Dialogs } from '@wailsio/runtime'
-import * as FileService from '../../bindings/changeme/service/fileservice.js'
+import * as FileService from '../../bindings/irisclient/service/fileservice.js'
 import {
   deleteScreenshot as deleteScreenshotApi,
   downloadScreenshotBase64,

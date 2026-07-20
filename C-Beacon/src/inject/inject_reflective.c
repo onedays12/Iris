@@ -48,7 +48,7 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
     if (!image) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "VirtualAllocEx(%s) failed: %lu",
-                             image_label, (unsigned long)GetLastError());
+                             image_label, (ULONG)GetLastError());
         return FALSE;
     }
 
@@ -57,7 +57,7 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
         wrote != req->image->len) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "WriteProcessMemory(%s) failed: %lu",
-                             image_label, (unsigned long)GetLastError());
+                             image_label, (ULONG)GetLastError());
         VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
         return FALSE;
     }
@@ -66,7 +66,7 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
                           PAGE_EXECUTE_READWRITE, &old_protect)) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "VirtualProtectEx(%s) failed: %lu",
-                             image_label, (unsigned long)GetLastError());
+                             image_label, (ULONG)GetLastError());
         VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
         return FALSE;
     }
@@ -81,7 +81,7 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
             if (err) _snprintf_s(err, err_size, _TRUNCATE,
                                  "VirtualAllocEx(%s) failed: %lu",
                                  parameter_label,
-                                 (unsigned long)GetLastError());
+                                 (ULONG)GetLastError());
             VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
             return FALSE;
         }
@@ -92,7 +92,7 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
             if (err) _snprintf_s(err, err_size, _TRUNCATE,
                                  "WriteProcessMemory(%s) failed: %lu",
                                  parameter_label,
-                                 (unsigned long)GetLastError());
+                                 (ULONG)GetLastError());
             VirtualFreeEx(req->process, parameter, 0, MEM_RELEASE);
             VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
             return FALSE;

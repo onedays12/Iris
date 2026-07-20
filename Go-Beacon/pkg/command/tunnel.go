@@ -28,10 +28,10 @@ const (
 )
 
 func (c *TunnelStartCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
-	return StartTunnelTask(0, p, acp)
+	return nil, fmt.Errorf("TunnelStart should be handled specially in Handler")
 }
 
-func StartTunnelTask(originalTaskID uint32, p *packet.Parser, acp int) ([][]byte, error) {
+func StartTunnelTask(runtime *TunnelRuntime, originalTaskID uint32, p *packet.Parser, acp int) ([][]byte, error) {
 	req, err := ParseTunnelStart(p)
 	if err != nil {
 		return nil, err
@@ -39,13 +39,16 @@ func StartTunnelTask(originalTaskID uint32, p *packet.Parser, acp int) ([][]byte
 	if req.Proto != "tcp" && req.Proto != "udp" {
 		return nil, fmt.Errorf("unsupported proto: %s", req.Proto)
 	}
-	go startTunnelChannel(originalTaskID, req)
+	go startTunnelChannel(runtime, originalTaskID, req)
 
 	// Tunnel 指令不返回常规任务结果，因为状态通过控制信道多路复用回传
 	return nil, nil
 }
 
-func startTunnelChannel(originalTaskID uint32, req TunnelStart) {
+func startTunnelChannel(runtime *TunnelRuntime, originalTaskID uint32, req TunnelStart) {
+	if runtime == nil {
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -53,7 +56,7 @@ func startTunnelChannel(originalTaskID uint32, req TunnelStart) {
 	targetConn, reason, err := dialTarget(req)
 	if err != nil {
 		// 如果连接失败，向服务端发送一个带有错误原因的控制包
-		sendControlPacket(req.TunnelID, req.ChannelID, "close", reason, nil)
+		sendControlPacket(runtime, req.TunnelID, req.ChannelID, "close", reason, nil)
 		return
 	}
 
@@ -71,7 +74,7 @@ func startTunnelChannel(originalTaskID uint32, req TunnelStart) {
 	}
 	ch.TouchLastSeen(time.Now())
 
-	if err := tunnelRuntime.Add(ch); err != nil {
+	if err := runtime.Add(ch); err != nil {
 		targetConn.Close()
 		reason := TunnelReasonUnknown
 		if errors.Is(err, errTunnelChannelLimit) {
@@ -79,17 +82,20 @@ func startTunnelChannel(originalTaskID uint32, req TunnelStart) {
 		} else if errors.Is(err, errTunnelChannelDuplicate) {
 			reason = TunnelReasonDuplicateChannel
 		}
-		sendControlPacket(req.TunnelID, req.ChannelID, "close", reason, nil)
+		sendControlPacket(runtime, req.TunnelID, req.ChannelID, "close", reason, nil)
 		return
 	}
-	sendStartAckPacket(req)
-	defer tunnelRuntime.Remove(req.TunnelID, req.ChannelID)
+	sendStartAckPacket(runtime, req)
+	defer runtime.Remove(req.TunnelID, req.ChannelID)
 
 	// 3. 进入多路复用泵
-	pipeMultiplexed(ctx, ch)
+	pipeMultiplexed(runtime, ctx, ch)
 }
 
-func sendControlPacket(tunnelID, channelID string, action string, reason int32, data []byte) {
+func sendControlPacket(runtime *TunnelRuntime, tunnelID, channelID string, action string, reason int32, data []byte) {
+	if runtime == nil {
+		return
+	}
 	reasonStr := ""
 	if reason != TunnelReasonNone {
 		reasonStr = fmt.Sprintf("error_%d", reason)
@@ -106,19 +112,25 @@ func sendControlPacket(tunnelID, channelID string, action string, reason int32, 
 	}
 	// 封装为 FinalPacket (TaskId=0, CommandId=61: Control) 并存入队列
 	finalPkt := packet.MakeFinalPacket(0, CommandTunnelControl, payload)
-	tunnelRuntime.PushControlPacket(finalPkt)
+	runtime.PushControlPacket(finalPkt)
 }
 
-func sendStartAckPacket(req TunnelStart) {
+func sendStartAckPacket(runtime *TunnelRuntime, req TunnelStart) {
+	if runtime == nil {
+		return
+	}
 	payload, err := PackTunnelStart(req)
 	if err != nil {
 		return
 	}
 	finalPkt := packet.MakeFinalPacket(0, CommandTunnelStart, payload)
-	tunnelRuntime.PushControlPacket(finalPkt)
+	runtime.PushControlPacket(finalPkt)
 }
 
-func sendDataPacket(tunnelID, channelID string, data []byte) {
+func sendDataPacket(runtime *TunnelRuntime, tunnelID, channelID string, data []byte) {
+	if runtime == nil {
+		return
+	}
 	pkt := TunnelData{
 		TunnelID:  tunnelID,
 		ChannelID: channelID,
@@ -130,7 +142,7 @@ func sendDataPacket(tunnelID, channelID string, data []byte) {
 	}
 	// 封装为 FinalPacket (TaskId=0, CommandId=62: Data) 并存入队列
 	finalPkt := packet.MakeFinalPacket(0, CommandTunnelData, payload)
-	tunnelRuntime.PushDataPacket(finalPkt)
+	runtime.PushDataPacket(finalPkt)
 }
 
 func dialTarget(req TunnelStart) (net.Conn, int32, error) {
@@ -146,7 +158,7 @@ func dialTarget(req TunnelStart) (net.Conn, int32, error) {
 	return conn, TunnelReasonNone, nil
 }
 
-func pipeMultiplexed(ctx context.Context, ch *TunnelChannel) {
+func pipeMultiplexed(runtime *TunnelRuntime, ctx context.Context, ch *TunnelChannel) {
 	defer ch.Close()
 
 	bufSize := tunnelTCPReadBufferSize
@@ -170,7 +182,7 @@ func pipeMultiplexed(ctx context.Context, ch *TunnelChannel) {
 				atomic.AddInt64(&ch.BytesOut, int64(n))
 				ch.TouchLastSeen(time.Now())
 				// 异步发送数据 (ID 62)
-				sendDataPacket(ch.TunnelID, ch.ChannelID, buf[:n])
+				sendDataPacket(runtime, ch.TunnelID, ch.ChannelID, buf[:n])
 				if ch.Proto == "udp" {
 					return
 				}
@@ -182,13 +194,13 @@ func pipeMultiplexed(ctx context.Context, ch *TunnelChannel) {
 				}
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
 					if ch.Proto == "udp" && time.Since(ch.LastSeen()) > tunnelUDPIdleTimeout {
-						sendControlPacket(ch.TunnelID, ch.ChannelID, "close", TunnelReasonTimeout, nil)
+						sendControlPacket(runtime, ch.TunnelID, ch.ChannelID, "close", TunnelReasonTimeout, nil)
 						return
 					}
 					continue
 				}
 				// 通知服务端连接已由于错误关闭 (ID 61)
-				sendControlPacket(ch.TunnelID, ch.ChannelID, "close", mapTunnelError(err), nil)
+				sendControlPacket(runtime, ch.TunnelID, ch.ChannelID, "close", mapTunnelError(err), nil)
 				return
 			}
 		}

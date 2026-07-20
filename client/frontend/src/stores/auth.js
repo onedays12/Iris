@@ -1,9 +1,16 @@
 /**
  * 认证状态 Store
  * 管理 JWT Token、服务器地址、登录/登出状态。
+ *
+ * 凭据缓存策略：username/password 仅存内存（非 localStorage），
+ * 用于 TeamServer 重启后自动静默重登；client 关闭重开则需手输一次。
  */
 
 import { defineStore } from 'pinia'
+
+// ─── 内存凭据缓存（不落盘，进程生命周期内有效） ───
+
+let cachedCredentials = null
 
 // ─── Store 定义 ───
 
@@ -22,6 +29,9 @@ export const useAuthStore = defineStore('auth', {
 
   getters: {
     isLoggedIn: (state) => !!state.token,
+
+    /** 是否有缓存的凭据可用于自动重登 */
+    hasCachedCredentials: () => cachedCredentials !== null,
   },
 
   // ─── 方法 ───
@@ -29,7 +39,7 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     /**
      * 设置服务器地址
-     * @param {string} url 
+     * @param {string} url
      */
     setApiBase(url) {
       if (!url) return
@@ -40,25 +50,40 @@ export const useAuthStore = defineStore('auth', {
       }
       // 移除末尾斜杠
       formattedUrl = formattedUrl.replace(/\/+$/, '')
-      
+
       this.apiBase = formattedUrl
       localStorage.setItem('api_base', formattedUrl)
     },
 
     /**
-     * 设置登录状态
+     * 设置登录状态，并缓存凭据用于后续自动重登
+     * @param {string} token
+     * @param {string} [username]
+     * @param {string} [password]
      */
-    setToken(token) {
+    setToken(token, username, password) {
       this.token = token
       sessionStorage.setItem('token', token)
+      if (username && password) {
+        cachedCredentials = { username, password }
+      }
     },
 
     /**
-     * 退出登录
+     * 获取缓存的凭据（供 WS 自动重登使用）
+     * @returns {{username: string, password: string} | null}
+     */
+    getCachedCredentials() {
+      return cachedCredentials
+    },
+
+    /**
+     * 退出登录，并清除内存凭据缓存
      */
     logout() {
       this.token = ''
       this.user = null
+      cachedCredentials = null
       sessionStorage.removeItem('token')
       // 跳转到登录页由外部控制或通过 router 全局拦截
     }

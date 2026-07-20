@@ -38,11 +38,11 @@ INT PacketArrayBytes(ByteBuf* out, const VOID* data, SIZE_T len);
 /* 追加长度前缀字符串 */
 INT PacketArrayString(ByteBuf* out, const CHAR* value);
 
-/* 追加 int16（大端序） */
-INT PacketArrayI16(ByteBuf* out, int16_t value);
+/* 追加 INT16（大端序） */
+INT PacketArrayI16(ByteBuf* out, INT16 value);
 
-/* 追加 int32（大端序） */
-INT PacketArrayI32(ByteBuf* out, int32_t value);
+/* 追加 INT32（大端序） */
+INT PacketArrayI32(ByteBuf* out, INT32 value);
 
 /* 追加布尔值（单字节 1 或 0） */
 INT PacketArrayBool(ByteBuf* out, INT value);

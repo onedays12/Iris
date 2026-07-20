@@ -45,6 +45,7 @@ INT BeaconRun(Agent* agent, PVOID image_base)
 }
 
 #ifdef BEACON_DLL_BUILD
+/* DLL 构建入口：进程加载时启动 Beacon 主循环。 */
 BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD reason, LPVOID reserved)
 {
     Agent agent;

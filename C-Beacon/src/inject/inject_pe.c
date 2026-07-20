@@ -141,7 +141,7 @@ BOOL InjectImageMachine(const ByteBuf* image,
         *machine != IMAGE_FILE_MACHINE_I386) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "unsupported %s machine: 0x%04x",
-                             label, (unsigned int)*machine);
+                             label, (UINT)*machine);
         return FALSE;
     }
 

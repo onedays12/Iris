@@ -458,6 +458,7 @@ static BOOL BofProcessSection(BeaconContext* ctx, BofJobRuntime* runtime, PCOFFE
 }
 
 #if _WIN64
+/* 将 BOF 的 .pdata 注册到系统异常表，保证 x64 异常展开可用。 */
 static BOOL BofRegisterFunctionTable(BeaconContext* ctx, PCOFFEE pCoffee,
                                      PRUNTIME_FUNCTION* functionTable)
 {
@@ -505,6 +506,7 @@ static BOOL BofRegisterFunctionTable(BeaconContext* ctx, PCOFFEE pCoffee,
     return TRUE;
 }
 
+/* 注销已注册的 x64 异常函数表。 */
 static VOID BofUnregisterFunctionTable(BeaconContext* ctx, PRUNTIME_FUNCTION functionTable)
 {
     HMODULE ntdll;
@@ -528,6 +530,7 @@ static VOID BofUnregisterFunctionTable(BeaconContext* ctx, PRUNTIME_FUNCTION fun
 }
 #endif
 
+/* 加载 COFF/BOF、完成映射重定位并调用入口函数。 */
 BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
                    PVOID bofBuffer, DWORD bofSize,
                    PVOID argsBuffer, DWORD argsSize,
@@ -556,6 +559,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
     coffee->Data   = bofBuffer;
     coffee->Header = (PCOFF_FILE_HEADER)coffee->Data;
 
+    /* 先验证 COFF 结构，再继续解析符号和节表。 */
     if (!BofValidateCoff(coffee, bofSize, validateReason, sizeof(validateReason))) {
         BofSetError(runtime, "invalid COFF: %s", validateReason);
         goto cleanup;
@@ -570,6 +574,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
         goto cleanup;
     }
 
+    /* 当前 beacon 架构必须和 BOF 目标架构一致。 */
 #ifdef _WIN64
     if (coffee->Header->Machine != IMAGE_FILE_MACHINE_AMD64) {
         BofSetError(runtime, "architecture mismatch, x64 beacon requires AMD64 COFF, got 0x%04X",
@@ -592,6 +597,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
         goto cleanup;
     }
 
+    /* 将每个 COFF section 映射到可执行镜像缓冲区。 */
     next_base = coffee->ImageBase;
     for (sec = 0; sec < coffee->Header->NumberOfSections; sec++) {
         coffee->Section = (PCOFF_SECTION)((ULONG_PTR)coffee->Data +
@@ -610,6 +616,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
         }
     }
 
+    /* GOT 和 BSS 跟随 section 映射区之后连续布局。 */
     coffee->GOT = (PULONG_PTR)next_base;
     coffee->BSS = (PVOID)((ULONG_PTR)next_base + coffee->GOTSize);
 
@@ -623,6 +630,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
         }
     }
 
+    /* 解析符号、导入和重定位，修正 BOF 映射区内的地址。 */
     if (!BofProcessSection(ctx, runtime, coffee)) {
         if (runtime->last_error[0]) {
             CHAR detail[sizeof(runtime->last_error)];
@@ -647,6 +655,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
         goto cleanup;
     }
 
+    /* runtime 注册用于 Beacon API 回调查找当前 BOF 上下文。 */
     BofRuntimeRegister(runtime, coffee->ImageBase, coffee->BofSize);
     if (!BofRun(ctx, runtime, coffee, entryName, argsBuffer, argsSize)) {
         if (runtime->last_error[0]) {
@@ -663,6 +672,7 @@ BOOL BofLoadAndRun(BeaconContext* ctx, BofJobRuntime* runtime,
     ok = TRUE;
 
 cleanup:
+    /* 清理顺序保持和注册/映射顺序相反。 */
     BofRuntimeUnregister(runtime);
 #if _WIN64
     if (functionTable) {

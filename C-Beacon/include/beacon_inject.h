@@ -93,3 +93,16 @@ BOOL InjectCreateRemoteThread(HANDLE process,
                               HANDLE* remote_thread,
                               CHAR* err,
                               SIZE_T err_size);
+
+/*
+ * 跨子系统共用工具：构造 spawn 命令行与格式化远程线程状态。
+ * postex_backend / migrate_backend 共用，避免两处实现漂移。
+ */
+BOOL InjectBuildSpawnCommandLine(const CHAR* exe_path,
+                                 const CHAR* args,
+                                 CHAR* out,
+                                 SIZE_T out_size);
+
+VOID InjectFormatRemoteThreadStatus(HANDLE thread,
+                                    CHAR* out,
+                                    SIZE_T out_size);

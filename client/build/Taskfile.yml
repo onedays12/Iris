@@ -14,12 +14,12 @@ tasks:
       - package.json
       - package-lock.json
     generates:
-      - node_modules
+      - node_modules/.package-lock.json
     preconditions:
       - sh: npm version
         msg: "Looks like npm isn't installed. Npm is part of the Node installer: https://nodejs.org/en/download/"
     cmds:
-      - npm ci --include=optional
+      - npm install --include=optional --prefer-offline
 
   build:frontend:
     label: build:frontend (DEV={{.DEV}})

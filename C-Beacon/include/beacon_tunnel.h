@@ -41,6 +41,7 @@ typedef struct TunnelChannel {
     CHAR mode[32];
     CHAR proto[8];
     CHAR target[512];
+    INT connect_timeout_ms;   /* 连接超时（ms），由 worker 线程在 dial 时使用 */
     SOCKET socket_handle;
     HANDLE thread_handle;
     TunnelManager* owner;
@@ -48,6 +49,7 @@ typedef struct TunnelChannel {
     volatile LONG done;
     volatile LONG paused;
     volatile LONG canceled_by_job;
+    volatile LONG connecting; /* 1=worker 线程正在 dial，socket_handle 尚未就绪 */
     ULONGLONG created_at;
     ULONGLONG last_seen;
     UINT64 bytes_in;

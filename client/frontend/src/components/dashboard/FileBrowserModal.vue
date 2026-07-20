@@ -3,34 +3,27 @@
  * FileBrowserModal - 文件浏览器主组件
  * 提供远程文件系统的目录导航、文件列表展示、右键菜单操作
  * （下载/上传/删除/压缩/属性修改）、传输进度监控等功能。
+ *
+ * 文件操作逻辑委托给 useFileBrowserActions composable；
+ * 右键菜单委托给 useFileBrowserMenu composable；
+ * 传输监控面板委托给 TransferPanel 子组件。
  */
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { useAgentStore } from '../../stores/agent.js'
-import { useModalStore } from '../../stores/modal.js'
 import { useExplorerStore, normalizePathKey, joinPaths } from '../../stores/explorer.js'
 import { useModalDragResize } from '../../composables/useModalDragResize.js'
+import { useFileBrowserMenu } from '../../composables/useFileBrowserMenu.js'
 import { useFileTransferStore } from '../../stores/fileTransfer.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import {
-  sendCopyFileCommand,
-  sendDownloadCommand,
-  sendMkdirCommand,
-  sendMoveFileCommand,
-  sendRemoveFileCommand,
-  sendSetAttrCommand,
-  sendUploadCommand,
-  sendZipCommand,
-} from '../../features/beacon/actions/beaconCommandActions.js'
-import { uploadFile } from '../../features/files/api/fileApi.js'
+import { useFileBrowserActions } from '../../composables/useFileBrowserActions.js'
 import FileAttributeDialog from './FileAttributeDialog.vue'
 import FileZipDialog from './FileZipDialog.vue'
+import FileContextMenu from './FileContextMenu.vue'
+import TransferPanel from './TransferPanel.vue'
 
 const agentStore = useAgentStore()
-const modalStore = useModalStore()
 const explorerStore = useExplorerStore()
 const fileTransferStore = useFileTransferStore()
-const notificationStore = useNotificationStore()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -42,22 +35,6 @@ const emit = defineEmits(['close'])
 const searchQuery = ref('')
 const errorMsg = ref('')
 const currentPath = ref('')
-const uploadInputRef = ref(null)
-const uploadTarget = ref(null)
-const isUploading = ref(false)
-const downloadCooldowns = ref(new Map()) // [新增] 用于存储各文件的下载冷却时间
-
-// [新增] 用于控制行菜单显示的状态与坐标
-const activeMenuTarget = ref(null)
-const menuPos = ref({ x: 0, y: 0 })
-const menuRef = ref(null)
-const MENU_WIDTH = 168
-const MENU_HEIGHT = 286
-
-const attributeDialogVisible = ref(false)
-const attributeDialogTarget = ref(null)
-const zipDialogVisible = ref(false)
-const zipDialogTarget = ref(null)
 
 // [新增] 窗口定位与尺寸状态
 const {
@@ -69,409 +46,68 @@ const {
   minWidth: 600, minHeight: 400,
 })
 
-function placeMenu(x, y) {
-  let nextX = x
-  let nextY = y
+const beaconidRef = computed(() => props.beaconid)
 
-  if (nextX + MENU_WIDTH > window.innerWidth) nextX -= MENU_WIDTH
-  if (nextY + MENU_HEIGHT > window.innerHeight) nextY -= MENU_HEIGHT
+// ─── 右键菜单(委托给 useFileBrowserMenu composable) ───
+// menu 先创建(不依赖 actions),actions 后创建(依赖 menu 的 closeMenu/activeMenuTarget),
+// 最后 setActions 把动作回调注入 menu,解决双向依赖。
+const {
+  activeMenuTarget,
+  menuPos,
+  menuRef,
+  setActions,
+  getMenuTarget,
+  handleMenuAction,
+  closeMenu,
+  openMenu,
+  toggleMenu,
+  onRowContextMenu,
+  onContainerContextMenu,
+} = useFileBrowserMenu({ currentPath })
 
-  menuPos.value = {
-    x: Math.max(10, nextX),
-    y: Math.max(10, nextY)
-  }
-}
+// ─── 文件操作（委托给 useFileBrowserActions composable） ───
+const {
+  // 上传
+  uploadInputRef,
+  isUploading,
+  triggerUpload,
+  handleUploadFile,
+  // 下载
+  handleDownload,
+  // 删除 / 移动 / 复制
+  handleDelete,
+  handleMoveCopy,
+  // 压缩
+  handleZip,
+  handleZipSubmit,
+  closeZipDialog,
+  zipDialogVisible,
+  zipDialogTarget,
+  // 新建目录
+  handleMkdir,
+  // 属性
+  openAttributeDialog,
+  closeAttributeDialog,
+  handleAttributeSubmit,
+  attributeDialogVisible,
+  attributeDialogTarget,
+} = useFileBrowserActions({
+  beaconid: beaconidRef,
+  currentPath,
+  loadDirectory,
+  activeMenuTarget,
+  closeMenu,
+  getMenuTarget: () => getMenuTarget(null),
+})
 
-function handleMenuAction(action) {
-  if (!activeMenuTarget.value) return
-  
-  switch (action) {
-    case 'download':
-      handleDownload(activeMenuTarget.value)
-      break
-    case 'zip':
-      handleZip(activeMenuTarget.value)
-      break
-    case 'upload':
-      triggerUpload(activeMenuTarget.value)
-      break
-    case 'delete':
-      handleDelete(activeMenuTarget.value)
-      break
-    case 'mkdir':
-      handleMkdir()
-      break
-    case 'setattr':
-      openAttributeDialog(activeMenuTarget.value)
-      break
-    case 'refresh':
-      loadDirectory(currentPath.value, true)
-      break
-  }
-}
-
-function closeMenu() {
-  activeMenuTarget.value = null
-}
-
-function openMenu(target, x, y) {
-  activeMenuTarget.value = target
-  placeMenu(x, y)
-  nextTick(adjustMenuPosition)
-}
-
-function adjustMenuPosition() {
-  if (!menuRef.value) return
-  const rect = menuRef.value.getBoundingClientRect()
-  const padding = 10
-  let nextX = menuPos.value.x
-  let nextY = menuPos.value.y
-
-  if (rect.right > window.innerWidth - padding) {
-    nextX -= rect.right - (window.innerWidth - padding)
-  }
-  if (rect.bottom > window.innerHeight - padding) {
-    nextY -= rect.bottom - (window.innerHeight - padding)
-  }
-
-  menuPos.value = {
-    x: Math.max(padding, nextX),
-    y: Math.max(padding, nextY),
-  }
-}
-
-function getMenuTarget(file) {
-  if (!file) {
-    return {
-      type: 'blank',
-      path: currentPath.value || '',
-    }
-  }
-
-  return {
-    type: file.is_dir ? 'folder' : 'file',
-    file,
-  }
-}
-
-// [新增] 切换菜单显示逻辑
-function toggleMenu(file, event) {
-  if (event) event.stopPropagation()
-  if (activeMenuTarget.value?.file?.path === file.path) {
-    closeMenu()
-    return
-  }
-
-  if (event?.currentTarget) {
-    const rect = event.currentTarget.getBoundingClientRect()
-    openMenu(getMenuTarget(file), rect.right - MENU_WIDTH, rect.bottom + 8)
-  }
-}
-
-// [新增] 右键行处理逻辑 (改位跟手模式)
-function onRowContextMenu(file, event) {
-  event.preventDefault()
-  event.stopPropagation()
-  openMenu(getMenuTarget(file), event.clientX, event.clientY)
-}
-
-function onContainerContextMenu(event) {
-  event.preventDefault()
-  event.stopPropagation()
-  if (event.target.closest('.file-row')) return
-  openMenu(getMenuTarget(null), event.clientX, event.clientY)
-}
-
-function triggerUpload(target = activeMenuTarget.value) {
-  uploadTarget.value = target || getMenuTarget(null)
-  closeMenu()
-  uploadInputRef.value?.click()
-}
-
-function buildCopyName(file) {
-  const name = String(file?.name || '').trim()
-  if (!name) return 'Copy'
-  if (file?.is_dir) return `${name}_copy`
-
-  const dotIndex = name.lastIndexOf('.')
-  if (dotIndex <= 0) return `${name}_copy`
-  return `${name.slice(0, dotIndex)}_copy${name.slice(dotIndex)}`
-}
-
-function resolveDestinationPath(basePath, inputPath) {
-  const trimmed = String(inputPath || '').trim()
-  if (!trimmed) return ''
-  if (/^[a-zA-Z]:[\\/]/.test(trimmed) || /^\\\\/.test(trimmed) || trimmed.startsWith('/')) {
-    return normalizePathKey(trimmed)
-  }
-  return joinPaths(basePath, trimmed)
-}
-
-function openAttributeDialog(target) {
-  if (!target?.file || !target.file.path) {
-    notificationStore.error('未找到可修改属性的目标路径')
-    return
-  }
-  closeMenu()
-  attributeDialogTarget.value = target
-  attributeDialogVisible.value = true
-}
-
-function openZipDialog(target) {
-  if (!target?.file || !target.file.path) {
-    notificationStore.error('未找到可压缩的目标路径')
-    return
-  }
-  closeMenu()
-  zipDialogTarget.value = target
-  zipDialogVisible.value = true
-}
-
-function closeAttributeDialog() {
-  attributeDialogVisible.value = false
-  attributeDialogTarget.value = null
-}
-
-function closeZipDialog() {
-  zipDialogVisible.value = false
-  zipDialogTarget.value = null
-}
-
-async function handleAttributeSubmit(args) {
-  const targetName = attributeDialogTarget.value?.file?.name || '目标文件'
-  try {
-    notificationStore.info(`正在下发属性修改任务: ${targetName}`)
-    await sendSetAttrCommand(props.beaconid, args)
-    notificationStore.success(`属性修改任务已提交: ${targetName}`)
-    closeAttributeDialog()
-    await new Promise(resolve => setTimeout(resolve, 300))
-    await loadDirectory(currentPath.value, true)
-  } catch (err) {
-    notificationStore.error(`属性修改失败: ${err.message || err}`)
-  }
-}
-
-async function handleZipSubmit({ sourcePath, zipPath, overwrite, includeRoot }) {
-  const sourceName = zipDialogTarget.value?.file?.name || sourcePath
-  try {
-    notificationStore.info(`正在下发压缩任务: ${sourceName}`)
-    await sendZipCommand(props.beaconid, sourcePath, zipPath, overwrite, includeRoot)
-    notificationStore.success(`压缩任务已提交: ${sourceName}`)
-    closeZipDialog()
-  } catch (err) {
-    notificationStore.error(`压缩任务下发失败: ${err.message || err}`)
-  }
-}
-
-async function handleDownload(file) {
-  if (!file || file.is_dir) return
-
-  // [锁定机制] 改为 5 秒时间防抖锁定
-  const cooldownKey = `${props.beaconid}:${file.path}`
-  const now = Date.now()
-  const lastTime = downloadCooldowns.value.get(cooldownKey) || 0
-  
-  if (now - lastTime < 5000) {
-    const remaining = Math.ceil((5000 - (now - lastTime)) / 1000)
-    notificationStore.info(`操作太快，请 ${remaining} 秒后再试: ${file.name}`)
-    closeMenu()
-    return
-  }
-
-  // 更新最后点击时间
-  downloadCooldowns.value.set(cooldownKey, now)
-
-  try {
-    const result = await sendDownloadCommand(props.beaconid, file.path, 524288, 3)
-    fileTransferStore.startDownload({
-      beaconid: props.beaconid,
-      taskId: result?.task_id || result?.taskId || result?.id || '',
-      remotePath: file.path,
-      fileName: file.name,
-      size: file.size,
-    })
-    notificationStore.success(`下载任务已下发: ${file.name}`)
-  } catch (err) {
-    notificationStore.error(`下载任务下发失败: ${err.message || err}`)
-  } finally {
-    closeMenu()
-  }
-}
-
-async function handleDelete(target) {
-  const file = target?.file
-  if (!file) return
-  
-  // 关键修复：在弹出确认框前先关闭右键菜单，防止 UI 遮挡
-  closeMenu()
-
-  const confirmed = await modalStore.showConfirm({
-    title: `确认删除${file.is_dir ? '目录' : '文件'}`,
-    message: `你确定要删除 [${file.name}] 吗？\n警告：此操作不可撤销且会物理抹除数据。`,
-    type: 'danger'
-  })
-
-  if (!confirmed) return
-
-  try {
-    notificationStore.info(`正在下发删除指令: ${file.name}`)
-    await sendRemoveFileCommand(props.beaconid, file.path)
-    notificationStore.success(`删除任务已提交: ${file.name}`)
-  } catch (err) {
-    notificationStore.error(`删除指令发送失败: ${err.message || err}`)
-  }
-}
-
-async function handleMoveCopy(action, target) {
-  const file = target?.file
-  const basePath = currentPath.value || ''
-  if (!file) return
-
-  closeMenu()
-
-  if (!basePath) {
-    notificationStore.error('请先进入具体目录后再执行移动或复制')
-    return
-  }
-
-  const isMove = action === 'move'
-  const nextName = await modalStore.showPrompt({
-    title: isMove ? '移动文件/文件夹' : '复制文件/文件夹',
-    message: `当前目录: [${basePath}]\n可输入目标名称，也可直接输入完整路径。`,
-    placeholder: isMove ? '请输入目标名称或完整路径...' : '请输入副本名称或完整路径...',
-    defaultValue: isMove ? file.name : buildCopyName(file),
-  })
-
-  const trimmedName = String(nextName || '').trim()
-  if (!trimmedName) return
-
-  const destinationPath = resolveDestinationPath(basePath, trimmedName)
-  if (destinationPath === file.path) {
-    notificationStore.info('源路径与目标路径一致，未执行操作')
-    return
-  }
-
-  try {
-    notificationStore.info(`正在${isMove ? '移动' : '复制'}: ${file.name}`)
-    const sendFileCommand = isMove ? sendMoveFileCommand : sendCopyFileCommand
-    await sendFileCommand(props.beaconid, file.path, destinationPath)
-    notificationStore.success(`${isMove ? '移动' : '复制'}任务已提交: ${file.name}`)
-    await new Promise(resolve => setTimeout(resolve, 300))
-    await loadDirectory(basePath, true)
-  } catch (err) {
-    notificationStore.error(`${isMove ? '移动' : '复制'}指令发送失败: ${err.message || err}`)
-  }
-}
-
-async function handleZip(target) {
-  openZipDialog(target)
-}
-
-async function handleMkdir() {
-  const target = activeMenuTarget.value
-  const basePath = target?.type === 'folder'
-    ? (target.file?.path || currentPath.value)
-    : (target?.path || currentPath.value)
-
-  closeMenu()
-
-  if (!basePath) {
-    notificationStore.error('请先进入目标目录后再创建文件夹')
-    return
-  }
-
-  const folderName = await modalStore.showPrompt({
-    title: '新建文件夹',
-    message: `将在目录 [${basePath}] 下创建新文件夹`,
-    placeholder: '请输入文件夹名称...',
-    defaultValue: 'New Folder'
-  })
-
-  if (!folderName || !folderName.trim()) return
-
-  const fullPath = joinPaths(basePath, folderName.trim())
-
-  try {
-    notificationStore.info(`正在下发创建指令: ${folderName}`)
-    await sendMkdirCommand(props.beaconid, fullPath)
-    notificationStore.success(`创建任务已提交: ${folderName}`)
-    await new Promise(resolve => setTimeout(resolve, 300))
-    await loadDirectory(basePath, true)
-  } catch (err) {
-    notificationStore.error(`创建指令发送失败: ${err.message || err}`)
-  }
-}
-
-async function handleUploadFile(event) {
-  const file = event.target.files?.[0]
-  const target = uploadTarget.value
-  event.target.value = ''
-  if (!file || isUploading.value) {
-    uploadTarget.value = null
-    return
-  }
-
-  const basePath = target?.type === 'folder'
-    ? (target.file?.path || currentPath.value)
-    : (target?.path || currentPath.value)
-  if (!basePath) {
-    notificationStore.error('请先进入目标目录，或右键目标文件夹后再上传')
-    uploadTarget.value = null
-    return
-  }
-  const remotePath = joinPaths(basePath, file.name)
-
-  // [锁定机制] 5 秒时间防抖锁定 (上传)
-  const cooldownKey = `upload:${props.beaconid}:${remotePath}`
-  const now = Date.now()
-  const lastTime = downloadCooldowns.value.get(cooldownKey) || 0
-  if (now - lastTime < 5000) {
-    notificationStore.info(`文件正在上传中，请稍候: ${file.name}`)
-    uploadTarget.value = null
-    return
-  }
-  downloadCooldowns.value.set(cooldownKey, now)
-
-  isUploading.value = true
-  try {
-    notificationStore.info(`准备上传: ${file.name}`)
-    // 第一阶段：上传到服务器暂存区
-    const uploaded = await uploadFile(file)
-    const fileId = uploaded.file_id
-    if (!fileId) {
-      throw new Error('服务器未返回有效的 file_id，请检查后端 API 对齐情况')
-    }
-
-    // 第二阶段：下发任务给端 (对齐契约：args[0]=file_id, args[1]=remote_path, args[2]=chunk_size)
-    const result = await sendUploadCommand(props.beaconid, fileId, remotePath, 524288)
-
-    // 注册上传进度追踪
-    fileTransferStore.startUpload({
-      beaconid: props.beaconid,
-      taskId: result?.task_id || result?.taskId || result?.id || '',
-      remotePath: remotePath,
-      fileName: file.name,
-      size: file.size,
-    })
-
-    notificationStore.success(`上传任务已下发: ${file.name}`)
-  } catch (err) {
-    notificationStore.error(`上传任务失败: ${err.message || err}`)
-  } finally {
-    isUploading.value = false
-    uploadTarget.value = null
-  }
-}
-
-const handleDocumentClick = () => closeMenu()
+// 把 actions 注入 menu(menu.handleMenuAction 会调 actions.handleDownload 等)
+setActions({ handleDownload, handleZip, handleMoveCopy, handleDelete, handleMkdir, openAttributeDialog })
 
 onMounted(() => {
   initWindowPosition()
-  window.addEventListener('click', handleDocumentClick)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('click', handleDocumentClick)
   stopDrag()
   stopResize()
 })
@@ -486,6 +122,10 @@ const files = computed(() => currentNode.value?.items || [])
 const activeTransfers = computed(() => {
   return fileTransferStore.getTransfers(props.beaconid)
 })
+
+// ─── 传输面板收起状态(委托给 TransferPanel 子组件,主组件只持有 collapsed 状态) ───
+const transferPanelCollapsed = ref(false)
+
 const targetAgent = computed(() => agentStore.getAgentById(props.beaconid))
 const isWindowsTarget = computed(() => String(targetAgent.value?.os || '').toLowerCase().includes('windows'))
 const rootShortcutLabel = computed(() => isWindowsTarget.value ? '我的电脑' : '当前目录')
@@ -575,7 +215,7 @@ function handleDoubleClick(file) {
 function goUp() {
   const norm = normalizePathKey(currentPath.value)
   if (!norm || norm === '') return
-  
+
   // Windows 下如果是 C:\ 这种根路径，则回到盘符列表
   if (/^[a-z]:\\$/.test(norm)) {
     loadDirectory('')
@@ -810,80 +450,24 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
           </tbody>
         </table>
       </div>
-
-      <!-- 传输监控底部状态栏 (极致压缩版) -->
-      <div v-if="activeTransfers.length" class="transfer-panel-compact shadow-lg">
-        <div class="transfer-compact-header">
-          <span class="title">传输监控</span>
-          <span class="count">{{ activeTransfers.length }} 个传输记录</span>
-        </div>
-        <div class="transfer-compact-list">
-          <div
-            v-for="transfer in activeTransfers"
-            :key="transfer.taskId"
-            class="compact-item"
-            :class="[transfer.status, transfer.direction]"
-          >
-            <div class="item-main">
-              <span class="icon">{{ transfer.direction === 'upload' ? '📤' : '📥' }}</span>
-              <span class="name" :title="transfer.remotePath">{{ transfer.fileName || transfer.remotePath }}</span>
-              <span class="status-text">{{ transfer.status === 'completed' ? '完成' : transfer.status === 'error' ? '失败' : transfer.progress + '%' }}</span>
-            </div>
-            <div class="item-progress">
-              <div class="progress-fill" :style="{ width: transfer.progress + '%' }"></div>
-            </div>
-            <div class="item-side">
-              <span v-if="transfer.size > 0" class="bytes">{{ formatSize(transfer.receivedBytes || 0) }}/{{ formatSize(transfer.size) }}</span>
-              <span class="chunks">{{ transfer.receivedChunks }}/{{ transfer.totalChunks }} chks</span>
-            </div>
-            <div v-if="transfer.error" class="error-msg" :title="transfer.error">
-              <i class="fas fa-exclamation-circle"></i>
-            </div>
-          </div>
-        </div>
-      </div>
       </div> <!-- /main-layout -->
+
+      <!-- 传输监控底部状态栏：委托给 TransferPanel 子组件 -->
+      <TransferPanel
+        :active-transfers="activeTransfers"
+        v-model:collapsed="transferPanelCollapsed"
+      />
       </div> <!-- /file-browser-modal -->
 
-      <!-- [新增] 磨砂玻璃弹出菜单 (全局定位版) -->
-      <Teleport to="body">
-        <Transition name="fade-scale">
-          <div 
-            v-if="activeMenuTarget" 
-            class="glass-menu"
-            ref="menuRef"
-            :style="{ left: menuPos.x + 'px', top: menuPos.y + 'px' }"
-            @click.stop
-          >
-            <div
-              v-if="activeMenuTarget.type !== 'file'"
-              class="menu-item"
-              :class="{ disabled: isUploading }"
-              @click="!isUploading && triggerUpload(activeMenuTarget)"
-            >
-              <span class="m-icon">📤</span> {{ isUploading ? '上传中...' : '上传' }}
-            </div>
-            <div
-              v-if="activeMenuTarget.type === 'blank'"
-              class="menu-item"
-              @click="handleMkdir()"
-            >
-              <span class="m-icon">📁</span> 创建文件夹
-            </div>
-            <div v-if="activeMenuTarget.type === 'file'" class="menu-item" @click="handleDownload(activeMenuTarget.file)"><span class="m-icon">📥</span> 下载</div>
-            <template v-if="activeMenuTarget.type !== 'blank'">
-              <div class="menu-item" @click="handleZip(activeMenuTarget)"><span class="m-icon">🗜️</span> 压缩为 ZIP</div>
-              <div class="menu-item" @click="handleMoveCopy('move', activeMenuTarget)"><span class="m-icon">✂️</span> 移动</div>
-              <div class="menu-item" @click="handleMoveCopy('copy', activeMenuTarget)"><span class="m-icon">📋</span> 复制</div>
-              <div class="menu-item" @click="openAttributeDialog(activeMenuTarget)"><span class="m-icon">🛠️</span> 修改属性</div>
-              <div class="menu-divider"></div>
-              <div class="menu-item delete" @click="handleDelete(activeMenuTarget)">
-                <span class="m-icon">🗑️</span> 删除
-              </div>
-            </template>
-          </div>
-        </Transition>
-      </Teleport>
+      <!-- 右键菜单（委托给子组件） -->
+      <FileContextMenu
+        ref="menuRef"
+        :target="activeMenuTarget"
+        :pos="menuPos"
+        :is-uploading="isUploading"
+        @action="handleMenuAction"
+        @upload="triggerUpload"
+      />
 
       <FileZipDialog
         :visible="zipDialogVisible"
@@ -1375,18 +959,6 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
   font-size: 12px;
 }
 
-/* [新增] 操作菜单定位与样式 */
-.glass-menu {
-  position: fixed;
-  width: 168px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(15px);
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  padding: 8px;
-  z-index: 10000;
-}
-
 /* 缩放手柄系统 */
 .resize-handle {
   position: absolute;
@@ -1413,49 +985,6 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
   background: linear-gradient(135deg, transparent 50%, #6366f1 50%, #6366f1 100%);
 }
 
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  font-size: 13px;
-  color: #475569;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.menu-item:hover {
-  background: #f1f5f9;
-  color: #6366f1;
-}
-
-.menu-item.delete:hover {
-  background: #fef2f2;
-  color: #ef4444;
-}
-
-.menu-divider {
-  height: 1px;
-  background: rgba(0, 0, 0, 0.05);
-  margin: 4px 0;
-}
-
-.m-icon {
-  font-size: 14px;
-}
-
-/* [新增] 动效 */
-.fade-scale-enter-active,
-.fade-scale-leave-active {
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.fade-scale-enter-from,
-.fade-scale-leave-to {
-  opacity: 0;
-  transform: scale(0.9) translateY(-10px);
-}
 
 .loading-state, .empty-state, .error-state {
   position: absolute;
@@ -1517,132 +1046,12 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
 .side-nav::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.18);
 }
-/* 极致压缩传输面板 (底部固定样式) */
-.transfer-panel-compact {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border-color);
-  z-index: 100;
-  display: flex;
-  flex-direction: column;
-  backdrop-filter: blur(10px);
-  background: rgba(255, 255, 255, 0.9);
-}
+/* 传输面板样式已迁移到 TransferPanel.vue */
 
-.transfer-compact-header {
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 15px;
-  background: var(--bg-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  opacity: 0.8;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.transfer-compact-list {
-  max-height: 100px;
-  overflow-y: auto;
-}
-
-.compact-item {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  padding: 0 15px;
-  gap: 15px;
-  border-bottom: 1px solid var(--border-color);
-  position: relative;
-  overflow: hidden;
-}
-
-.compact-item:last-child {
-  border-bottom: none;
-}
-
-.compact-item .item-main {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  min-width: 0;
-  z-index: 2;
-}
-
-.compact-item .name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 250px;
-  font-weight: 500;
-}
-
-.compact-item .status-text {
-  font-size: 10px;
-  opacity: 0.6;
-  font-weight: 600;
-}
-
-.compact-item .item-progress {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background: rgba(0, 0, 0, 0.05);
-  z-index: 1;
-}
-
-.compact-item .progress-fill {
-  height: 100%;
-  background: var(--primary-color);
-  transition: width 0.3s ease;
-}
-
-.compact-item.upload .progress-fill {
-  background: #722ed1; /* 上传用紫色 */
-}
-
-.compact-item.download .progress-fill {
-  background: #1890ff; /* 下载用蓝色 */
-}
-
-.compact-item.completed .progress-fill {
-  background: #52c41a;
-}
-
-.compact-item.error .progress-fill {
-  background: #ff4d4f;
-}
-
-.compact-item .item-side {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-  opacity: 0.7;
-  z-index: 2;
-}
-
-.compact-item .error-msg {
-  color: #ff4d4f;
-  font-size: 14px;
-  z-index: 2;
-}
-
-.compact-item.error {
-  background: rgba(255, 77, 79, 0.03);
-}
-
-/* 调整 modal-body 留白，防止底部被遮挡 */
+/* 传输面板已改为 main-layout 的正常流式子元素，不再覆盖文件列表，
+   无需为 modal-body 额外留白。保留 padding 防止内容贴边。 */
 .modal-body {
-  padding-bottom: 34px; /* 给一个默认传输项留出位置 */
+  padding-bottom: 8px;
 }
 
 :global(html[data-ui-theme="dark"] .file-browser-modal){
@@ -1778,31 +1187,6 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
 :global(html[data-ui-theme="dark"] .error-state){
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.08);
-}
-
-:global(html[data-ui-theme="dark"] .glass-menu){
-  background: rgba(15, 23, 42, 0.94);
-  border-color: rgba(148, 163, 184, 0.18);
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
-}
-
-:global(html[data-ui-theme="dark"] .menu-item){
-  color: #cbd5e1;
-}
-
-:global(html[data-ui-theme="dark"] .menu-item:hover){
-  background: rgba(129, 140, 248, 0.14);
-  color: #e0e7ff;
-}
-
-:global(html[data-ui-theme="dark"] .menu-item.delete:hover){
-  background: rgba(239, 68, 68, 0.14);
-  color: #fca5a5;
-}
-
-:global(html[data-ui-theme="dark"] .menu-divider){
-  background: rgba(148, 163, 184, 0.14);
 }
 
 :global(html[data-ui-theme="dark"] .transfer-panel-compact){

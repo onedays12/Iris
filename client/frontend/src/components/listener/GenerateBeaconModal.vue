@@ -10,7 +10,7 @@ import { useModalStore } from '../../stores/modal.js'
 import { useListenerStore } from '../../stores/listener.js'
 import { useNotificationStore } from '../../stores/notification.js'
 import { generatePayload, generateShellcode } from '../../features/payload/api/payloadApi.js'
-import * as FileService from '../../../bindings/changeme/service/fileservice.js'
+import * as FileService from '../../../bindings/irisclient/service/fileservice.js'
 import { Dialogs } from '@wailsio/runtime'
 
 const modalStore = useModalStore()
@@ -95,6 +95,10 @@ const windowsArchOptions = [
   { label: 'amd64 (64位)', value: 'amd64' },
   { label: 'x86 (32位)', value: 'x86' },
 ]
+// Go-Beacon only supports amd64 on Windows (no x86 template)
+const goWindowsArchOptions = [
+  { label: 'amd64 (64位)', value: 'amd64' },
+]
 const linuxArchOptions = [
   { label: 'amd64 (64位)', value: 'amd64' },
 ]
@@ -122,6 +126,15 @@ const shellcodeModeOptions = [
 
 const isInternal = computed(() => activeListenerType.value === 'internal')
 
+// External TCP listener: Go-Beacon is explicitly rejected by the server
+const isExternalTcp = computed(() =>
+  activeListenerType.value === 'external' && activeListenerProtocol.value === 'tcp'
+)
+// Go-Beacon + External TCP = blocked combination
+const isGoTcpBlocked = computed(() =>
+  beaconType.value === 'go' && isExternalTcp.value && stageMode.value !== 'stager'
+)
+
 const isShellcodeMode = computed(() => generationMode.value === 'shellcode')
 const needsShellcodeLoaderName = computed(() => shellcodeMode.value === 'embed')
 const currentShellcodeModeMeta = computed(() => {
@@ -131,11 +144,14 @@ const currentStageModeMeta = computed(() => {
   return stageModeOptions.find(item => item.value === stageMode.value) || stageModeOptions[0]
 })
 const availableArchOptions = computed(() => {
-  if (isInternal.value) return windowsArchOptions
-  if (stageMode.value === 'stager') return windowsArchOptions
+  if (isInternal.value || stageMode.value === 'stager') {
+    // Internal and stager lock to windows; Go-Beacon still only amd64
+    return beaconType.value === 'go' ? goWindowsArchOptions : windowsArchOptions
+  }
   if (os.value === 'mac') return macArchOptions
   if (os.value === 'linux') return linuxArchOptions
-  return windowsArchOptions
+  // Windows external
+  return beaconType.value === 'go' ? goWindowsArchOptions : windowsArchOptions
 })
 const availableStageModeOptions = computed(() => {
   return stageModeOptions.map(item => ({
@@ -144,8 +160,15 @@ const availableStageModeOptions = computed(() => {
   }))
 })
 const availableBeaconTypes = computed(() => {
-  if (isInternal.value) return [{ label: 'C-Beacon', value: 'c', description: 'C 实现，Internal 监听器固定使用' }]
-  if (os.value === 'mac' || os.value === 'linux') return [{ label: 'Go-Beacon', value: 'go', description: 'Go 实现，当前 OS 固定使用' }]
+  // External TCP: server explicitly rejects Go-Beacon
+  if (isExternalTcp.value) {
+    return [{ label: 'C-Beacon', value: 'c', description: 'C 实现，External TCP 不支持 Go-Beacon' }]
+  }
+  // Mac/Linux: Go-Beacon only
+  if (os.value === 'mac' || os.value === 'linux') {
+    return [{ label: 'Go-Beacon', value: 'go', description: 'Go 实现，当前 OS 固定使用' }]
+  }
+  // Windows (external HTTP, internal TCP/SMB): both available
   return beaconTypeOptions
 })
 const modalTitle = computed(() => isShellcodeMode.value ? '生成 Shellcode' : '生成 Beacon 客户端')
@@ -163,14 +186,21 @@ const canGenerateBeacon = computed(() => {
   return os.value === 'windows' && activeListenerSupportsHttpStager.value
 })
 const generateDisabled = computed(() => {
-  return isBusy.value
+  return isBusy.value || isGoTcpBlocked.value
 })
 const warningText = computed(() => {
   if (isShellcodeMode.value) {
     return `前端会把你选择的本地 PE 文件编码后发送给后端，以 ${currentShellcodeModeMeta.value.label} 模式生成 shellcode，再保存到本地。`
   }
+  // Go-Beacon + External TCP: server will reject
+  if (isGoTcpBlocked.value) {
+    return 'Go-Beacon 不支持 External TCP 监听器，服务端将拒绝请求。请切换为 C-Beacon，或选择 HTTP/HTTPS/Internal 类型的监听器。'
+  }
   if (isInternal.value) {
-    return 'Internal Cascade Beacon 仅支持 Windows，由父级 Beacon 承载并转发通信。后端将自动注入级联配置（加密密钥、协议特征）到模板中。'
+    if (beaconType.value === 'go') {
+      return 'Go-Beacon Internal Cascade Beacon 目前仅有 Windows amd64 / exe 模板，由父级 Beacon 承载并转发通信。后端将自动注入级联配置（加密密钥、协议特征）到模板中。'
+    }
+    return 'C-Beacon Internal Cascade Beacon 仅支持 Windows，由父级 Beacon 承载并转发通信。后端将自动注入级联配置（加密密钥、协议特征）到模板中。'
   }
   if (activeListener.value && activeListenerStatus.value !== 'started') {
     return '生成前要求 Listener 状态为 started；paused、stopped、error 等状态都会被后端拒绝。'
@@ -211,21 +241,24 @@ const availableFormats = computed(() => {
   if (isInternal.value) {
     return [{ label: 'Executable (.exe)', value: 'exe' }]
   }
-  if (beaconType.value === 'c') {
-    return [{ label: 'Executable (.exe)', value: 'exe' }]
+  // Go-Beacon: exe only，无 DLL 模板
+  if (beaconType.value === 'go') {
+    switch (os.value) {
+      case 'linux': return [{ label: 'ELF Executable', value: 'elf' }]
+      case 'mac':   return [{ label: 'Mach-O Executable', value: 'macho' }]
+      default:      return [{ label: 'Executable (.exe)', value: 'exe' }]
+    }
   }
+  // C-Beacon: exe + dll + shellcode
   switch (os.value) {
     case 'windows': return [
       { label: 'Executable (.exe)', value: 'exe' },
+      { label: 'DLL (.dll)', value: 'dll' },
       { label: 'Shellcode (.bin)', value: 'bin' },
     ]
-    case 'linux': return [
-      { label: 'ELF Executable', value: 'elf' },
-    ]
-    case 'mac': return [
-      { label: 'Mach-O Executable', value: 'macho' },
-    ]
-    default: return [{ label: 'Executable (.exe)', value: 'exe' }]
+    case 'linux': return [{ label: 'ELF Executable', value: 'elf' }]
+    case 'mac':   return [{ label: 'Mach-O Executable', value: 'macho' }]
+    default:      return [{ label: 'Executable (.exe)', value: 'exe' }]
   }
 })
 
@@ -267,10 +300,9 @@ watch(stageMode, (mode) => {
   }
 })
 
-// Internal listener: lock all fields
+// Internal listener: lock OS/arch/format/stageMode, but allow both beacon types
 watch(isInternal, (val) => {
   if (val) {
-    beaconType.value = 'c'
     os.value = 'windows'
     arch.value = 'amd64'
     format.value = 'exe'
@@ -278,11 +310,34 @@ watch(isInternal, (val) => {
   }
 }, { immediate: true })
 
-// C-Beacon: force Windows + exe
+// C-Beacon: only valid on Windows
+// Go-Beacon: x86 not supported, auto-switch to amd64
 watch(beaconType, (type) => {
   if (type === 'c') {
     if (os.value === 'mac' || os.value === 'linux') os.value = 'windows'
-    format.value = 'exe'
+  } else if (type === 'go') {
+    if (arch.value === 'x86') arch.value = 'amd64'
+  }
+})
+
+// Auto-reset format when it becomes unavailable after beacon type / OS change
+watch(availableFormats, (newFormats) => {
+  if (!newFormats.some(f => f.value === format.value)) {
+    format.value = newFormats[0]?.value || 'exe'
+  }
+})
+
+// Auto-reset arch when it becomes unavailable (e.g. switch to Go-Beacon removes x86)
+watch(availableArchOptions, (newOpts) => {
+  if (!newOpts.some(a => a.value === arch.value)) {
+    arch.value = newOpts[0]?.value || 'amd64'
+  }
+})
+
+// Auto-reset beaconType when it becomes unavailable (e.g. switch to external TCP removes Go)
+watch(availableBeaconTypes, (newTypes) => {
+  if (!newTypes.some(bt => bt.value === beaconType.value)) {
+    beaconType.value = newTypes[0]?.value || 'c'
   }
 })
 
@@ -377,6 +432,12 @@ async function handleGenerateBeacon() {
     notificationStore.warn('生成前请先启动 Listener')
     return
   }
+  // Go-Beacon does not support External TCP listeners
+  if (beaconType.value === 'go' && isExternalTcp.value) {
+    notificationStore.warn('Go-Beacon 不支持 External TCP 监听器，请切换为 C-Beacon')
+    return
+  }
+
   if (stageMode.value === 'stager') {
     if (os.value !== 'windows') {
       notificationStore.warn('Stager 当前仅支持 Windows amd64 / 32 位')
@@ -557,7 +618,15 @@ watch(generationMode, (mode) => {
             <span class="hint-icon">🔗</span>
             <div>
               <strong>Cascade Internal Beacon</strong>
-              <p>固定使用 C-Beacon (Windows / amd64 或 x86 / exe)，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
+              <p v-if="beaconType === 'go'">Go-Beacon 目前仅有 Windows amd64 / exe 模板，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
+              <p v-else>C-Beacon 固定使用 Windows / amd64 或 x86 / exe，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
+            </div>
+          </div>
+          <div v-if="isGoTcpBlocked" class="internal-hint go-tcp-blocked">
+            <span class="hint-icon">⛔</span>
+            <div>
+              <strong>Go-Beacon 不支持 External TCP</strong>
+              <p>服务端明确拒绝此组合。请切换为 C-Beacon，或选择 HTTP / HTTPS / Internal 类型的监听器。</p>
             </div>
           </div>
           <div v-if="!isInternal && os === 'mac'" class="internal-hint">
@@ -903,6 +972,11 @@ h2 {
   background: rgba(var(--color-primary-rgb), 0.06);
   border: 1px solid rgba(var(--color-primary-rgb), 0.15);
   border-radius: var(--radius-md);
+}
+
+.go-tcp-blocked {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .internal-hint .hint-icon {

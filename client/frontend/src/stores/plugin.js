@@ -8,25 +8,25 @@ import { defineStore } from 'pinia'
 import * as pluginApi from '../features/plugin/api/pluginApi.js'
 import { useAuthStore } from './auth.js'
 import { useConsoleStore } from './console.js'
-import { pickString } from '../utils/object.js'
+import { pickString, pick } from '../utils/object.js'
 
 function normalizePluginActionField(field) {
   if (!field || typeof field !== 'object') return null
 
   return {
-    name: pickString(field.name || field.Name),
-    label: pickString(field.label || field.Label || field.name || field.Name),
-    type: pickString(field.type || field.Type || 'string').toLowerCase(),
-    placeholder: pickString(field.placeholder || field.Placeholder || ''),
-    defaultValue: field.default ?? field.default_value ?? field.defaultValue ?? field.Default ?? '',
-    defaultByArch: normalizeDefaultByArch(field.default_by_arch || field.defaultByArch || field.DefaultByArch),
-    required: Boolean(field.required || field.Required),
-    help: pickString(field.help || field.Help || ''),
-    options: Array.isArray(field.options || field.Options)
-      ? (field.options || field.Options).map(item => pickString(item)).filter(Boolean)
+    name: pickString(pick(field, ['name', 'Name'])),
+    label: pickString(pick(field, ['label', 'Label', 'name', 'Name'])),
+    type: pickString(pick(field, ['type', 'Type'], 'string')).toLowerCase(),
+    placeholder: pickString(pick(field, ['placeholder', 'Placeholder'], '')),
+    defaultValue: pick(field, ['default', 'default_value', 'defaultValue', 'Default'], ''),
+    defaultByArch: normalizeDefaultByArch(pick(field, ['default_by_arch', 'defaultByArch', 'DefaultByArch'])),
+    required: Boolean(pick(field, ['required', 'Required'], false)),
+    help: pickString(pick(field, ['help', 'Help'], '')),
+    options: Array.isArray(pick(field, ['options', 'Options']))
+      ? pick(field, ['options', 'Options']).map(item => pickString(item)).filter(Boolean)
       : [],
-    role: pickString(field.role || field.Role || '').toLowerCase(),
-    postexArg: pickString(field.postex_arg || field.postexArg || field.PostExArg || ''),
+    role: pickString(pick(field, ['role', 'Role'], '')).toLowerCase(),
+    postexArg: pickString(pick(field, ['postex_arg', 'postexArg', 'PostExArg'], '')),
   }
 }
 
@@ -63,18 +63,18 @@ function normalizeDefaultByArch(value) {
 function normalizePostExConfig(postex) {
   if (!postex || typeof postex !== 'object') return null
   return {
-    mode: pickString(postex.mode || postex.Mode || '').toLowerCase().replace(/_/g, '-'),
-    dll: pickString(postex.dll || postex.DLL || ''),
-    dllByArch: normalizeStringMap(postex.dll_by_arch || postex.dllByArch || postex.DLLByArch),
-    waitMs: Number(postex.wait_ms || postex.waitMs || postex.WaitMS || 0) || 0,
-    maxRuntimeMs: Number(postex.max_runtime_ms || postex.maxRuntimeMs || postex.MaxRuntimeMS || 0) || 0,
-    idleTimeoutMs: Number(postex.idle_timeout_ms || postex.idleTimeoutMs || postex.IdleTimeoutMS || 0) || 0,
-    description: pickString(postex.description || postex.Description || ''),
-    moduleArgs: pickString(postex.module_args || postex.moduleArgs || postex.ModuleArgs || ''),
-    spawnPath: pickString(postex.spawn_path || postex.spawnPath || postex.SpawnPath || ''),
-    spawnPathByArch: normalizeStringMap(postex.spawn_path_by_arch || postex.spawnPathByArch || postex.SpawnPathByArch),
-    spawnArgs: pickString(postex.spawn_args || postex.spawnArgs || postex.SpawnArgs || ''),
-    backend: pickString(postex.backend || postex.Backend || ''),
+    mode: pickString(pick(postex, ['mode', 'Mode'], '')).toLowerCase().replace(/_/g, '-'),
+    dll: pickString(pick(postex, ['dll', 'DLL'], '')),
+    dllByArch: normalizeStringMap(pick(postex, ['dll_by_arch', 'dllByArch', 'DLLByArch'])),
+    waitMs: Number(pick(postex, ['wait_ms', 'waitMs', 'WaitMS'], 0)) || 0,
+    maxRuntimeMs: Number(pick(postex, ['max_runtime_ms', 'maxRuntimeMs', 'MaxRuntimeMS'], 0)) || 0,
+    idleTimeoutMs: Number(pick(postex, ['idle_timeout_ms', 'idleTimeoutMs', 'IdleTimeoutMS'], 0)) || 0,
+    description: pickString(pick(postex, ['description', 'Description'], '')),
+    moduleArgs: pickString(pick(postex, ['module_args', 'moduleArgs', 'ModuleArgs'], '')),
+    spawnPath: pickString(pick(postex, ['spawn_path', 'spawnPath', 'SpawnPath'], '')),
+    spawnPathByArch: normalizeStringMap(pick(postex, ['spawn_path_by_arch', 'spawnPathByArch', 'SpawnPathByArch'])),
+    spawnArgs: pickString(pick(postex, ['spawn_args', 'spawnArgs', 'SpawnArgs'], '')),
+    backend: pickString(pick(postex, ['backend', 'Backend'], '')),
   }
 }
 
@@ -82,24 +82,24 @@ function normalizePostExConfig(postex) {
 function normalizePluginAction(action) {
   if (!action || typeof action !== 'object') return null
 
-  const fields = Array.isArray(action.fields || action.Fields)
-    ? (action.fields || action.Fields).map(normalizePluginActionField).filter(Boolean)
+  const fields = Array.isArray(pick(action, ['fields', 'Fields']))
+    ? pick(action, ['fields', 'Fields']).map(normalizePluginActionField).filter(Boolean)
     : []
-  const postex = normalizePostExConfig(action.postex || action.PostEx)
-  const kind = pickString(action.kind || action.Kind || (postex ? 'postex' : 'bof')).toLowerCase() || 'bof'
+  const postex = normalizePostExConfig(pick(action, ['postex', 'PostEx']))
+  const kind = pickString(pick(action, ['kind', 'Kind'], postex ? 'postex' : 'bof')).toLowerCase() || 'bof'
 
   return {
-    id: pickString(action.id || action.ID || action.name),
+    id: pickString(pick(action, ['id', 'ID', 'name'])),
     kind,
-    label: pickString(action.label || action.Label || action.display_name || action.displayName || action.name || action.id || action.ID),
-    description: pickString(action.description || action.Description || ''),
-    os: normalizeStringList(action.os || action.OS),
-    arch: normalizeStringList(action.arch || action.Arch),
-    artifact: pickString(action.artifact || action.Artifact || action.binary || action.Binary || ''),
-    artifactByArch: normalizeStringMap(action.artifact_by_arch || action.artifactByArch || action.ArtifactByArch),
-    artifactData: pickString(action.artifact_data || action.artifactData || action.ArtifactData || ''),
-    commandId: Number(action.command_id || action.commandId || action.CommandID || 0) || 0,
-    requiresInput: Boolean(action.requires_input || action.requiresInput || action.RequiresInput || fields.length),
+    label: pickString(pick(action, ['label', 'Label', 'display_name', 'displayName', 'name', 'id', 'ID'])),
+    description: pickString(pick(action, ['description', 'Description'], '')),
+    os: normalizeStringList(pick(action, ['os', 'OS'])),
+    arch: normalizeStringList(pick(action, ['arch', 'Arch'])),
+    artifact: pickString(pick(action, ['artifact', 'Artifact', 'binary', 'Binary'], '')),
+    artifactByArch: normalizeStringMap(pick(action, ['artifact_by_arch', 'artifactByArch', 'ArtifactByArch'])),
+    artifactData: pickString(pick(action, ['artifact_data', 'artifactData', 'ArtifactData'], '')),
+    commandId: Number(pick(action, ['command_id', 'commandId', 'CommandID'], 0)) || 0,
+    requiresInput: Boolean(pick(action, ['requires_input', 'requiresInput', 'RequiresInput'], fields.length)),
     fields,
     postex,
     raw: action,
@@ -115,20 +115,20 @@ function normalizePlugin(plugin) {
     : []
 
   return {
-    id: pickString(plugin.id || plugin.name || plugin.ID),
-    name: pickString(plugin.name || plugin.id || plugin.ID),
-    displayName: pickString(plugin.display_name || plugin.displayName || plugin.name || plugin.id || plugin.ID || 'Plugin'),
-    version: pickString(plugin.version || plugin.Version || ''),
-    description: pickString(plugin.description || plugin.Description || ''),
-    path: pickString(plugin.path || plugin.Path || plugin.root || plugin.Root || ''),
+    id: pickString(pick(plugin, ['id', 'name', 'ID'])),
+    name: pickString(pick(plugin, ['name', 'id', 'ID'])),
+    displayName: pickString(pick(plugin, ['display_name', 'displayName', 'name', 'id', 'ID'], 'Plugin')),
+    version: pickString(pick(plugin, ['version', 'Version'], '')),
+    description: pickString(pick(plugin, ['description', 'Description'], '')),
+    path: pickString(pick(plugin, ['path', 'Path', 'root', 'Root'], '')),
     permissions: Array.isArray(plugin.permissions || plugin.Permissions)
       ? (plugin.permissions || plugin.Permissions).map(item => pickString(item))
       : [],
     actions,
-    status: pickString(plugin.status || plugin.Status || 'unknown'),
-    lastError: pickString(plugin.last_error || plugin.lastError || plugin.LastError || ''),
-    loadedAt: plugin.loaded_at || plugin.loadedAt || plugin.LoadedAt || null,
-    updatedAt: plugin.updated_at || plugin.updatedAt || plugin.UpdatedAt || null,
+    status: pickString(pick(plugin, ['status', 'Status'], 'unknown')),
+    lastError: pickString(pick(plugin, ['last_error', 'lastError', 'LastError'], '')),
+    loadedAt: pick(plugin, ['loaded_at', 'loadedAt', 'LoadedAt'], null),
+    updatedAt: pick(plugin, ['updated_at', 'updatedAt', 'UpdatedAt'], null),
     raw: plugin,
   }
 }
@@ -260,13 +260,13 @@ export const usePluginStore = defineStore('plugin', {
       try {
         const authStore = useAuthStore()
         const consoleStore = useConsoleStore()
-        const beaconId = pickString(payload.beacon_id || payload.beaconId || payload.selected_beacon_id || payload.selectedBeaconId)
-        const artifact = pickString(payload.artifact || payload.artifact_path || payload.artifactPath || '')
-        const kind = pickString(payload.kind || payload.action_kind || payload.actionKind || 'bof').toLowerCase()
+        const beaconId = pickString(pick(payload, ['beacon_id', 'beaconId', 'selected_beacon_id', 'selectedBeaconId']))
+        const artifact = pickString(pick(payload, ['artifact', 'artifact_path', 'artifactPath'], ''))
+        const kind = pickString(pick(payload, ['kind', 'action_kind', 'actionKind'], 'bof')).toLowerCase()
         if (beaconId) {
           consoleStore.openConsole(beaconId)
           if (kind === 'postex') {
-            const mode = pickString(payload.postex?.mode || payload.postex_mode || payload.postexMode || 'postex')
+            const mode = pickString(pick(payload, ['postex_mode', 'postexMode'], pick(payload.postex || {}, ['mode'], 'postex')))
             consoleStore.appendToConsole(beaconId, 'input', `${mode} "${artifact}"`.trim())
             consoleStore.appendToConsole(beaconId, 'output', '正在推送 PostEx DLL 并创建任务...')
           } else {
@@ -300,9 +300,9 @@ export const usePluginStore = defineStore('plugin', {
         return normalized
       } catch (err) {
         const consoleStore = useConsoleStore()
-        const beaconId = pickString(payload.beacon_id || payload.beaconId || payload.selected_beacon_id || payload.selectedBeaconId)
+        const beaconId = pickString(pick(payload, ['beacon_id', 'beaconId', 'selected_beacon_id', 'selectedBeaconId']))
         if (beaconId) {
-          const kind = pickString(payload.kind || payload.action_kind || payload.actionKind || 'bof').toLowerCase()
+          const kind = pickString(pick(payload, ['kind', 'action_kind', 'actionKind'], 'bof')).toLowerCase()
           const label = kind === 'postex' ? 'PostEx' : 'BOF'
           consoleStore.appendToConsole(beaconId, 'error', `插件 ${label} 执行失败: ${err.message || '未知错误'}`)
         }

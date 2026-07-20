@@ -5,6 +5,7 @@
  */
 
 import { defineStore } from 'pinia'
+import { pickTransfer } from '../shared/protocol/adapter.js'
 import { pick, toNumber } from '../utils/object.js'
 
 function calcProgress(receivedBytes, size, receivedChunks, totalChunks, status) {
@@ -65,46 +66,39 @@ function sameTransferFallback(left, right) {
 }
 
 function normalizeTransfer(data, fallbackStatus = 'running') {
-  const totalChunksRaw = pick(data, [
-    'total_chunks', 'total_chunk', 'totalChunks', 'totalChunk', 'TotalChunks', 'TotalChunk', 
-    'chunk_count', 'chunkCount', 'ChunkCount', 'chunks_total', 'chunksTotal', 'ChunksTotal'
-  ])
-  
-  const size = toNumber(pick(data, ['size', 'Size', 'queued_bytes', 'queuedBytes', 'QueuedBytes']))
-  let totalChunks = toNumber(totalChunksRaw)
-  
+  // 一次 pickTransfer 拿全部规范化字段(别名表集中在 fieldMap.js,不在此内联)
+  const adapted = pickTransfer(data)
+
+  let totalChunks = toNumber(adapted.totalChunks)
+  const size = toNumber(adapted.size)
+
   // 如果没有总块数，但有文件大小，按 512KB 分块估算
   if (!totalChunks && size > 0) {
     totalChunks = Math.ceil(size / 524288)
   }
 
-  const rawReceivedChunks = pick(data, ['received_chunks', 'receivedChunks', 'ReceivedChunks', 'acked_chunks', 'ackedChunks', 'AckedChunks'], null)
+  // chunk_index 不在 TRANSFER_FIELDS(是 receivedChunks 的兜底来源),单独 pick
+  const rawReceivedChunks = adapted.receivedChunks || ''
   const chunkIndex = pick(data, ['chunk_index', 'chunkIndex', 'ChunkIndex'], null)
-  const receivedChunks = rawReceivedChunks !== null
+  const receivedChunks = rawReceivedChunks !== ''
     ? toNumber(rawReceivedChunks)
     : (chunkIndex !== null ? toNumber(chunkIndex) + 1 : 0)
 
-  const status = String(pick(data, ['status', 'Status'], fallbackStatus))
-  
-  // 处理 ID，避免出现 "undefined" 或 "null" 字符串
-  const pickId = (keys) => {
-    const val = pick(data, keys)
-    return (val === undefined || val === null || val === '') ? '' : String(val)
-  }
+  const status = String(adapted.status || fallbackStatus)
 
   const res = {
-    taskId: pickId(['task_id', 'taskId', 'TaskID', 'TaskId']),
-    direction: String(pick(data, ['direction', 'Direction'], 'download')).toLowerCase(),
-    beaconId: pickId(['beacon_id', 'becon_id', 'beaconid', 'beaconId', 'BeaconID', 'BeaconId']),
-    fileId: pickId(['file_id', 'fileId', 'FileID', 'FileId']),
-    fileName: String(pick(data, ['file_name', 'fileName', 'FileName'])),
-    remotePath: String(pick(data, ['remote_path', 'remotePath', 'RemotePath'])),
+    taskId: String(adapted.taskId || ''),
+    direction: String(adapted.direction || 'download').toLowerCase(),
+    beaconId: String(adapted.beaconId || ''),
+    fileId: String(adapted.fileId || ''),
+    fileName: String(adapted.fileName || ''),
+    remotePath: String(adapted.remotePath || ''),
     totalChunks,
     receivedChunks,
-    receivedBytes: toNumber(pick(data, ['received_bytes', 'receivedBytes', 'ReceivedBytes', 'acked_bytes', 'ackedBytes', 'AckedBytes', 'written_bytes', 'writtenBytes', 'WrittenBytes'])),
+    receivedBytes: toNumber(adapted.receivedBytes),
     size,
     status,
-    error: String(pick(data, ['error', 'Error', 'error_message', 'errorMessage', 'message', 'Message'])),
+    error: String(adapted.error || ''),
     updatedAt: Date.now(),
   }
 

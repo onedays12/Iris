@@ -154,7 +154,7 @@ static INT FbCollectEntries(const WCHAR* path, FileBrowserEntry** entries, SIZE_
     find = FindFirstFileW(pattern, &fd);
     HeapFree(GetProcessHeap(), 0, pattern);
     if (find == INVALID_HANDLE_VALUE) {
-        snprintf(error, error_len, "ReadDir failed: %lu", (unsigned long)GetLastError());
+        snprintf(error, error_len, "ReadDir failed: %lu", (ULONG)GetLastError());
         return 0;
     }
 

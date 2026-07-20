@@ -35,8 +35,8 @@ static BOOL CALLBACK ScreenshotEnumMonitor(HMONITOR monitor, HDC hdc, LPRECT rec
 {
     MonitorSearch* state = (MonitorSearch*)user;
     MONITORINFO info;
-    (void)hdc;
-    (void)rect;
+    (VOID)hdc;
+    (VOID)rect;
 
     /* 找到目标监视器；捕获其矩形区域 */
     if (state->index == state->target) {
@@ -183,7 +183,7 @@ static HRESULT ScreenshotEncodeJpeg(HBITMAP bitmap, INT quality, ByteBuf* image)
 
     /* 创建 WIC 成像工厂 */
     hr = CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER,
-                          &IID_IWICImagingFactory, (void**)&factory);
+                          &IID_IWICImagingFactory, (VOID**)&factory);
     if (FAILED(hr)) {
         goto cleanup;
     }
@@ -242,7 +242,7 @@ static HRESULT ScreenshotEncodeJpeg(HBITMAP bitmap, INT quality, ByteBuf* image)
         VariantInit(&value);
         value.vt = VT_R4;
         value.fltVal = (float)quality / 100.0f;
-        (void)IPropertyBag2_Write(props, 1, &option, &value);
+        (VOID)IPropertyBag2_Write(props, 1, &option, &value);
     }
 
     hr = IWICBitmapFrameEncode_Initialize(frame, props);
@@ -352,7 +352,7 @@ ByteBuf CommandScreenshot(Parser* p)
         ByteBuf err;
         BbInit(&err);
         BbPrintf(&err, "error: invalid MonitorID: %lu. Active displays found: %d",
-                  (unsigned long)monitor_u32, active_count);
+                  (ULONG)monitor_u32, active_count);
         return err;
     }
 
@@ -371,7 +371,7 @@ ByteBuf CommandScreenshot(Parser* p)
     if (FAILED(hr)) {
         ByteBuf err;
         BbInit(&err);
-        BbPrintf(&err, "error: failed to encode image: 0x%08lx", (unsigned long)hr);
+        BbPrintf(&err, "error: failed to encode image: 0x%08lx", (ULONG)hr);
         BbFree(&image);
         return err;
     }

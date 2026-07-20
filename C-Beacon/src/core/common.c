@@ -579,8 +579,90 @@ UINT64 GetUnixTimestamp(VOID)
     return (UINT64)((li.QuadPart - 116444736000000000ULL) / 10000000ULL);
 }
 
-/* 调试输出（OutputDebugStringA） */
+/* 读取大端 uint16 */
+UINT16 BeReadU16(const BYTE8* p)
+{
+    return (UINT16)(((UINT16)p[0] << 8) | (UINT16)p[1]);
+}
+
+/* 读取大端 uint32 */
+UINT32 BeReadU32(const BYTE8* p)
+{
+    return ((UINT32)p[0] << 24) |
+           ((UINT32)p[1] << 16) |
+           ((UINT32)p[2] << 8)  |
+           (UINT32)p[3];
+}
+
+/* 写入大端 uint16 */
+VOID BeWriteU16(BYTE8* p, UINT16 v)
+{
+    p[0] = (BYTE8)((v >> 8) & 0xff);
+    p[1] = (BYTE8)(v & 0xff);
+}
+
+/* 写入大端 uint32 */
+VOID BeWriteU32(BYTE8* p, UINT32 v)
+{
+    p[0] = (BYTE8)((v >> 24) & 0xff);
+    p[1] = (BYTE8)((v >> 16) & 0xff);
+    p[2] = (BYTE8)((v >> 8) & 0xff);
+    p[3] = (BYTE8)(v & 0xff);
+}
+
+/*
+ * 带超时的非阻塞 TCP 连接。
+ * 统一 cascade_io_tcp.c 与 tcp_external.c 两处的 connect+select 实现。
+ * 返回 0 表示成功，非 0 为 WSA 错误码（含 WSAETIMEDOUT）。
+ */
+INT TcpConnectNonblocking(SOCKET s, const struct sockaddr* addr, INT addr_len, INT timeout_ms)
+{
+    u_long nonblock = 1;
+    u_long blocking = 0;
+    INT rc;
+    INT err;
+    fd_set write_set;
+    fd_set except_set;
+    TIMEVAL tv;
+    INT so_error = 0;
+    INT so_len = sizeof(so_error);
+
+    if (timeout_ms <= 0) timeout_ms = 10000;
+
+    ioctlsocket(s, FIONBIO, &nonblock);
+    rc = connect(s, addr, addr_len);
+    if (rc == 0) {
+        ioctlsocket(s, FIONBIO, &blocking);
+        return 0;
+    }
+
+    err = WSAGetLastError();
+    if (err != WSAEWOULDBLOCK && err != WSAEINPROGRESS && err != WSAEINVAL && err != WSAEALREADY) {
+        return err;
+    }
+
+    FD_ZERO(&write_set);
+    FD_ZERO(&except_set);
+    FD_SET(s, &write_set);
+    FD_SET(s, &except_set);
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+
+    rc = select(0, NULL, &write_set, &except_set, &tv);
+    if (rc == 0) return WSAETIMEDOUT;
+    if (rc == SOCKET_ERROR) return WSAGetLastError();
+
+    if (getsockopt(s, SOL_SOCKET, SO_ERROR, (CHAR*)&so_error, &so_len) == SOCKET_ERROR) {
+        return WSAGetLastError();
+    }
+    if (so_error != 0) return so_error;
+
+    ioctlsocket(s, FIONBIO, &blocking);
+    return 0;
+}
+
 #ifdef _DEBUG
+/* 调试构建下格式化输出到 OutputDebugStringA。 */
 VOID DebugPrintf(const CHAR* fmt, ...)
 {
     CHAR buf[1024];
@@ -593,8 +675,9 @@ VOID DebugPrintf(const CHAR* fmt, ...)
     OutputDebugStringA(buf);
 }
 #else
+/* Release 构建中保留空实现，避免调用方条件编译。 */
 VOID DebugPrintf(const CHAR* fmt, ...)
 {
-    (void)fmt;
+    (VOID)fmt;
 }
 #endif

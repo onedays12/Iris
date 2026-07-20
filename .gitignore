@@ -24,7 +24,12 @@ CLAUDE.md
 # ============================================================
 # Root-level directories
 # ============================================================
-release-assets/
+release-assets/*
+# 例外:只有明确提交过的版本号子目录入 LFS 跟踪。
+# 使用 release-assets/v0.2.0/ 这种带具体版本号的目录,
+# 不要用 release-assets/v*/ 通配,避免旧版本本地测试产物被误带入库。
+!release-assets/v0.2.0/
+!release-assets/v0.2.0/**
 server/
 *.key
 *.pem

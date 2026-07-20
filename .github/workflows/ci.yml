@@ -1,0 +1,360 @@
+name: CI
+
+# ┌─────────────────────────────────────────────────────────────────────────────
+# 触发:
+#   - push 到 dev:  只跑 test job(前端 check:all + vitest),不构建产物
+#   - 创建 tag v*:  跑 test job → 通过后三端并行 build → 发布 GitHub Release
+#
+# 注: 本 workflow 由 client 子项目迁移至仓库根,所有 client 相关操作都加
+#     `working-directory: client`。产物最终 zip 写回仓库根目录。
+# └─────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: [main, dev]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+  create:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # release job 需要写 Release
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # test job: 前端契约测试 + 单元测试。push 和 tag 都会跑,是 build 的前置门槛。
+  # ─────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (check:all + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: client/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: client/frontend
+        run: npm ci
+
+      - name: Run contract tests (check:all)
+        working-directory: client/frontend
+        run: npm run check:all
+
+      - name: Run unit tests (vitest)
+        working-directory: client/frontend
+        run: npm run test
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 三个 build job 并行,只在 tag 触发时跑,test job 通过后启动。
+  # 每个 job 产出: client + plugins/ 打成 client-{tag}-{os}-{arch}.zip
+  # 产物最终输出到仓库根目录,便于 upload-artifact / release 统一路径。
+  # ─────────────────────────────────────────────────────────────────────────
+
+  build-windows:
+    name: Build Windows (amd64)
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: client/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/frontend/package-lock.json
+
+      - name: Install wails3 CLI (alpha.47, aligned with go.mod)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.47
+
+      - name: Install frontend deps
+        working-directory: client/frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: client
+        run: wails3 task windows:build ARCH=amd64
+
+      - name: Stage artifact + plugins
+        working-directory: client
+        shell: bash
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          OUT="client-${TAG}-windows-amd64.zip"
+          mkdir -p staging
+          mv bin/client.exe staging/
+          cp -r plugins staging/
+          cd staging
+          # 仓库根 OUT 路径(用绝对路径写回 GITHUB_WORKSPACE)
+          7z a "${GITHUB_WORKSPACE}/${OUT}" .
+          cd ..
+          ls -la "${GITHUB_WORKSPACE}/${OUT}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-windows-amd64
+          path: client-*-windows-amd64.zip
+          if-no-files-found: error
+
+  build-linux:
+    name: Build Linux (amd64)
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: client/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/frontend/package-lock.json
+
+      - name: Install Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev build-essential pkg-config
+
+      - name: Install wails3 CLI (alpha.47, aligned with go.mod)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.47
+
+      - name: Install frontend deps
+        working-directory: client/frontend
+        run: npm ci
+
+      - name: Build + Package (AppImage / deb / rpm)
+        working-directory: client
+        # linux:package 跑 create:appimage + create:deb + create:rpm + create:aur
+        # aur 产物 (.pkg.tar.zst) 不上传 Release,仅在 bin/ 留存
+        run: wails3 task linux:package ARCH=amd64
+
+      - name: Stage + rename artifacts with tag
+        working-directory: client
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          ROOT="${GITHUB_WORKSPACE}"
+          echo "Tag: ${TAG}"
+          echo "=== bin/ contents after package ==="
+          ls -la bin/
+
+          # AppImage + plugins 打成一个 zip(主推交付格式)
+          mkdir -p staging-appimage
+          APPIMAGE_SRC=$(ls bin/*.AppImage 2>/dev/null | head -1)
+          if [ -z "$APPIMAGE_SRC" ]; then
+            echo "ERROR: AppImage not found in bin/"
+            exit 1
+          fi
+          cp "$APPIMAGE_SRC" "staging-appimage/client-${TAG}-linux-amd64.AppImage"
+          cp -r plugins staging-appimage/
+          cd staging-appimage
+          zip -r -y "${ROOT}/client-${TAG}-linux-amd64.zip" .
+          cd ..
+          echo "AppImage zip: client-${TAG}-linux-amd64.zip"
+          ls -la "${ROOT}/client-${TAG}-linux-amd64.zip"
+
+          # deb / rpm 各自重命名加 tag 后缀,单独上传
+          DEB_SRC=$(ls bin/*.deb 2>/dev/null | head -1)
+          RPM_SRC=$(ls bin/*.rpm 2>/dev/null | head -1)
+
+          if [ -n "$DEB_SRC" ]; then
+            cp "$DEB_SRC" "${ROOT}/client-${TAG}-linux-amd64.deb"
+            echo "Prepared: client-${TAG}-linux-amd64.deb"
+          fi
+          if [ -n "$RPM_SRC" ]; then
+            cp "$RPM_SRC" "${ROOT}/client-${TAG}-linux-amd64.rpm"
+            echo "Prepared: client-${TAG}-linux-amd64.rpm"
+          fi
+
+      - name: Upload AppImage zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-linux-amd64-appimage
+          path: client-*-linux-amd64.zip
+          if-no-files-found: error
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-linux-amd64-deb
+          path: client-*-linux-amd64.deb
+          if-no-files-found: warn
+
+      - name: Upload rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-linux-amd64-rpm
+          path: client-*-linux-amd64.rpm
+          if-no-files-found: warn
+
+  build-darwin:
+    name: Build macOS (arm64)
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: client/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/frontend/package-lock.json
+
+      - name: Install wails3 CLI (alpha.47, aligned with go.mod)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.47
+
+      - name: Install frontend deps
+        working-directory: client/frontend
+        run: npm ci
+
+      - name: Build .app (arm64, ad-hoc signed)
+        working-directory: client
+        # darwin:package 走 build:native + create:app:bundle + codesign:adhoc
+        # 在 macos-latest(M 芯片) 上默认 build arm64。
+        run: wails3 task darwin:package ARCH=arm64
+
+      - name: Stage artifact + plugins
+        working-directory: client
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          ROOT="${GITHUB_WORKSPACE}"
+          ZIP_NAME="client-${TAG}-darwin-arm64.zip"
+          mkdir -p staging
+          # client.app 是目录,zip 时要保留 symlinks(-y) 和元数据
+          cp -R bin/client.app staging/
+          cp -R plugins staging/
+          cd staging
+          # 先把 client.app 打进 zip(用 -y 保留 .app 内的符号链接)
+          zip -r -y "${ROOT}/${ZIP_NAME}" client.app
+          # 再把 plugins/ 追加进同一个 zip
+          zip -r -y "${ROOT}/${ZIP_NAME}" plugins
+          cd ..
+          echo "Artifact: ${ZIP_NAME}"
+          ls -la "${ROOT}/${ZIP_NAME}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-darwin-arm64
+          path: client-*-darwin-arm64.zip
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # release job: 三个 build job 都通过后,拉取三个 zip,创建 GitHub Release。
+  # 直接发布(非 draft),使用者从 Release 页下载对应平台 zip。
+  # ─────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux, build-darwin]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      # checkout 时拉 LFS,这样 release-assets/<tag>/ 下的 TeamServer 产物
+      # 能正确还原成实体文件(否则只会是 LFS pointer)
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Download all client artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Stage server release assets
+        # Server 产物按 tag 名放在 release-assets/<tag>/ 下,合并到 artifacts/
+        # 统一上传。若该 tag 目录不存在(只有 client 没有 server),跳过。
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          SRC="release-assets/${TAG}"
+          echo "Looking for server assets in: ${SRC}"
+          if [ -d "${SRC}" ]; then
+            ls -la "${SRC}/"
+            cp -v "${SRC}"/* artifacts/ 2>/dev/null || true
+          else
+            echo "WARN: ${SRC} not found, skipping server assets"
+          fi
+          echo "=== Final artifacts to upload ==="
+          ls -la artifacts/
+
+      - name: Extract changelog section for this tag
+        # 从仓库自带 CHANGELOG.md 抽出当前 tag 对应段落(从 "## <tag>" 到下一个 "## " 之前)
+        # 作为 Release body。比 GitHub 自动生成的 commit list 更可读。
+        id: changelog
+        run: |
+          set -e
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Extracting changelog for ${TAG}"
+          # awk: 找到 "## <TAG>" 行开始打印,遇到下一个 "## " 开头行就退出
+          BODY=$(awk -v tag="## ${TAG}" '
+            $0 ~ "^"tag"$" {found=1; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md)
+          if [ -z "${BODY}" ]; then
+            echo "WARN: section ${TAG} not found in CHANGELOG.md, falling back to top-of-file"
+            BODY=$(head -n 50 CHANGELOG.md)
+          fi
+          # 用 EOF 分隔写文件,避免多行变量被 shell 折叠
+          printf '%s\n' "${BODY}" > release_body.md
+          echo "=== Extracted body (first 20 lines) ==="
+          head -n 20 release_body.md
+          echo "..."
+          echo "Total lines: $(wc -l < release_body.md)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release_body.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}   # v0.2.0-rc1 标记为 prerelease
+          files: |
+            artifacts/client-*.zip
+            artifacts/client-*.deb
+            artifacts/client-*.rpm
+            artifacts/TeamServer-*

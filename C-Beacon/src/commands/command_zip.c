@@ -501,7 +501,7 @@ static INT ZipWalkDir(ZipContext* ctx, const WCHAR* dir)
     find = FindFirstFileW(pattern, &fd);
     HeapFree(GetProcessHeap(), 0, (pattern));
     if (find == INVALID_HANDLE_VALUE) {
-        return ZipSetError(ctx, "failed to enumerate source directory: %lu", (unsigned long)GetLastError());
+        return ZipSetError(ctx, "failed to enumerate source directory: %lu", (ULONG)GetLastError());
     }
 
     /* 遍历目录条目 */
@@ -556,7 +556,7 @@ static INT ZipCreateArchive(const WCHAR* source_abs, const WCHAR* zip_abs, INT o
     error[0] = 0;
     source_attrs = GetFileAttributesW(source_abs);
     if (source_attrs == INVALID_FILE_ATTRIBUTES) {
-        snprintf(error, error_len, "source_path is not accessible: %lu", (unsigned long)GetLastError());
+        snprintf(error, error_len, "source_path is not accessible: %lu", (ULONG)GetLastError());
         return 0;
     }
     if (source_attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
@@ -631,7 +631,7 @@ static INT ZipCreateArchive(const WCHAR* source_abs, const WCHAR* zip_abs, INT o
             if (find == INVALID_HANDLE_VALUE) {
                 strcpy_s(ctx.error, sizeof(ctx.error), "failed to stat source file");
             } else {
-                (void)ZipWriteEntry(&ctx, source_abs, source_attrs, &fd);
+                (VOID)ZipWriteEntry(&ctx, source_abs, source_attrs, &fd);
                 FindClose(find);
             }
         }
@@ -711,7 +711,7 @@ ByteBuf CommandZip(Parser* p)
     if (arg_count != 4) {
         CHAR msg[128];
         snprintf(msg, sizeof(msg), "zip failed: requires 4 arguments (source_path, zip_path, overwrite, include_root), got %lu",
-                 (unsigned long)arg_count);
+                 (ULONG)arg_count);
         return ZipPackText(msg);
     }
 
@@ -781,9 +781,9 @@ ByteBuf CommandZip(Parser* p)
                   "zip success: source=%s zip=%s files=%lu dirs=%lu skipped=%lu bytes_in=%I64u bytes_out=%I64u",
                   source_utf8,
                   zip_utf8,
-                  (unsigned long)stats.files,
-                  (unsigned long)stats.dirs,
-                  (unsigned long)stats.skipped,
+                  (ULONG)stats.files,
+                  (ULONG)stats.dirs,
+                  (ULONG)stats.skipped,
                   (unsigned __int64)stats.bytes_in,
                   (unsigned __int64)stats.bytes_out);
         result = ZipPackText((const CHAR*)text.data);

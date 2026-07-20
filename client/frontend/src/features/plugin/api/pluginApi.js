@@ -7,7 +7,7 @@
 
 // ─── 导入 ───
 
-import { PluginService } from '../../../../bindings/changeme/service'
+import { PluginService } from '../../../../bindings/irisclient/service'
 
 // ─── 插件管理 ───
 

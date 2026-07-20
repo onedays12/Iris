@@ -124,14 +124,14 @@ INT PacketArrayString(ByteBuf* out, const CHAR* value)
     return BbString(out, value);
 }
 
-/* 向输出缓冲区追加有符号 int16（转换为 uint16） */
-INT PacketArrayI16(ByteBuf* out, int16_t value)
+/* 向输出缓冲区追加有符号 INT16（转换为 UINT16） */
+INT PacketArrayI16(ByteBuf* out, INT16 value)
 {
     return BbU16(out, (UINT16)value);
 }
 
-/* 向输出缓冲区追加有符号 int32（转换为 uint32） */
-INT PacketArrayI32(ByteBuf* out, int32_t value)
+/* 向输出缓冲区追加有符号 INT32（转换为 UINT32） */
+INT PacketArrayI32(ByteBuf* out, INT32 value)
 {
     return BbU32(out, (UINT32)value);
 }

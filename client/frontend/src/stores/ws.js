@@ -2,12 +2,44 @@
  * WebSocket 连接管理 Store
  * 负责与 Teamserver 的 WebSocket 链路建立、断开、自动重连，
  * 以及将原始消息分发到 wsEventRouter 进行事件路由。
+ *
+ * 重连策略：指数退避 + 抖动；重连耗尽后若存在缓存凭据则静默重登，
+ * 否则提示用户重新登录（针对 TeamServer 重启导致 token 失效场景）。
  */
 
 import { defineStore } from 'pinia'
 import { Events } from '@wailsio/runtime'
-import { WebSocketService } from '../../bindings/changeme/service'
+import { WebSocketService } from '../../bindings/irisclient/service'
 import { handleWsEventMessage } from '../features/events/wsEventRouter.js'
+import { pick } from '../utils/object.js'
+
+// ─── 重连参数 ───
+
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_MAX_MS = 30000
+const RECONNECT_MAX_ATTEMPTS = 5
+
+/**
+ * 计算指数退避 + 抖动延迟
+ * @param {number} attempt 当前已重试次数（从 1 开始）
+ * @returns {number} 延迟毫秒
+ */
+function computeBackoffDelay(attempt) {
+  const exp = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, attempt - 1))
+  // 抖动：0.5 ~ 1.0 倍，避免多客户端同步重连
+  const jitter = 0.5 + Math.random() * 0.5
+  return Math.floor(exp * jitter)
+}
+
+// ─── waitForConnection 事件订阅管理 ───
+
+const waiters = new Set()
+
+function notifyWaiters(status) {
+  for (const w of waiters) {
+    try { w(status) } catch { /* 忽略单个 waiter 异常 */ }
+  }
+}
 
 // ─── Store 定义 ───
 
@@ -17,13 +49,15 @@ export const useWSStore = defineStore('ws', {
 
   state: () => ({
     socket: null,
-    status: 'closed', 
+    status: 'closed',
     reconnectCount: 0,
-    maxReconnect: 5,
+    maxReconnect: RECONNECT_MAX_ATTEMPTS,
     reconnectTimer: null,
     nativeWsRegistered: false,
     nativeWsUnsubscribers: [],
     manualDisconnect: false,
+    /** 是否正在静默重登（重连耗尽后自动 login 拿新 token） */
+    reauthenticating: false,
   }),
 
   actions: {
@@ -43,12 +77,14 @@ export const useWSStore = defineStore('ws', {
         }),
         Events.On('teamserver:ws:status', (event) => {
           const payload = event?.data || {}
-          const status = String(payload.status || payload.Status || '').toLowerCase()
+          const status = String(pick(payload, ['status', 'Status'], '')).toLowerCase()
 
           if (status === 'open') {
             console.log('[WS] ✅ Go WebSocket 链路已连接')
             this.status = 'open'
             this.reconnectCount = 0
+            this.reauthenticating = false
+            notifyWaiters('open')
             return
           }
 
@@ -60,6 +96,7 @@ export const useWSStore = defineStore('ws', {
           if (status === 'closed') {
             console.log('[WS] ❌ Go WebSocket 链路已关闭')
             this.status = 'closed'
+            notifyWaiters('closed')
             if (!this.manualDisconnect) {
               this.handleReconnect()
             }
@@ -67,9 +104,10 @@ export const useWSStore = defineStore('ws', {
         }),
         Events.On('teamserver:ws:error', (event) => {
           const payload = event?.data || {}
-          const message = payload.message || payload.Message || 'unknown websocket error'
+          const message = pick(payload, ['message', 'Message'], 'unknown websocket error')
           console.error('[WS] ⚠️ Go WebSocket 链路异常:', message)
           this.status = 'error'
+          notifyWaiters('error')
           if (!this.manualDisconnect) {
             this.handleReconnect()
           }
@@ -116,33 +154,52 @@ export const useWSStore = defineStore('ws', {
         if (!this.manualDisconnect) {
           this.status = 'open'
           this.reconnectCount = 0
+          this.reauthenticating = false
+          notifyWaiters('open')
         }
       } catch (err) {
         console.error('[WS] 🚨 Go WebSocket 链路创建失败:', err)
         this.status = 'error'
+        notifyWaiters('error')
         if (!this.manualDisconnect) {
           this.handleReconnect()
         }
       }
     },
 
-    /** 
-     * 等待连接成功
+    /**
+     * 等待连接成功（事件驱动，替代轮询）
+     * @param {number} timeout 超时毫秒
+     * @returns {Promise<void>}
      */
     waitForConnection(timeout = 10000) {
       if (this.status === 'open') return Promise.resolve()
-      
+
       return new Promise((resolve, reject) => {
-        const start = Date.now()
-        const timer = setInterval(() => {
-          if (this.status === 'open') {
-            clearInterval(timer)
+        let settled = false
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          waiters.delete(onStatus)
+          reject(new Error('链路连接超时 (10s)'))
+        }, timeout)
+
+        const onStatus = (status) => {
+          if (settled) return
+          if (status === 'open') {
+            settled = true
+            clearTimeout(timer)
+            waiters.delete(onStatus)
             resolve()
-          } else if (this.status === 'error' || Date.now() - start > timeout) {
-            clearInterval(timer)
-            reject(new Error(this.status === 'error' ? '受控链路连接失败' : '链路连接超时 (10s)'))
+          } else if (status === 'error') {
+            settled = true
+            clearTimeout(timer)
+            waiters.delete(onStatus)
+            reject(new Error('受控链路连接失败'))
           }
-        }, 200)
+          // 'closed'/'connecting' 不结算，继续等待
+        }
+        waiters.add(onStatus)
       })
     },
 
@@ -157,16 +214,66 @@ export const useWSStore = defineStore('ws', {
       }
     },
 
-    // ─── 重连策略 ───
+    // ─── 重连策略（指数退避 + 抖动，耗尽后自动重登） ───
 
     handleReconnect() {
       if (this.manualDisconnect || this.reconnectTimer) return
+      // connecting 期间不重复触发，避免计数跳变
+      if (this.status === 'connecting') return
+
       if (this.reconnectCount < this.maxReconnect) {
         this.reconnectCount++
+        const delay = computeBackoffDelay(this.reconnectCount)
+        console.log(`[WS] 🔄 第 ${this.reconnectCount}/${this.maxReconnect} 次重连，${delay}ms 后重试`)
         this.reconnectTimer = setTimeout(() => {
           this.reconnectTimer = null
           this.connect()
-        }, 3000)
+        }, delay)
+      } else {
+        // 重连耗尽：尝试静默重登
+        this.attemptSilentReauth()
+      }
+    },
+
+    /**
+     * 用缓存的凭据静默重登，拿新 token 后重连 WS
+     * 无缓存凭据则提示用户重新登录
+     */
+    async attemptSilentReauth() {
+      if (this.reauthenticating || this.manualDisconnect) return
+
+      const { useAuthStore } = await import('./auth.js')
+      const authStore = useAuthStore()
+      const creds = authStore.getCachedCredentials()
+
+      if (!creds) {
+        // 无缓存凭据，提示用户重新登录
+        const { useNotificationStore } = await import('./notification.js')
+        useNotificationStore().warn('受控链路持续断开，可能是 TeamServer 重启或凭证失效，请重新登录。')
+        authStore.logout()
+        return
+      }
+
+      this.reauthenticating = true
+      console.log('[WS] 🔐 重连耗尽，尝试用缓存凭据静默重登...')
+      try {
+        const { login } = await import('../features/auth/api/authApi.js')
+        const data = await login(creds.username, creds.password)
+        if (data && data.token) {
+          authStore.setToken(data.token, creds.username, creds.password)
+          console.log('[WS] ✅ 静默重登成功，重置重连计数并重连')
+          this.reconnectCount = 0
+          this.reauthenticating = false
+          this.connect()
+        } else {
+          throw new Error('重登未返回有效 token')
+        }
+      } catch (err) {
+        console.error('[WS] ❌ 静默重登失败:', err)
+        this.reauthenticating = false
+        const { useNotificationStore } = await import('./notification.js')
+        useNotificationStore().warn('自动恢复失败，请重新登录。')
+        authStore.logout()
       }
     },
 
@@ -174,6 +281,7 @@ export const useWSStore = defineStore('ws', {
 
     disconnect() {
       this.manualDisconnect = true
+      this.reauthenticating = false
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer)
         this.reconnectTimer = null
@@ -192,6 +300,7 @@ export const useWSStore = defineStore('ws', {
         this.socket = null
       }
       this.status = 'closed'
+      notifyWaiters('closed')
     }
   }
 })

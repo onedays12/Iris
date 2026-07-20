@@ -560,6 +560,7 @@ cleanup:
 #endif
 #endif
 
+/* 等待 handles 或超时；必要时在等待窗口内执行 sleep obfuscation。 */
 DWORD BeaconWait(BeaconContext* ctx, const HANDLE* handles, DWORD count, DWORD timeout_ms)
 {
     HANDLE local_handles[MAXIMUM_WAIT_OBJECTS];

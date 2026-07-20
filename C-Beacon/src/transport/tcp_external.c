@@ -13,26 +13,14 @@
 #define TCP_EXTERNAL_MAX_FRAME (10u * 1024u * 1024u)
 #define TCP_TLS_IO_BUFFER      16384u
 
+/* SChannel TLS 握手循环上限，防止异常对端无限重协商 */
+#define TCP_TLS_HANDSHAKE_MAX_LOOPS 64
+
 #ifndef SP_PROT_TLS1_2_CLIENT
 #define SP_PROT_TLS1_2_CLIENT 0x00000800
 #endif
 
-static VOID WriteBe32(BYTE8* out, UINT32 v)
-{
-    out[0] = (BYTE8)((v >> 24) & 0xff);
-    out[1] = (BYTE8)((v >> 16) & 0xff);
-    out[2] = (BYTE8)((v >> 8) & 0xff);
-    out[3] = (BYTE8)(v & 0xff);
-}
-
-static UINT32 ReadBe32Local(const BYTE8* in)
-{
-    return ((UINT32)in[0] << 24) |
-           ((UINT32)in[1] << 16) |
-           ((UINT32)in[2] << 8) |
-           (UINT32)in[3];
-}
-
+/* 在裸 TCP socket 上发送完整缓冲区。 */
 static INT TcpRawSendAll(SOCKET s, const BYTE8* data, SIZE_T len)
 {
     SIZE_T off = 0;
@@ -48,6 +36,7 @@ static INT TcpRawSendAll(SOCKET s, const BYTE8* data, SIZE_T len)
     return 1;
 }
 
+/* 在裸 TCP socket 上接收指定长度。 */
 static INT TcpRawRecvAll(SOCKET s, BYTE8* data, SIZE_T len)
 {
     SIZE_T off = 0;
@@ -63,6 +52,7 @@ static INT TcpRawRecvAll(SOCKET s, BYTE8* data, SIZE_T len)
     return 1;
 }
 
+/* 清空 ByteBuf 内容但保留容量。 */
 static VOID TcpBufClear(ByteBuf* b)
 {
     if (b) {
@@ -70,6 +60,7 @@ static VOID TcpBufClear(ByteBuf* b)
     }
 }
 
+/* 用新数据替换 ByteBuf 内容。 */
 static INT TcpBufReplace(ByteBuf* b, const VOID* data, SIZE_T len)
 {
     if (!b) return 0;
@@ -81,6 +72,7 @@ static INT TcpBufReplace(ByteBuf* b, const VOID* data, SIZE_T len)
     return 1;
 }
 
+/* 从 ByteBuf 头部消费最多 need 字节。 */
 static SIZE_T TcpBufConsume(ByteBuf* b, BYTE8* out, SIZE_T need)
 {
     SIZE_T n;
@@ -96,6 +88,7 @@ static SIZE_T TcpBufConsume(ByteBuf* b, BYTE8* out, SIZE_T need)
     return n;
 }
 
+/* 获取 SChannel 客户端凭据句柄。 */
 static INT TcpTlsAcquireCredentials(TcpExternalSession* session)
 {
     SCHANNEL_CRED cred;
@@ -123,6 +116,7 @@ static INT TcpTlsAcquireCredentials(TcpExternalSession* session)
     return 1;
 }
 
+/* 保存 SChannel 握手阶段返回的 SECBUFFER_EXTRA 密文。 */
 static INT TcpTlsSaveHandshakeExtra(TcpExternalSession* session, SecBuffer* in)
 {
     DWORD i;
@@ -141,6 +135,7 @@ static INT TcpTlsSaveHandshakeExtra(TcpExternalSession* session, SecBuffer* in)
     return 1;
 }
 
+/* 从 socket 读取更多 TLS 密文字节到缓存。 */
 static INT TcpTlsAppendRaw(TcpExternalSession* session)
 {
     BYTE8 tmp[TCP_TLS_IO_BUFFER];
@@ -156,6 +151,7 @@ static INT TcpTlsAppendRaw(TcpExternalSession* session)
     return BbAppend(&session->tls_cipher_extra, tmp, (SIZE_T)n);
 }
 
+/* 执行客户端 SChannel TLS 握手。 */
 static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
 {
     DWORD req;
@@ -180,13 +176,14 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
           ISC_REQ_ALLOCATE_MEMORY |
           ISC_REQ_STREAM;
 
-    while (++loops < 64) {
+    while (++loops < TCP_TLS_HANDSHAKE_MAX_LOOPS) {
         SecBuffer out_buf;
         SecBufferDesc out_desc;
         SecBuffer in_buf[2];
         SecBufferDesc in_desc;
         SecBufferDesc* pin_desc = NULL;
 
+        /* 输出 token 由 SChannel 分配，发送后必须 FreeContextBuffer。 */
         ZeroMemory(&out_buf, sizeof(out_buf));
         ZeroMemory(&out_desc, sizeof(out_desc));
         out_buf.BufferType = SECBUFFER_TOKEN;
@@ -195,6 +192,7 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
         out_desc.pBuffers = &out_buf;
 
         if (session->tls_cipher_extra.len) {
+            /* 上一轮剩余密文作为本轮输入 token。 */
             ZeroMemory(in_buf, sizeof(in_buf));
             in_buf[0].BufferType = SECBUFFER_TOKEN;
             in_buf[0].pvBuffer = session->tls_cipher_extra.data;
@@ -220,6 +218,7 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
                                         &expiry);
         have_ctx = 1;
 
+        /* 将握手 token 发送给服务端。 */
         if (out_buf.pvBuffer && out_buf.cbBuffer) {
             INT sent = TcpRawSendAll(session->sock, out_buf.pvBuffer, out_buf.cbBuffer);
             FreeContextBuffer(out_buf.pvBuffer);
@@ -227,6 +226,7 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
         }
 
         if (st == SEC_E_OK) {
+            /* 握手完成后查询 stream sizes，用于后续 EncryptMessage。 */
             if (pin_desc && !TcpTlsSaveHandshakeExtra(session, in_buf)) {
                 return 0;
             }
@@ -241,6 +241,7 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
         }
 
         if (st == SEC_I_CONTINUE_NEEDED) {
+            /* 继续握手：保留 extra，不足时再从 socket 读取。 */
             if (pin_desc && !TcpTlsSaveHandshakeExtra(session, in_buf)) {
                 return 0;
             }
@@ -251,6 +252,7 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
         }
 
         if (st == SEC_E_INCOMPLETE_MESSAGE) {
+            /* 当前密文不足以组成完整 TLS record。 */
             if (!TcpTlsAppendRaw(session)) {
                 return 0;
             }
@@ -263,6 +265,7 @@ static INT TcpTlsHandshake(const Profile* profile, TcpExternalSession* session)
     return 0;
 }
 
+/* 通过 SChannel 加密并发送完整明文缓冲区。 */
 static INT TcpTlsSendAll(TcpExternalSession* session, const BYTE8* data, SIZE_T len)
 {
     SIZE_T off = 0;
@@ -290,6 +293,7 @@ static INT TcpTlsSendAll(TcpExternalSession* session, const BYTE8* data, SIZE_T 
 
         if (chunk > max_msg) chunk = max_msg;
 
+        /* SChannel 要求 header/data/trailer 使用同一个连续缓冲区。 */
         memcpy(buf + session->tls_sizes.cbHeader, data + off, chunk);
 
         ZeroMemory(bufs, sizeof(bufs));
@@ -327,6 +331,7 @@ cleanup:
     return ok;
 }
 
+/* 从 TLS 密文缓存中解出至少一个明文片段。 */
 static INT TcpTlsReadPlain(TcpExternalSession* session)
 {
     SECURITY_STATUS st;
@@ -340,6 +345,7 @@ static INT TcpTlsReadPlain(TcpExternalSession* session)
         SecBuffer* extra_buf = NULL;
         DWORD i;
 
+        /* 没有可解密密文时先从 socket 补充。 */
         if (!session->tls_cipher_extra.len && !TcpTlsAppendRaw(session)) {
             return 0;
         }
@@ -358,6 +364,7 @@ static INT TcpTlsReadPlain(TcpExternalSession* session)
 
         st = DecryptMessage(&session->tls_ctx, &desc, 0, NULL);
         if (st == SEC_E_INCOMPLETE_MESSAGE) {
+            /* 继续读取同一个 TLS record 的剩余密文。 */
             if (!TcpTlsAppendRaw(session)) {
                 return 0;
             }
@@ -370,6 +377,7 @@ static INT TcpTlsReadPlain(TcpExternalSession* session)
             return 0;
         }
 
+        /* DecryptMessage 通过 buffer type 标记明文和多余密文。 */
         for (i = 0; i < ARRAYSIZE(bufs); ++i) {
             if (bufs[i].BufferType == SECBUFFER_DATA && bufs[i].pvBuffer && bufs[i].cbBuffer) {
                 data_buf = &bufs[i];
@@ -398,6 +406,7 @@ static INT TcpTlsReadPlain(TcpExternalSession* session)
     }
 }
 
+/* 通过 TLS 明文缓存接收指定长度。 */
 static INT TcpTlsRecvAll(TcpExternalSession* session, BYTE8* data, SIZE_T len)
 {
     SIZE_T off = 0;
@@ -417,6 +426,7 @@ static INT TcpTlsRecvAll(TcpExternalSession* session, BYTE8* data, SIZE_T len)
     return 1;
 }
 
+/* 根据会话配置选择裸 TCP 或 TLS 发送。 */
 static INT TcpTransportSendAll(TcpExternalSession* session, const BYTE8* data, SIZE_T len)
 {
     if (!session || session->sock == INVALID_SOCKET) return 0;
@@ -426,6 +436,7 @@ static INT TcpTransportSendAll(TcpExternalSession* session, const BYTE8* data, S
     return TcpRawSendAll(session->sock, data, len);
 }
 
+/* 根据会话配置选择裸 TCP 或 TLS 接收。 */
 static INT TcpTransportRecvAll(TcpExternalSession* session, BYTE8* data, SIZE_T len)
 {
     if (!session || session->sock == INVALID_SOCKET) return 0;
@@ -435,55 +446,9 @@ static INT TcpTransportRecvAll(TcpExternalSession* session, BYTE8* data, SIZE_T 
     return TcpRawRecvAll(session->sock, data, len);
 }
 
-static INT TcpConnectWithTimeout(SOCKET s, const struct sockaddr* addr, INT addr_len, DWORD timeout_ms)
-{
-    u_long nonblock = 1;
-    u_long blocking = 0;
-    INT rc;
-    INT err;
-    fd_set wfds;
-    struct timeval tv;
+/* 使用非阻塞 connect 实现可控超时（公共实现见 common.c 的 TcpConnectNonblocking）。 */
 
-    if (ioctlsocket(s, FIONBIO, &nonblock) != 0) {
-        return 0;
-    }
-
-    rc = connect(s, addr, addr_len);
-    if (rc == 0) {
-        ioctlsocket(s, FIONBIO, &blocking);
-        return 1;
-    }
-
-    err = WSAGetLastError();
-    if (err != WSAEWOULDBLOCK && err != WSAEINPROGRESS && err != WSAEALREADY) {
-        ioctlsocket(s, FIONBIO, &blocking);
-        return 0;
-    }
-
-    FD_ZERO(&wfds);
-    FD_SET(s, &wfds);
-    tv.tv_sec = (LONG)(timeout_ms / 1000);
-    tv.tv_usec = (LONG)((timeout_ms % 1000) * 1000);
-
-    rc = select(0, NULL, &wfds, NULL, &tv);
-    if (rc <= 0) {
-        ioctlsocket(s, FIONBIO, &blocking);
-        return 0;
-    }
-
-    {
-        INT so_error = 0;
-        INT opt_len = sizeof(so_error);
-        if (getsockopt(s, SOL_SOCKET, SO_ERROR, (CHAR*)&so_error, &opt_len) != 0 || so_error != 0) {
-            ioctlsocket(s, FIONBIO, &blocking);
-            return 0;
-        }
-    }
-
-    ioctlsocket(s, FIONBIO, &blocking);
-    return 1;
-}
-
+/* 初始化 TCP external session。 */
 VOID TransportTcpExternalInit(TcpExternalSession* session)
 {
     if (session) {
@@ -494,6 +459,7 @@ VOID TransportTcpExternalInit(TcpExternalSession* session)
     }
 }
 
+/* 关闭 socket/TLS 上下文并释放缓存。 */
 VOID TransportTcpExternalClose(TcpExternalSession* session)
 {
     if (!session) return;
@@ -518,6 +484,7 @@ VOID TransportTcpExternalClose(TcpExternalSession* session)
     }
 }
 
+/* 连接 TCP external listener，并按配置执行 TLS 握手。 */
 INT TransportTcpExternalConnect(const Profile* profile, TcpExternalSession* session)
 {
     struct addrinfo hints;
@@ -546,13 +513,14 @@ INT TransportTcpExternalConnect(const Profile* profile, TcpExternalSession* sess
 
     timeout = (DWORD)((profile->conn_timeout_sec > 0 ? profile->conn_timeout_sec : 10) * 1000);
 
+    /* 逐个地址尝试，直到 TCP 连接和可选 TLS 握手都成功。 */
     for (ai = res; ai; ai = ai->ai_next) {
         SOCKET s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (s == INVALID_SOCKET) {
             continue;
         }
 
-        if (TcpConnectWithTimeout(s, ai->ai_addr, (INT)ai->ai_addrlen, timeout)) {
+        if (TcpConnectNonblocking(s, ai->ai_addr, (INT)ai->ai_addrlen, (INT)timeout) == 0) {
             setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const CHAR*)&timeout, sizeof(timeout));
             setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const CHAR*)&timeout, sizeof(timeout));
             session->sock = s;
@@ -574,6 +542,7 @@ INT TransportTcpExternalConnect(const Profile* profile, TcpExternalSession* sess
     return ok;
 }
 
+/* 发送 length-prefixed payload 并读取 length-prefixed response。 */
 INT TransportTcpExternalExchange(TcpExternalSession* session, const ByteBuf* payload, ByteBuf* response)
 {
     BYTE8 len_buf[4];
@@ -585,7 +554,7 @@ INT TransportTcpExternalExchange(TcpExternalSession* session, const ByteBuf* pay
 
     BbInit(response);
 
-    WriteBe32(len_buf, (UINT32)payload->len);
+    BeWriteU32(len_buf, (UINT32)payload->len);
     if (!TcpTransportSendAll(session, len_buf, sizeof(len_buf)) ||
         !TcpTransportSendAll(session, payload->data, payload->len)) {
         BbFree(response);
@@ -597,7 +566,7 @@ INT TransportTcpExternalExchange(TcpExternalSession* session, const ByteBuf* pay
         return 0;
     }
 
-    len = ReadBe32Local(len_buf);
+    len = BeReadU32(len_buf);
     if (len > TCP_EXTERNAL_MAX_FRAME) {
         BbFree(response);
         return 0;

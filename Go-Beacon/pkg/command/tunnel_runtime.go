@@ -19,7 +19,6 @@ const (
 var (
 	errTunnelChannelLimit     = errors.New("too many tunnel channels")
 	errTunnelChannelDuplicate = errors.New("duplicate tunnel channel")
-	tunnelJanitorOnce         sync.Once
 )
 
 // TunnelChannel 代表一个活跃的转发通道
@@ -101,10 +100,15 @@ type TunnelRuntime struct {
 	channels       map[string]*TunnelChannel
 	controlPackets [][]byte // 待回传的控制面 FinalPacket
 	dataPackets    [][]byte // 待回传的数据面 FinalPacket
+	janitorOnce    sync.Once
+	closeJanitor   chan struct{}
 }
 
-var tunnelRuntime = &TunnelRuntime{
-	channels: make(map[string]*TunnelChannel),
+func NewTunnelRuntime() *TunnelRuntime {
+	return &TunnelRuntime{
+		channels:     make(map[string]*TunnelChannel),
+		closeJanitor: make(chan struct{}),
+	}
 }
 
 func tunnelKey(tunnelID, channelID string) string {
@@ -159,7 +163,7 @@ func (rt *TunnelRuntime) StopTunnel(tunnelID string, reason string) {
 	rt.mu.RUnlock()
 
 	for _, ch := range toStop {
-		sendControlPacket(ch.TunnelID, ch.ChannelID, "close", TunnelReasonTimeout, nil)
+		sendControlPacket(rt, ch.TunnelID, ch.ChannelID, "close", TunnelReasonTimeout, nil)
 		ch.Close()
 		rt.Remove(ch.TunnelID, ch.ChannelID)
 	}
@@ -224,7 +228,7 @@ func (rt *TunnelRuntime) CleanupExpired(maxIdle time.Duration) {
 	rt.mu.RUnlock()
 
 	for _, ch := range toStop {
-		sendControlPacket(ch.TunnelID, ch.ChannelID, "close", TunnelReasonTimeout, nil)
+		sendControlPacket(rt, ch.TunnelID, ch.ChannelID, "close", TunnelReasonTimeout, nil)
 		ch.Close()
 		rt.Remove(ch.TunnelID, ch.ChannelID)
 	}
@@ -289,15 +293,45 @@ func (rt *TunnelRuntime) GetPendingPackets() [][]byte {
 }
 
 // StartTunnelJanitor 启动后台清理器
-func StartTunnelJanitor() {
-	tunnelJanitorOnce.Do(func() {
+func (rt *TunnelRuntime) StartJanitor() {
+	if rt == nil {
+		return
+	}
+	rt.janitorOnce.Do(func() {
 		go func() {
 			ticker := time.NewTicker(30 * time.Second)
 			defer ticker.Stop()
 
-			for range ticker.C {
-				tunnelRuntime.CleanupExpired(5 * time.Minute)
+			for {
+				select {
+				case <-ticker.C:
+					rt.CleanupExpired(5 * time.Minute)
+				case <-rt.closeJanitor:
+					return
+				}
 			}
 		}()
 	})
+}
+
+func (rt *TunnelRuntime) Close() {
+	if rt == nil {
+		return
+	}
+	select {
+	case <-rt.closeJanitor:
+	default:
+		close(rt.closeJanitor)
+	}
+
+	rt.mu.Lock()
+	channels := rt.channels
+	rt.channels = make(map[string]*TunnelChannel)
+	rt.controlPackets = nil
+	rt.dataPackets = nil
+	rt.mu.Unlock()
+
+	for _, ch := range channels {
+		ch.Close()
+	}
 }

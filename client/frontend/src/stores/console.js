@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { sendBeaconCommand } from '../features/beacon/actions/beaconCommandActions.js'
 import { COMMAND_ID } from '../constants/commands.js'
+import { bus } from '../shared/bus.js'
 
 /**
  * useConsoleStore
@@ -90,11 +91,13 @@ export const useConsoleStore = defineStore('console', {
       try {
         await sendBeaconCommand(beaconid, commandId, args)
 
-        // sleep 命令成功后立即更新本地 Agent 策略显示
+        // sleep 命令成功后通过事件总线通知 agent 更新(解除 console→agent 循环依赖)
         if (commandId === COMMAND_ID.SLEEP && args.length >= 1) {
-          const { useAgentStore } = await import('./agent.js')
-          const agentStore = useAgentStore()
-          agentStore.updateAgent(beaconid, { sleep: (Number(args[0]) || 0) / 1000, jitter: Number(args[1]) || 0 })
+          bus.emit('agent:update-sleep', {
+            beaconid,
+            sleep: (Number(args[0]) || 0) / 1000,
+            jitter: Number(args[1]) || 0,
+          })
         }
 
         // 执行成功后将其存入全局历史（如果与上一条不重复）
@@ -135,6 +138,20 @@ export const useConsoleStore = defineStore('console', {
           timestamp: new Date().toISOString() 
         })
       }
+    },
+
+    /**
+     * 初始化事件总线订阅(解除 agent→console 硬依赖)。
+     * 幂等:用 _subscribed flag 去重。App.vue 启动时调用。
+     */
+    initSubscriptions() {
+      if (this._subscribed) return
+      this._subscribed = true
+
+      // agent 删 beacon 时级联关闭控制台(原 agent.removeBeacon/removeAgent 直接调 closeConsole)
+      bus.on('agent:removed', ({ beaconid }) => {
+        this.closeConsole(beaconid)
+      })
     },
   },
 })

@@ -1,6 +1,19 @@
 #include "beacon_cascade.h"
 
+#include "beacon_cascade_internal.h"
 #include "beacon_context.h"
+
+/* ===== CascadeIoOps 查表 ===== */
+
+/* 按 io->kind 返回对应后端 ops；未知 kind 返回 NULL。*/
+const CascadeIoOps* CascadeIoOpsForKind(UINT32 kind)
+{
+    switch (kind) {
+        case CASCADE_IO_TCP:  return &g_cascade_io_tcp_ops;
+        case CASCADE_IO_PIPE: return &g_cascade_io_pipe_ops;
+        default:              return NULL;
+    }
+}
 
 /* ===== CascadeIo 生命周期 ===== */
 
@@ -19,25 +32,19 @@ VOID CascadeIoInit(CascadeIo* io)
     io->lock_initialized = 1;
 }
 
-/* 关闭 CascadeIo，释放套接字/管道/事件及临界区 */
+/* 关闭 CascadeIo：委托 ops->Close 关闭后端资源，再释放共享资源与锁 */
 VOID CascadeIoClose(CascadeIo* io)
 {
+    const CascadeIoOps* ops;
+
     if (!io) return;
 
-    if (io->kind == CASCADE_IO_TCP && io->sock != INVALID_SOCKET) {
-        WSAEventSelect(io->sock, NULL, 0);
-        shutdown(io->sock, SD_BOTH);
-        closesocket(io->sock);
-        io->sock = INVALID_SOCKET;
+    ops = CascadeIoOpsForKind(io->kind);
+    if (ops && ops->Close) {
+        ops->Close(io);
     }
-    if (io->kind == CASCADE_IO_PIPE && io->pipe != INVALID_HANDLE_VALUE) {
-        if (io->read_pending) {
-            CancelIo(io->pipe);
-            io->read_pending = FALSE;
-        }
-        CloseHandle(io->pipe);
-        io->pipe = INVALID_HANDLE_VALUE;
-    }
+    io->kind = CASCADE_IO_NONE;
+
     if (io->event != WSA_INVALID_EVENT && io->event != NULL) {
         WSACloseEvent(io->event);
         io->event = WSA_INVALID_EVENT;
@@ -50,7 +57,6 @@ VOID CascadeIoClose(CascadeIo* io)
         CloseHandle(io->write_event);
         io->write_event = NULL;
     }
-    io->kind = CASCADE_IO_NONE;
 
     if (InterlockedExchange(&io->lock_initialized, 0)) {
         DeleteCriticalSection(&io->write_lock);
@@ -60,8 +66,12 @@ VOID CascadeIoClose(CascadeIo* io)
 /* 获取 CascadeIo 关联的事件句柄（供 WaitForSingleObject 使用） */
 HANDLE CascadeIoEvent(CascadeIo* io)
 {
+    const CascadeIoOps* ops;
+
     if (!io) return NULL;
-    if (io->kind == CASCADE_IO_PIPE) return io->read_event;
-    if (io->event == WSA_INVALID_EVENT) return NULL;
-    return (HANDLE)io->event;
+    ops = CascadeIoOpsForKind(io->kind);
+    if (ops && ops->GetEvent) {
+        return ops->GetEvent(io);
+    }
+    return NULL;
 }

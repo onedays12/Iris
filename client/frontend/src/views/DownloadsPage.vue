@@ -7,7 +7,7 @@
 
 import { onMounted, onUnmounted, ref } from 'vue'
 import { Dialogs } from '@wailsio/runtime'
-import * as FileService from '../../bindings/changeme/service/fileservice.js'
+import * as FileService from '../../bindings/irisclient/service/fileservice.js'
 import { downloadFileBase64, listDownloads } from '../features/files/api/fileApi.js'
 import { useNotificationStore } from '../stores/notification.js'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'

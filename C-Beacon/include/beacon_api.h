@@ -37,7 +37,7 @@ typedef struct _MY_USTRING {
 
 /* WinHTTP 类型 - 来自 <winhttp.h>，不在 <windows.h> 中 */
 typedef PVOID HINTERNET;
-typedef unsigned short INTERNET_PORT;
+typedef WORD INTERNET_PORT;
 #define ICU_NO_ENCODE 0x20000000
 
 typedef struct {
@@ -314,7 +314,7 @@ typedef BOOL(WINAPI *fnSystemTimeToFileTime)(const SYSTEMTIME*, LPFILETIME);
 typedef BOOL(WINAPI *fnLocalFileTimeToFileTime)(const FILETIME*, LPFILETIME);
 typedef BOOL(WINAPI *fnGetComputerNameW)(LPWSTR, LPDWORD);
 typedef BOOL(WINAPI *fnGetUserNameW)(LPWSTR, LPDWORD);
-typedef void(WINAPI *fnGetSystemInfo)(LPSYSTEM_INFO);
+typedef VOID(WINAPI *fnGetSystemInfo)(LPSYSTEM_INFO);
 typedef BOOL(WINAPI *fnSetHandleInformation)(HANDLE, DWORD, DWORD);
 typedef BOOL(WINAPI *fnCreatePipe)(PHANDLE, PHANDLE, LPSECURITY_ATTRIBUTES, DWORD);
 typedef HANDLE(WINAPI *fnGetStdHandle)(DWORD);
@@ -333,10 +333,10 @@ typedef HANDLE(WINAPI *fnGetCurrentProcess)(VOID);
 typedef DWORD(WINAPI *fnGetCurrentProcessId)(VOID);
 typedef HANDLE(WINAPI *fnGetCurrentThread)(VOID);
 typedef DWORD(WINAPI *fnGetCurrentThreadId)(VOID);
-typedef void(WINAPI *fnSleep)(DWORD);
-typedef ULONGLONG(WINAPI *fnGetTickCount64)(void);
-typedef void(WINAPI *fnGetSystemTimeAsFileTime)(LPFILETIME);
-typedef void(WINAPI *fnOutputDebugStringA)(LPCSTR);
+typedef VOID(WINAPI *fnSleep)(DWORD);
+typedef ULONGLONG(WINAPI *fnGetTickCount64)(VOID);
+typedef VOID(WINAPI *fnGetSystemTimeAsFileTime)(LPFILETIME);
+typedef VOID(WINAPI *fnOutputDebugStringA)(LPCSTR);
 typedef DWORD(WINAPI *fnGetLastError)(VOID);
 typedef VOID(WINAPI *fnSetLastError)(DWORD);
 typedef INT(WINAPI *fnMultiByteToWideChar)(UINT, DWORD, LPCSTR, INT, LPWSTR, INT);

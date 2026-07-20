@@ -70,7 +70,7 @@ static INT NetAddrString(const IP_ADAPTER_UNICAST_ADDRESS* unicast, CHAR* out, S
         return 0;
     }
 
-    snprintf(out, out_len, "%s/%lu", ip, (unsigned long)prefix);
+    snprintf(out, out_len, "%s/%lu", ip, (ULONG)prefix);
     return 1;
 }
 

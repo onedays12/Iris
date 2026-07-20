@@ -3,15 +3,33 @@
  * ProxyPivotPage - 代理透视页面
  * 管理端口转发和 SOCKS 隧道的创建、查看、删除，
  * 展示 Tunnel 列表及实时状态。
+ *
+ * 纯函数移到 utils/tunnelFormat.js,
+ * create/edit 弹窗移到 TunnelCreateDialog,明细弹窗移到 TunnelDetailDialog。
  */
 
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAgentStore } from '../stores/agent.js'
 import { useModalStore } from '../stores/modal.js'
 import { useNotificationStore } from '../stores/notification.js'
 import { useTunnelStore } from '../stores/tunnel.js'
-import { formatTunnelReason } from '../utils/tunnel.js'
+import {
+  shortId,
+  formatTime,
+  formatBind,
+  formatTarget,
+  formatTunnelType,
+  statusClass,
+  statusLabel,
+  isRunningTunnel,
+  isPausedTunnel,
+  formatBytes,
+  formatCount,
+  displayCount,
+} from '../utils/tunnelFormat.js'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
+import TunnelCreateDialog from '../components/tunnel/TunnelCreateDialog.vue'
+import TunnelDetailDialog from '../components/tunnel/TunnelDetailDialog.vue'
 
 const agentStore = useAgentStore()
 const modalStore = useModalStore()
@@ -24,32 +42,6 @@ const detailVisible = ref(false)
 const activeTunnelId = ref('')
 const dialogMode = ref('create')
 const editingTunnelId = ref('')
-const createSubmitting = ref(false)
-
-const createForm = reactive({
-  beaconId: '',
-  mode: 'socks5',
-  bindHost: '127.0.0.1',
-  bindPort: 1080,
-  remoteHost: '',
-  remotePort: 0,
-  socksAuthMode: 'no_auth',
-  socksUsername: '',
-  socksPassword: '',
-  socksUdpAssociate: false,
-})
-
-const tunnelModes = [
-  { value: 'socks5', label: 'SOCKS5', description: '创建本地 SOCKS5 代理' },
-  { value: 'port_forward', label: '端口转发', description: '创建本地到目标主机的转发' },
-  { value: 'reverse_port_map', label: '反向端口映射', description: '由 Beacon 侧回连并映射到本地端口' },
-  { value: 'http_proxy', label: 'HTTP 代理', description: '预留模式，前端仅作展示与兼容' },
-  { value: 'udp_proxy', label: 'UDP 代理', description: '预留模式，前端仅作展示与兼容' },
-]
-const socksAuthModes = [
-  { value: 'no_auth', label: '无需认证', description: 'SOCKS5 不启用用户名/密码' },
-  { value: 'username_password', label: '用户名 / 密码', description: 'SOCKS5 需要用户名和密码' },
-]
 
 const tunnels = computed(() => tunnelStore.tunnels)
 const loading = computed(() => tunnelStore.loading)
@@ -61,15 +53,6 @@ const activeChannelLoading = computed(() => tunnelStore.channelsLoading[activeTu
 const activeChannelError = computed(() => tunnelStore.channelsError[activeTunnelId.value] || '')
 const activeTunnel = computed(() => tunnels.value.find(item => item.tunnelId === activeTunnelId.value) || null)
 const recyclableChannelCount = computed(() => historyChannels.value.filter(channel => ['closed', 'failed', 'timeout'].includes(String(channel.status || '').toLowerCase())).length)
-const usesSocks5Mode = computed(() => String(createForm.mode || '').toLowerCase() === 'socks5')
-const usesSocksUsernamePassword = computed(() => String(createForm.socksAuthMode || '').toLowerCase() === 'username_password')
-const isEditMode = computed(() => dialogMode.value === 'edit')
-const tunnelDialogTitle = computed(() => isEditMode.value ? '编辑网络隧道' : '新建网络隧道')
-const tunnelDialogDescription = computed(() => isEditMode.value ? '修改已暂停 Tunnel 的监听与认证参数，保存后可继续恢复' : '通过 Beacon 创建统一 Tunnel')
-const tunnelDialogSubmitText = computed(() => {
-  if (createSubmitting.value) return isEditMode.value ? '保存中...' : '创建中...'
-  return isEditMode.value ? '保存修改' : '创建隧道'
-})
 
 const availableAgents = computed(() => {
   return [...agentStore.agents].sort((a, b) => {
@@ -78,6 +61,9 @@ const availableAgents = computed(() => {
     return left.localeCompare(right)
   })
 })
+
+// TunnelCreateDialog 组件引用(用于 edit 模式调用其 fillTunnelFormFromTunnel)
+const createDialogRef = ref(null)
 
 watch(availableAgents, (agents) => {
   if (!agents.length) {
@@ -91,81 +77,6 @@ watch(availableAgents, (agents) => {
   }
 }, { immediate: true })
 
-watch(() => createVisible.value, (visible) => {
-  if (visible && !createForm.beaconId && selectedBeaconId.value) {
-    createForm.beaconId = selectedBeaconId.value
-  }
-})
-
-watch(() => createForm.mode, (mode) => {
-  if (dialogMode.value !== 'create') return
-  const normalized = String(mode || '').toLowerCase()
-  Object.assign(createForm, getModeDefaults(normalized))
-})
-
-function shortId(value) {
-  if (!value) return '-'
-  return String(value).substring(0, 8)
-}
-
-function formatTime(value) {
-  if (!value) return '-'
-  const numeric = Number(value)
-  const date = Number.isFinite(numeric)
-    ? new Date(numeric < 1e12 ? numeric * 1000 : numeric)
-    : new Date(value)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
-
-function formatBind(tunnel) {
-  return `${tunnel.bindHost || '127.0.0.1'}:${tunnel.bindPort || '-'}`
-}
-
-function formatTarget(tunnel) {
-  if (requiresRemoteTarget(tunnel.mode || tunnel.type)) {
-    if (!tunnel.remoteHost && !tunnel.remotePort) return '-'
-    return `${tunnel.remoteHost || '-'}:${tunnel.remotePort || '-'}`
-  }
-  return '-'
-}
-
-function formatTunnelType(type) {
-  const normalized = String(type || '').toLowerCase()
-  if (normalized === 'socks5') return 'SOCKS5'
-  if (normalized === 'port_forward') return 'PORT FWD'
-  if (normalized === 'reverse_port_map') return 'REVERSE MAP'
-  if (normalized === 'http_proxy') return 'HTTP PROXY'
-  if (normalized === 'udp_proxy') return 'UDP PROXY'
-  return normalized || '-'
-}
-
-function statusClass(status) {
-  const value = String(status || '').toLowerCase()
-  if (['running', 'listening', 'active', 'online'].includes(value)) return 'online'
-  if (['paused', 'pause', 'pending', 'timeout', 'closed', 'stopped'].includes(value)) return 'warn'
-  if (['error', 'failed'].includes(value)) return 'danger'
-  return 'active'
-}
-
-function statusLabel(status) {
-  const value = String(status || '').toLowerCase()
-  if (['running', 'listening', 'active', 'online'].includes(value)) return '运行中'
-  if (value === 'pending') return '待处理'
-  if (value === 'timeout') return '已超时'
-  if (['paused', 'pause'].includes(value)) return '已暂停'
-  if (value === 'closed') return '已关闭'
-  if (value === 'stopped') return '已停止'
-  if (value === 'error' || value === 'failed') return '异常'
-  return value || '-'
-}
-
 function findAgent(beaconId) {
   const id = String(beaconId || '')
   return availableAgents.value.find(agent => agent.beaconid === id || agent.beaconid.startsWith(id) || id.startsWith(agent.beaconid)) || null
@@ -177,68 +88,15 @@ function agentLabel(beaconId) {
   return `${agent.hostname || 'Unknown'} · ${shortId(agent.beaconid)}`
 }
 
-function isRunningTunnel(tunnel) {
-  const value = String(tunnel?.status || '').toLowerCase()
-  return ['running', 'listening', 'active', 'online'].includes(value)
-}
-
-function isPausedTunnel(tunnel) {
-  const value = String(tunnel?.status || '').toLowerCase()
-  return ['paused', 'pause'].includes(value)
-}
-
-function getModeDefaults(mode) {
-  const normalized = String(mode || '').toLowerCase()
-  if (normalized === 'port_forward') {
-    return { bindHost: '0.0.0.0', bindPort: 8888, remoteHost: '127.0.0.1', remotePort: 3389, socksAuthMode: 'no_auth', socksUsername: '', socksPassword: '', socksUdpAssociate: false }
-  }
-  if (normalized === 'reverse_port_map') {
-    return { bindHost: '0.0.0.0', bindPort: 13389, remoteHost: '127.0.0.1', remotePort: 3389, socksAuthMode: 'no_auth', socksUsername: '', socksPassword: '', socksUdpAssociate: false }
-  }
-  if (normalized === 'http_proxy') {
-    return { bindHost: '127.0.0.1', bindPort: 8080, remoteHost: '', remotePort: 0, socksAuthMode: 'no_auth', socksUsername: '', socksPassword: '', socksUdpAssociate: false }
-  }
-  if (normalized === 'udp_proxy') {
-    return { bindHost: '127.0.0.1', bindPort: 1080, remoteHost: '', remotePort: 0, socksAuthMode: 'no_auth', socksUsername: '', socksPassword: '', socksUdpAssociate: false }
-  }
-  return { bindHost: '127.0.0.1', bindPort: 1080, remoteHost: '', remotePort: 0, socksAuthMode: 'no_auth', socksUsername: '', socksPassword: '', socksUdpAssociate: false }
-}
-
-function resetTunnelForm(mode = 'socks5', beaconId = '') {
-  const normalizedMode = String(mode || 'socks5').toLowerCase()
-  Object.assign(createForm, {
-    beaconId,
-    mode: normalizedMode,
-    ...getModeDefaults(normalizedMode),
-  })
-}
-
-function fillTunnelFormFromTunnel(tunnel) {
-  const mode = String(tunnel?.mode || tunnel?.type || 'socks5').toLowerCase()
-  Object.assign(createForm, {
-    beaconId: String(tunnel?.beaconId || ''),
-    mode,
-    bindHost: tunnel?.bindHost || (mode === 'socks5' ? '127.0.0.1' : '0.0.0.0'),
-    bindPort: Number(tunnel?.bindPort || 0),
-    remoteHost: tunnel?.remoteHost || '',
-    remotePort: Number(tunnel?.remotePort || 0),
-    socksAuthMode: String(tunnel?.socksAuthMode || 'no_auth').toLowerCase(),
-    socksUsername: String(tunnel?.socksUsername || tunnel?.raw?.socks_username || '').trim(),
-    socksPassword: '',
-    socksUdpAssociate: Boolean(tunnel?.socksUdpAssociate),
-  })
-}
-
-function requiresRemoteTarget(mode) {
-  const normalized = String(mode || '').toLowerCase()
-  return ['port_forward', 'reverse_port_map'].includes(normalized)
-}
-
 function openCreateModal(mode = 'socks5') {
   dialogMode.value = 'create'
   editingTunnelId.value = ''
-  resetTunnelForm(mode, selectedBeaconId.value || '')
+  // 等 dialog 挂载后 reset 表单
   createVisible.value = true
+  // 下一个 tick 后 ref 可用,调用子组件 expose 的 reset
+  setTimeout(() => {
+    createDialogRef.value?.resetTunnelForm(mode, selectedBeaconId.value || '')
+  }, 0)
 }
 
 function openEditModal(tunnel) {
@@ -250,15 +108,17 @@ function openEditModal(tunnel) {
 
   dialogMode.value = 'edit'
   editingTunnelId.value = String(tunnel.tunnelId)
-  fillTunnelFormFromTunnel(tunnel)
   createVisible.value = true
+  // 等 dialog 挂载后填充表单
+  setTimeout(() => {
+    createDialogRef.value?.fillTunnelFormFromTunnel(tunnel)
+  }, 0)
 }
 
 function closeTunnelDialog() {
   createVisible.value = false
   dialogMode.value = 'create'
   editingTunnelId.value = ''
-  resetTunnelForm('socks5', selectedBeaconId.value || '')
 }
 
 async function refreshTunnels() {
@@ -269,99 +129,11 @@ async function refreshTunnels() {
   }
 }
 
-async function submitCreateTunnel() {
-  if (!createForm.beaconId) {
-    notificationStore.warn('请先选择 Beacon')
-    return
-  }
-
-  const bindPort = Number(createForm.bindPort)
-  if (!Number.isInteger(bindPort) || bindPort <= 0 || bindPort > 65535) {
-    notificationStore.warn('绑定端口必须是 1 到 65535 之间的整数')
-    return
-  }
-
-  const normalizedMode = String(createForm.mode || '').toLowerCase()
-  const allowedModes = ['socks5', 'port_forward', 'reverse_port_map', 'http_proxy', 'udp_proxy']
-  if (!allowedModes.includes(normalizedMode)) {
-    notificationStore.warn('请选择有效的 Tunnel 模式')
-    return
-  }
-
-  if (isEditMode.value && !editingTunnelId.value) {
-    notificationStore.warn('Tunnel 编辑目标不存在')
-    return
-  }
-
-  createSubmitting.value = true
-  try {
-    const payload = {
-      bind_host: createForm.bindHost || (normalizedMode === 'socks5' ? '127.0.0.1' : '0.0.0.0'),
-      bind_port: bindPort,
-    }
-
-    if (normalizedMode === 'socks5') {
-      const socksAuthMode = String(createForm.socksAuthMode || '').toLowerCase()
-      if (!['no_auth', 'username_password'].includes(socksAuthMode)) {
-        notificationStore.warn('请选择有效的 SOCKS5 认证模式')
-        return
-      }
-
-      payload.socks_auth_mode = socksAuthMode
-      payload.socks_udp_associate = Boolean(createForm.socksUdpAssociate)
-
-      if (socksAuthMode === 'username_password') {
-        const username = String(createForm.socksUsername || '').trim()
-        const password = String(createForm.socksPassword || '').trim()
-        if (!username) {
-          notificationStore.warn('请填写 SOCKS5 用户名')
-          return
-        }
-        if (!password) {
-          notificationStore.warn('请填写 SOCKS5 密码')
-          return
-        }
-        payload.socks_username = username
-        payload.socks_password = password
-      }
-    }
-
-    if (requiresRemoteTarget(normalizedMode)) {
-      const remotePort = Number(createForm.remotePort)
-      if (!createForm.remoteHost) {
-        notificationStore.warn('请填写远程主机')
-        return
-      }
-      if (!Number.isInteger(remotePort) || remotePort <= 0 || remotePort > 65535) {
-        notificationStore.warn('远程端口必须是 1 到 65535 之间的整数')
-        return
-      }
-
-      payload.remote_host = createForm.remoteHost
-      payload.remote_port = remotePort
-    }
-
-    if (isEditMode.value) {
-      await tunnelStore.updateTunnel(editingTunnelId.value, payload)
-      notificationStore.success('Tunnel 已更新')
-    } else {
-      payload.beacon_id = createForm.beaconId
-      payload.mode = normalizedMode
-      if (typeof tunnelStore.createTunnel !== 'function') {
-        throw new Error('Tunnel 创建接口不可用，请刷新页面后重试')
-      }
-      await tunnelStore.createTunnel(payload)
-      notificationStore.success('Tunnel 已创建')
-    }
-
-    createVisible.value = false
-    editingTunnelId.value = ''
-    await refreshTunnels()
-  } catch (err) {
-    console.error(isEditMode.value ? '[ProxyPivotPage] 更新 Tunnel 失败:' : '[ProxyPivotPage] 创建 Tunnel 失败:', err)
-  } finally {
-    createSubmitting.value = false
-  }
+// TunnelCreateDialog 提交成功后回调
+function onCreateSubmitted() {
+  createVisible.value = false
+  editingTunnelId.value = ''
+  refreshTunnels()
 }
 
 async function openChannels(tunnel) {
@@ -459,8 +231,8 @@ async function clearTunnel(tunnel) {
   }
 }
 
-async function recycleChannels(tunnel) {
-  if (!tunnel?.tunnelId) return
+async function recycleChannels() {
+  if (!activeTunnel.value?.tunnelId) return
   const count = recyclableChannelCount.value
   if (!count) {
     notificationStore.info('当前没有可回收的终态 channel')
@@ -468,7 +240,7 @@ async function recycleChannels(tunnel) {
   }
 
   try {
-    await tunnelStore.recycleTunnelChannels(tunnel.tunnelId, count)
+    await tunnelStore.recycleTunnelChannels(activeTunnel.value.tunnelId, count)
     notificationStore.success(`已回收 ${count} 个终态 channel`)
     await refreshTunnels()
   } catch (err) {
@@ -476,62 +248,24 @@ async function recycleChannels(tunnel) {
   }
 }
 
-function isLiveChannel(channel) {
-  return ['pending', 'active'].includes(String(channel?.status || '').toLowerCase())
-}
+// 周期性 silent 刷新 tunnel 列表，作为 WS 推送的保险，确保 bytes_in/bytes_out 实时更新。
+let statsTimer = null
+onMounted(() => {
+  refreshTunnels()
+  statsTimer = setInterval(() => {
+    tunnelStore.fetchTunnels({ silent: true }).catch(err => {
+      console.warn('[ProxyPivotPage] tunnel 列表 silent 刷新失败:', err)
+    })
+  }, 3000)
+})
 
-const channelSections = computed(() => [
-  {
-    key: 'live',
-    title: '活跃通道',
-    items: liveChannels.value,
-    emptyText: '暂无活跃通道',
-  },
-  {
-    key: 'history',
-    title: '历史通道',
-    items: historyChannels.value,
-    emptyText: '暂无历史通道',
-  },
-])
-
-function channelDisplayValue(channel) {
-  const target = channel.targetAddress || [channel.remoteHost, channel.remotePort].filter(Boolean).join(':') || [channel.localHost, channel.localPort].filter(Boolean).join(':') || '-'
-  return {
-    target,
-    reason: formatTunnelReason(channel.reason) || '-',
+onBeforeUnmount(() => {
+  if (statsTimer) {
+    clearInterval(statsTimer)
+    statsTimer = null
   }
-}
+})
 
-function formatBytes(bytes) {
-  const value = Number(bytes || 0)
-  if (value === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
-  return `${(value / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`
-}
-
-function formatCount(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return '-'
-  return String(Math.max(0, Math.trunc(numeric)))
-}
-
-function displayCount(...values) {
-  for (const value of values) {
-    const formatted = formatCount(value)
-    if (formatted !== '-') return formatted
-  }
-  return '-'
-}
-
-function formatLatency(value) {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric) || numeric <= 0) return '-'
-  return `${numeric} ms`
-}
-
-onMounted(refreshTunnels)
 </script>
 
 <template>
@@ -619,188 +353,27 @@ onMounted(refreshTunnels)
     </div>
 
     <Teleport to="body">
-<div v-if="createVisible" class="modal-overlay proxy-pivot-modal">
-        <div class="modal-card">
-          <header class="modal-header">
-            <div class="modal-title">
-              <span class="icon">🧩</span>
-              <div>
-                <h3>{{ tunnelDialogTitle }}</h3>
-                <span>{{ tunnelDialogDescription }}</span>
-              </div>
-            </div>
-            <button class="close-btn" @click="closeTunnelDialog">×</button>
-          </header>
+<TunnelCreateDialog
+        ref="createDialogRef"
+        :visible="createVisible"
+        :mode="dialogMode"
+        :editing-tunnel-id="editingTunnelId"
+        :beacon-id="selectedBeaconId"
+        :agents="availableAgents"
+        @close="closeTunnelDialog"
+        @submitted="onCreateSubmitted"
+      />
 
-          <div class="modal-body">
-            <div class="form-grid">
-              <div class="form-group span-2">
-                <label>Beacon</label>
-                <select v-model="createForm.beaconId" class="form-control" :disabled="isEditMode">
-                  <option value="" disabled>请选择 Beacon</option>
-                  <option v-for="agent in availableAgents" :key="agent.beaconid" :value="agent.beaconid">
-                    {{ agentLabel(agent.beaconid) }}
-                  </option>
-                </select>
-              </div>
-
-              <div class="form-group span-2">
-                <label>模式</label>
-                <select v-model="createForm.mode" class="form-control" :disabled="isEditMode">
-                  <option v-for="item in tunnelModes" :key="item.value" :value="item.value">
-                    {{ item.label }} - {{ item.description }}
-                  </option>
-                </select>
-              </div>
-
-              <template v-if="usesSocks5Mode">
-                <div class="form-group span-2">
-                  <label>SOCKS5 认证模式 *</label>
-                  <select v-model="createForm.socksAuthMode" class="form-control">
-                    <option v-for="item in socksAuthModes" :key="item.value" :value="item.value">
-                      {{ item.label }} - {{ item.description }}
-                    </option>
-                  </select>
-                </div>
-
-                <div v-if="usesSocksUsernamePassword" class="form-group">
-                  <label>SOCKS5 用户名 *</label>
-                  <input v-model="createForm.socksUsername" type="text" class="form-control" placeholder="operator" />
-                </div>
-
-                <div v-if="usesSocksUsernamePassword" class="form-group">
-                  <label>SOCKS5 密码 *</label>
-                  <input v-model="createForm.socksPassword" type="password" class="form-control" placeholder="change-me" />
-                </div>
-
-                <div class="form-group span-2">
-                  <label>SOCKS5 UDP ASSOCIATE *</label>
-                  <label class="checkbox-row">
-                    <input v-model="createForm.socksUdpAssociate" type="checkbox" />
-                    <span>启用 UDP ASSOCIATE</span>
-                  </label>
-                </div>
-              </template>
-
-              <div class="form-group">
-                <label>绑定地址</label>
-                <input v-model="createForm.bindHost" type="text" class="form-control" placeholder="127.0.0.1" />
-              </div>
-
-              <div class="form-group">
-                <label>绑定端口</label>
-                <input v-model.number="createForm.bindPort" type="number" min="1" max="65535" step="1" class="form-control" />
-              </div>
-
-              <template v-if="requiresRemoteTarget(createForm.mode)">
-                <div class="form-group">
-                  <label>远程主机</label>
-                  <input v-model="createForm.remoteHost" type="text" class="form-control" placeholder="127.0.0.1" />
-                </div>
-
-                <div class="form-group">
-                  <label>远程端口</label>
-                  <input v-model.number="createForm.remotePort" type="number" min="1" max="65535" step="1" class="form-control" />
-                </div>
-              </template>
-            </div>
-          </div>
-
-          <footer class="modal-footer">
-            <button class="btn btn-ghost" @click="closeTunnelDialog">取消</button>
-            <button class="btn btn-primary" :disabled="createSubmitting" @click="submitCreateTunnel">
-              {{ tunnelDialogSubmitText }}
-            </button>
-          </footer>
-        </div>
-      </div>
-
-<div v-if="detailVisible" class="modal-overlay proxy-pivot-modal">
-        <div class="detail-card">
-          <header class="modal-header">
-            <div class="modal-title">
-              <span class="icon">🔗</span>
-              <div>
-                <h3>Tunnel 连接</h3>
-                <span>{{ activeTunnel ? `${formatTunnelType(activeTunnel.mode || activeTunnel.type)} · ${formatBind(activeTunnel)}` : '连接明细' }}</span>
-              </div>
-            </div>
-            <button class="close-btn" @click="closeChannels">×</button>
-          </header>
-
-          <div class="detail-body">
-            <div v-if="activeTunnel" class="metrics-grid">
-              <div class="metric-card">
-                <span>活跃连接</span>
-                <strong>{{ displayCount(activeTunnel.activeChannels, activeTunnel.channelCount) }}</strong>
-              </div>
-              <div class="metric-card">
-                <span>队列深度</span>
-                <strong>{{ formatCount(activeTunnel.queueDepth) }}</strong>
-              </div>
-              <div class="metric-card">
-                <span>丢弃次数</span>
-                <strong>{{ formatCount(activeTunnel.dropCount) }}</strong>
-              </div>
-              <div class="metric-card">
-                <span>超时次数</span>
-                <strong>{{ formatCount(activeTunnel.timeoutCount) }}</strong>
-              </div>
-              <div class="metric-card">
-                <span>首次响应</span>
-                <strong>{{ formatLatency(activeTunnel.openLatencyMs) }}</strong>
-              </div>
-            </div>
-
-            <div v-if="activeChannelLoading" class="state-line">正在读取连接列表...</div>
-            <div v-else-if="activeChannelError" class="state-line error-state">{{ activeChannelError }}</div>
-            <div v-else class="channel-sections">
-              <section v-for="section in channelSections" :key="section.key" class="channel-section">
-                <div class="section-header">
-                  <h4>{{ section.title }}</h4>
-                  <span>{{ section.items.length }}</span>
-                </div>
-                <table class="detail-table">
-                  <thead>
-                    <tr>
-                      <th>连接 ID</th>
-                      <th>目标</th>
-                      <th>流入</th>
-                      <th>流出</th>
-                      <th>状态</th>
-                      <th>原因</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="channel in section.items" :key="channel.channelId || `${channel.localHost}-${channel.localPort}-${channel.remoteHost}-${channel.remotePort}`">
-                      <td class="cell-id">{{ channel.channelId || '-' }}</td>
-                      <td class="cell-port">{{ channelDisplayValue(channel).target }}</td>
-                      <td class="cell-size">{{ formatBytes(channel.bytesIn) }}</td>
-                      <td class="cell-size">{{ formatBytes(channel.bytesOut) }}</td>
-                      <td>
-                        <span class="status-tag" :class="statusClass(channel.status)">
-                          {{ statusLabel(channel.status) }}
-                        </span>
-                      </td>
-                      <td class="cell-reason">{{ channelDisplayValue(channel).reason }}</td>
-                    </tr>
-                    <tr v-if="section.items.length === 0">
-                      <td colspan="6" class="empty-cell">{{ section.emptyText }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </section>
-            </div>
-          </div>
-
-          <footer class="modal-footer">
-            <button class="btn btn-secondary" :disabled="!recyclableChannelCount" @click="recycleChannels(activeTunnel)">
-              回收终态 ({{ recyclableChannelCount }})
-            </button>
-            <button class="btn btn-ghost" @click="closeChannels">关闭</button>
-          </footer>
-        </div>
-      </div>
+<TunnelDetailDialog
+        :visible="detailVisible"
+        :tunnel="activeTunnel"
+        :channels="activeChannels"
+        :channel-loading="activeChannelLoading"
+        :channel-error="activeChannelError"
+        :recyclable-count="recyclableChannelCount"
+        @close="closeChannels"
+        @recycle="recycleChannels"
+      />
     </Teleport>
   </div>
 </template>

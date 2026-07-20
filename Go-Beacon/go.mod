@@ -8,6 +8,7 @@ require (
 )
 
 require (
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87 // indirect
 	github.com/gen2brain/shm v0.1.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect

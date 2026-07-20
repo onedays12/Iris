@@ -30,6 +30,7 @@ import {
 } from '../features/events/commandResultProtocol.js'
 import { formatTunnelReason } from '../utils/tunnel.js'
 import { pick } from '../utils/object.js'
+import { bus } from '../shared/bus.js'
 
 function getCommandName(commandId) {
   if (commandId === undefined || commandId === null || commandId === '') return ''
@@ -328,6 +329,20 @@ export const useEventPanelStore = defineStore('eventPanel', {
       if (this.events.length > this.maxEvents) {
         this.events.length = this.maxEvents
       }
+    },
+
+    /**
+     * 初始化事件总线订阅(解除 wsEventRouter→eventPanel 硬依赖)。
+     * 幂等:用 _subscribed flag 去重。App.vue 启动时调用。
+     */
+    initSubscriptions() {
+      if (this._subscribed) return
+      this._subscribed = true
+
+      // 来自 wsEventRouter 的事件记录(原 await import eventPanelStore)
+      bus.on('ws:event-record', (payload) => {
+        this.recordEvent(payload)
+      })
     },
   },
 })

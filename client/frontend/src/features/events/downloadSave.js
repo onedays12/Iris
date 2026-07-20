@@ -30,7 +30,7 @@ export async function saveCompletedDownload(data) {
   }
 
   const { Dialogs } = await import('@wailsio/runtime')
-  const FileService = await import('../../../bindings/changeme/service/fileservice.js')
+  const FileService = await import('../../../bindings/irisclient/service/fileservice.js')
 
   const savePath = await Dialogs.SaveFile({
     Title: '保存下载文件',

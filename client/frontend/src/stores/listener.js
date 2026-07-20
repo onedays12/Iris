@@ -5,6 +5,8 @@
 
 import { defineStore } from 'pinia'
 import * as listenerApi from '../features/listener/api/listenerApi.js'
+import { pickListener } from '../shared/protocol/adapter.js'
+import { bus } from '../shared/bus.js'
 
 export const useListenerStore = defineStore('listener', {
   state: () => ({
@@ -35,24 +37,23 @@ export const useListenerStore = defineStore('listener', {
     /** 根据 LISTENER_STATE_CHANGED 增量合并监听器状态 */
     upsertListener(payload) {
       if (!payload || typeof payload !== 'object') return
-      const name = String(payload.name || payload.Name || '').trim()
-      const id = String(payload.id || payload.ID || '').trim()
-      const status = String(payload.status || payload.Status || '').trim().toLowerCase()
+      const c = pickListener(payload)
+      const name = String(c.name || '').trim()
+      const id = String(c.id || '').trim()
+      const status = String(c.status || '').trim().toLowerCase()
       if (!name && !id) return
 
       if (status === 'removed' || status === 'deleted') {
         this.listeners = this.listeners.filter(item => {
-          const itemName = String(item.name || item.Name || '').trim()
-          const itemId = String(item.id || item.ID || '').trim()
-          return !((name && itemName === name) || (id && itemId === id))
+          const ic = pickListener(item)
+          return !((name && String(ic.name || '').trim() === name) || (id && String(ic.id || '').trim() === id))
         })
         return
       }
 
       const index = this.listeners.findIndex(item => {
-        const itemName = String(item.name || item.Name || '').trim()
-        const itemId = String(item.id || item.ID || '').trim()
-        return (name && itemName === name) || (id && itemId === id)
+        const ic = pickListener(item)
+        return (name && String(ic.name || '').trim() === name) || (id && String(ic.id || '').trim() === id)
       })
 
       if (index >= 0) {
@@ -124,6 +125,20 @@ export const useListenerStore = defineStore('listener', {
         console.error('更新监听器失败:', err)
         throw err
       }
+    },
+
+    /**
+     * 初始化事件总线订阅(解除 wsEventRouter→listener 硬依赖)。
+     * 幂等:用 _subscribed flag 去重。App.vue 启动时调用。
+     */
+    initSubscriptions() {
+      if (this._subscribed) return
+      this._subscribed = true
+
+      // 来自 wsEventRouter 的 LISTENER_STATE_CHANGED(原 await import listenerStore)
+      bus.on('ws:listener-changed', ({ data }) => {
+        this.upsertListener(data)
+      })
     },
   },
 })

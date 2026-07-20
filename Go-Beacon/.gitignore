@@ -1,0 +1,56 @@
+# Build outputs
+/bin/
+/dist/
+/build/
+/out/
+
+# Go generated artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+*.prof
+
+# Native/debug artifacts
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.bin
+
+# Patched payloads and local profiles
+*patched*.exe
+*patched*.bin
+profile*.json
+!profile.example.json
+
+# Claude Code local state
+.claude/
+CLAUDE.md
+
+# Examples build artifacts
+examples/
+
+# IDE/user-local state
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS/temp/log files
+.DS_Store
+Thumbs.db
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+*.old

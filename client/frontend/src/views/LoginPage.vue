@@ -41,8 +41,8 @@ async function handleLogin() {
     const data = await login(username.value, password.value)
     
     if (data && data.token) {
-      // 1. 存储 Token
-      authStore.setToken(data.token)
+      // 1. 存储 Token 并缓存凭据（供 TS 重启后自动重登）
+      authStore.setToken(data.token, username.value, password.value)
       
       // 2. 等待 App.vue 的 token watcher 建立 WebSocket
       isWSConnecting.value = true

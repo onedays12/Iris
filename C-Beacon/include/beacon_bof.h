@@ -278,4 +278,4 @@ PVOID BeaconGetValue(PCHAR key);
 BOOL BeaconRemoveValue(PCHAR key);
 HANDLE BeaconGetStopJobEvent(VOID);
 VOID BeaconWakeup(VOID);
-BOOL toWideChar(PCHAR src, WCHAR* dst, INT max);
+BOOL ToWideCharA(PCHAR src, WCHAR* dst, INT max);

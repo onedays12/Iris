@@ -621,8 +621,8 @@ VOID BeaconWakeup(VOID)
 
 /* ===== 工具函数 ===== */
 
-/* ANSI 转 Unicode（toWideChar 回调，BOF 中调用） */
-BOOL toWideChar(PCHAR src, WCHAR* dst, INT max)
+/* ANSI 转 Unicode（BOF 工具函数） */
+BOOL ToWideCharA(PCHAR src, WCHAR* dst, INT max)
 {
     if (!src || !dst || max < (INT)sizeof(WCHAR)) return FALSE;
     return MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, src, -1, dst, max / (INT)sizeof(WCHAR));

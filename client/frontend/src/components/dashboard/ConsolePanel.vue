@@ -8,10 +8,11 @@
 import { ref, nextTick, watch, computed, onUnmounted } from 'vue'
 import { useAgentStore } from '../../stores/agent.js'
 import { useConsoleStore } from '../../stores/console.js'
-import { ReadBinaryFileBase64 } from '../../../bindings/changeme/service/fileservice.js'
+import { ReadBinaryFileBase64 } from '../../../bindings/irisclient/service/fileservice.js'
 import { useModalStore } from '../../stores/modal.js'
+import { useConsoleHistory } from '../../composables/useConsoleHistory.js'
+import { parseCommandLine, getRawCommandAfterName } from '../../utils/commandParser.js'
 import {
-  getCommandId,
   COMMAND_HELP,
   COMMAND_HELP_ALIASES,
   COMMAND_ID,
@@ -32,6 +33,8 @@ const modalStore = useModalStore()
 
 // ─── 状态 ───
 
+// ─── 状态 ───
+
 const commandInput = ref('')
 const outputRef = ref(null)
 
@@ -41,11 +44,18 @@ const currentConsole = computed(() => consoleStore.currentConsole)
 const activeBeacon = computed(() => agentStore.getAgentById(consoleStore.activeBeaconId))
 const activeBeaconOs = computed(() => String(activeBeacon.value?.os || ''))
 
-// ─── 命令历史与 Tab 补全 ───
-const historyIndex = ref(-1)
-const historyTemp = ref('') // 暂存当前输入
-const lastTabPrefix = ref('')
-const lastTabIndex = ref(-1)
+// ─── 命令历史与 Tab 补全(委托给 useConsoleHistory composable) ───
+const {
+  historyIndex,
+  lastTabPrefix,
+  lastTabIndex,
+  reset: resetHistory,
+  handleKeyDown,
+} = useConsoleHistory({
+  commandInput,
+  getOs: () => activeBeaconOs.value,
+  getHistory: () => consoleStore.commandHistory,
+})
 
 function isCommandAllowed(command) {
   return isCommandSupportedForOS(command, activeBeaconOs.value)
@@ -105,110 +115,6 @@ watch(
     }
   }
 )
-
-/**
- * 核心解析逻辑：支持引号包裹的路径解析 (Shell-like)
- */
-function parseCommandLine(input) {
-  // 正则匹配：非空白字符，或者由双引号/单引号包裹的内容
-  const regex = /[^\s"']+|"([^"]*)"|'([^']*)'/g
-  const parts = []
-  let match
-  
-  while ((match = regex.exec(input)) !== null) {
-    // 保留 "" / '' 这类空字符串参数，不能用 || 回退到原始引号文本。
-    if (match[1] !== undefined) {
-      parts.push(match[1])
-    } else if (match[2] !== undefined) {
-      parts.push(match[2])
-    } else {
-      parts.push(match[0])
-    }
-  }
-  
-  if (parts.length === 0) return null
-  
-  const cmdName = parts[0]
-  const args = parts.slice(1)
-  const cmdId = getCommandId(cmdName)
-  
-  return {
-    cmdName,
-    cmdId,
-    args
-  }
-}
-
-function getRawCommandAfterName(input, cmdName) {
-  return String(input || '')
-    .slice(String(cmdName || '').length)
-    .replace(/^\s+/, '')
-}
-
-/**
- * 键盘快捷键处理
- */
-function handleKeyDown(e) {
-  const history = consoleStore.commandHistory
-  
-  // 1. 历史命令导航 (Up/Down)
-  if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    if (history.length === 0) return
-    
-    // 如果是第一次按向上，保存当前正在输入的文本
-    if (historyIndex.value === -1) {
-      historyTemp.value = commandInput.value
-    }
-    
-    if (historyIndex.value < history.length - 1) {
-      historyIndex.value++
-      commandInput.value = history[history.length - 1 - historyIndex.value]
-    }
-  } else if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    if (historyIndex.value > -1) {
-      historyIndex.value--
-      if (historyIndex.value === -1) {
-        commandInput.value = historyTemp.value
-      } else {
-        commandInput.value = history[history.length - 1 - historyIndex.value]
-      }
-    }
-  } 
-  
-  // 2. Tab 自动补全
-  else if (e.key === 'Tab') {
-    e.preventDefault()
-    
-    // 如果是开启新的补全会话
-    if (lastTabIndex.value === -1) {
-      const input = commandInput.value.trim()
-      if (!input || input.includes(' ')) return // 目前仅支持指令名补全
-      lastTabPrefix.value = input.toLowerCase()
-    }
-
-    const commands = [
-      ...getSupportedCommandNamesForOS(activeBeaconOs.value),
-      ...getSupportedLocalCommandNamesForOS(activeBeaconOs.value),
-    ]
-    const prefix = lastTabPrefix.value
-    
-    // 寻找匹配项并排序（保证循环顺序一致）
-    const matches = commands.filter(c => c.startsWith(prefix)).sort()
-    
-    if (matches.length > 0) {
-      lastTabIndex.value = (lastTabIndex.value + 1) % matches.length
-      commandInput.value = matches[lastTabIndex.value]
-    }
-  }
-
-  // 3. 任何非功能按键按下时，重置补全和历史状态（除非是箭头键）
-  else if (!['ArrowUp', 'ArrowDown', 'Tab', 'Enter', 'Shift', 'Control', 'Alt'].includes(e.key)) {
-    historyIndex.value = -1
-    lastTabIndex.value = -1
-  }
-}
 
 /**
  * 显示帮助信息
@@ -281,7 +187,7 @@ async function sendCommand() {
   }
 
   // 重置历史指针
-  historyIndex.value = -1
+  resetHistory()
 
   // 1. 拦截帮助指令 (help, 帮助, 查看帮助)
   if (['HELP', '帮助', '查看帮助'].includes(parsed.cmdName.toUpperCase())) {
@@ -309,9 +215,7 @@ async function sendCommand() {
     }
 
     commandInput.value = ''
-    historyIndex.value = -1
-    lastTabPrefix.value = ''
-    lastTabIndex.value = -1
+    resetHistory()
     return
   }
 

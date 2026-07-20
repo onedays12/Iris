@@ -255,7 +255,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|Win32'">
     <GenerateManifest>false</GenerateManifest>
-    <TargetName>beacon_http_windows_x86</TargetName>
+    <TargetName>beacon_http_external_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|Win32'">
     <GenerateManifest>false</GenerateManifest>
@@ -271,7 +271,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-ExHttpExe|x64'">
     <GenerateManifest>false</GenerateManifest>
-    <TargetName>beacon_http_windows_amd64</TargetName>
+    <TargetName>beacon_http_external_windows_amd64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug-InTcpExe|x64'">
     <GenerateManifest>false</GenerateManifest>
@@ -294,40 +294,40 @@
     <ExternalTransport>tcp</ExternalTransport>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseExe|Win32'">
-    <TargetName>beacon_http_windows_x86</TargetName>
+    <TargetName>beacon_http_external_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseExe|x64'">
-    <TargetName>beacon_http_windows_amd64</TargetName>
+    <TargetName>beacon_http_external_windows_amd64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(InternalTransport)'=='tcp' and '$(Platform)'=='Win32'">
     <OutDir>$(ProjectDir)x86\$(Configuration)TcpInternal\</OutDir>
     <IntDir>$(ProjectDir)x86\$(Configuration)TcpInternal\obj\</IntDir>
-    <TargetName>beacon_tcp_internal_x86</TargetName>
+    <TargetName>beacon_tcp_internal_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(InternalTransport)'=='tcp' and '$(Platform)'=='x64'">
     <OutDir>$(ProjectDir)x64\$(Configuration)TcpInternal\</OutDir>
     <IntDir>$(ProjectDir)x64\$(Configuration)TcpInternal\obj\</IntDir>
-    <TargetName>beacon_tcp_internal_amd64</TargetName>
+    <TargetName>beacon_tcp_internal_windows_amd64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(InternalTransport)'=='smb' and '$(Platform)'=='Win32'">
     <OutDir>$(ProjectDir)x86\$(Configuration)SmbInternal\</OutDir>
     <IntDir>$(ProjectDir)x86\$(Configuration)SmbInternal\obj\</IntDir>
-    <TargetName>beacon_smb_internal_x86</TargetName>
+    <TargetName>beacon_smb_internal_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(InternalTransport)'=='smb' and '$(Platform)'=='x64'">
     <OutDir>$(ProjectDir)x64\$(Configuration)SmbInternal\</OutDir>
     <IntDir>$(ProjectDir)x64\$(Configuration)SmbInternal\obj\</IntDir>
-    <TargetName>beacon_smb_internal_amd64</TargetName>
+    <TargetName>beacon_smb_internal_windows_amd64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(ExternalTransport)'=='tcp' and '$(Platform)'=='Win32'">
     <OutDir>$(ProjectDir)x86\$(Configuration)TcpExternal\</OutDir>
     <IntDir>$(ProjectDir)x86\$(Configuration)TcpExternal\obj\</IntDir>
-    <TargetName>beacon_tcp_windows_x86</TargetName>
+    <TargetName>beacon_tcp_external_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(ExternalTransport)'=='tcp' and '$(Platform)'=='x64'">
     <OutDir>$(ProjectDir)x64\$(Configuration)TcpExternal\</OutDir>
     <IntDir>$(ProjectDir)x64\$(Configuration)TcpExternal\obj\</IntDir>
-    <TargetName>beacon_tcp_windows_amd64</TargetName>
+    <TargetName>beacon_tcp_external_windows_amd64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDllTcpExternal|Win32' and '$(InternalTransport)'==''">
     <OutDir>$(ProjectDir)x86\ReleaseDllTcpExternal\</OutDir>
@@ -338,10 +338,10 @@
     <IntDir>$(ProjectDir)x64\ReleaseDllTcpExternal\obj\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <TargetName>beacon_http_windows_x86</TargetName>
+    <TargetName>beacon_http_external_windows_x86</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <TargetName>beacon_http_windows_amd64</TargetName>
+    <TargetName>beacon_http_external_windows_amd64</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -553,7 +553,9 @@
     <ClCompile Include="src\managers\postex_job.c" />
     <ClCompile Include="src\managers\postex_pipe.c" />
     <ClCompile Include="src\managers\postex_request.c" />
-    <ClCompile Include="src\managers\tunnel.c" />
+    <ClCompile Include="src\managers\tunnel_frame.c" />
+    <ClCompile Include="src\managers\tunnel_client.c" />
+    <ClCompile Include="src\managers\tunnel_server.c" />
     <ClCompile Include="src\managers\transfer.c" />
     <ClCompile Include="src\transport\http_external.c">
       <ExcludedFromBuild Condition="'$(ExternalTransport)'=='tcp'">true</ExcludedFromBuild>
@@ -582,7 +584,7 @@
     <ClInclude Include="include\beacon_postex.h" />
     <ClInclude Include="include\beacon_postex_backend.h" />
     <ClInclude Include="include\beacon_postex_module.h" />
-    <ClInclude Include="src\managers\postex_internal.h" />
+    <ClInclude Include="include\postex_internal.h" />
     <ClInclude Include="include\beacon_profile.h" />
     <ClInclude Include="include\beacon_reflective_loader.h" />
     <ClInclude Include="include\beacon_runtime.h" />
@@ -590,9 +592,10 @@
     <ClInclude Include="include\beacon_sysinfo.h" />
     <ClInclude Include="include\beacon_transfer.h" />
     <ClInclude Include="include\beacon_tunnel.h" />
+    <ClInclude Include="include\beacon_tunnel_internal.h" />
     <ClInclude Include="include\beacon_transport.h" />
     <ClInclude Include="include\beacon.h" />
-    <ClInclude Include="src\inject\inject_internal.h" />
+    <ClInclude Include="include\inject_internal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

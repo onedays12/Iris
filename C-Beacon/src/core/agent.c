@@ -72,7 +72,7 @@ INT AgentRun(Agent* agent)
     DebugPrintf("[*] Beacon modular C starting...\n");
     DebugPrintf("[*] Metadata: OS=%s Arch=%s User=%s IP=%s\n",
                 ctx->meta.os, ctx->meta.arch, ctx->meta.username, ctx->meta.internal_ip);
-    DebugPrintf("[*] BeaconID: %lu\n", (unsigned long)ctx->beacon_id);
+    DebugPrintf("[*] BeaconID: %lu\n", (ULONG)ctx->beacon_id);
 
 #if defined(BEACON_EXTERNAL_TCP_BUILD)
     return AgentRunExternalTcp(agent);

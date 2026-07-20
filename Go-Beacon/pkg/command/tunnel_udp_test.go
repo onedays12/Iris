@@ -7,12 +7,8 @@ import (
 	"time"
 )
 
-func resetTunnelRuntimeForTest() {
-	tunnelRuntime.mu.Lock()
-	defer tunnelRuntime.mu.Unlock()
-	tunnelRuntime.channels = make(map[string]*TunnelChannel)
-	tunnelRuntime.controlPackets = nil
-	tunnelRuntime.dataPackets = nil
+func newTunnelRuntimeForTest() *TunnelRuntime {
+	return NewTunnelRuntime()
 }
 
 func parseFinalPacketForTest(t *testing.T, pkt []byte) (uint32, []byte) {
@@ -33,11 +29,11 @@ func parseFinalPacketForTest(t *testing.T, pkt []byte) (uint32, []byte) {
 	return commandID, payload
 }
 
-func waitForPendingPackets(t *testing.T) [][]byte {
+func waitForPendingPackets(t *testing.T, runtime *TunnelRuntime) [][]byte {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if pkts := tunnelRuntime.GetPendingPackets(); len(pkts) > 0 {
+		if pkts := runtime.GetPendingPackets(); len(pkts) > 0 {
 			return pkts
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -72,7 +68,7 @@ func TestTunnelStartRoundTripPreservesUDPProto(t *testing.T) {
 }
 
 func TestTunnelRuntimeKeysByTunnelAndChannel(t *testing.T) {
-	resetTunnelRuntimeForTest()
+	runtime := newTunnelRuntimeForTest()
 	a1, b1 := net.Pipe()
 	defer b1.Close()
 	a2, b2 := net.Pipe()
@@ -93,30 +89,30 @@ func TestTunnelRuntimeKeysByTunnelAndChannel(t *testing.T) {
 		CreatedAt:  time.Now(),
 	}
 
-	if err := tunnelRuntime.Add(ch1); err != nil {
+	if err := runtime.Add(ch1); err != nil {
 		t.Fatalf("add ch1: %v", err)
 	}
-	if err := tunnelRuntime.Add(ch2); err != nil {
+	if err := runtime.Add(ch2); err != nil {
 		t.Fatalf("add ch2 with same channel id in another tunnel: %v", err)
 	}
-	if _, ok := tunnelRuntime.Get("tunnel-a", "shared-channel"); !ok {
+	if _, ok := runtime.Get("tunnel-a", "shared-channel"); !ok {
 		t.Fatalf("expected tunnel-a/shared-channel")
 	}
-	if _, ok := tunnelRuntime.Get("wrong-tunnel", "shared-channel"); ok {
+	if _, ok := runtime.Get("wrong-tunnel", "shared-channel"); ok {
 		t.Fatalf("lookup must include tunnel id")
 	}
-	if err := tunnelRuntime.Add(&TunnelChannel{TunnelID: "tunnel-a", ChannelID: "shared-channel"}); err != errTunnelChannelDuplicate {
+	if err := runtime.Add(&TunnelChannel{TunnelID: "tunnel-a", ChannelID: "shared-channel"}); err != errTunnelChannelDuplicate {
 		t.Fatalf("duplicate same tunnel/channel error = %v", err)
 	}
 }
 
 func TestTunnelPendingPacketsControlBeforeData(t *testing.T) {
-	resetTunnelRuntimeForTest()
+	runtime := newTunnelRuntimeForTest()
 
-	sendDataPacket("tunnel-1", "channel-1", []byte("payload"))
-	sendControlPacket("tunnel-1", "channel-1", "close", TunnelReasonCanceled, nil)
+	sendDataPacket(runtime, "tunnel-1", "channel-1", []byte("payload"))
+	sendControlPacket(runtime, "tunnel-1", "channel-1", "close", TunnelReasonCanceled, nil)
 
-	pkts := tunnelRuntime.GetPendingPackets()
+	pkts := runtime.GetPendingPackets()
 	if len(pkts) != 2 {
 		t.Fatalf("pending packets = %d, want 2", len(pkts))
 	}
@@ -131,7 +127,7 @@ func TestTunnelPendingPacketsControlBeforeData(t *testing.T) {
 }
 
 func TestCancelTunnelJobRemovesChannelAndSendsClose(t *testing.T) {
-	resetTunnelRuntimeForTest()
+	runtime := newTunnelRuntimeForTest()
 	a, b := net.Pipe()
 	defer b.Close()
 
@@ -143,19 +139,19 @@ func TestCancelTunnelJobRemovesChannelAndSendsClose(t *testing.T) {
 		TargetConn:     a,
 		CreatedAt:      time.Now(),
 	}
-	if err := tunnelRuntime.Add(ch); err != nil {
+	if err := runtime.Add(ch); err != nil {
 		t.Fatalf("add tunnel channel: %v", err)
 	}
 
-	msg, ok := CancelTunnelJob(9001)
+	msg, ok := CancelTunnelJob(runtime, 9001)
 	if !ok || msg == "" {
 		t.Fatalf("cancel tunnel job failed: ok=%v msg=%q", ok, msg)
 	}
-	if _, ok := tunnelRuntime.Get("tunnel-1", "channel-1"); ok {
+	if _, ok := runtime.Get("tunnel-1", "channel-1"); ok {
 		t.Fatalf("channel still exists after cancel")
 	}
 
-	pkts := tunnelRuntime.GetPendingPackets()
+	pkts := runtime.GetPendingPackets()
 	if len(pkts) != 1 {
 		t.Fatalf("pending packets = %d, want 1", len(pkts))
 	}
@@ -173,7 +169,7 @@ func TestCancelTunnelJobRemovesChannelAndSendsClose(t *testing.T) {
 }
 
 func TestPipeMultiplexedUDPStopsAfterFirstDatagram(t *testing.T) {
-	resetTunnelRuntimeForTest()
+	runtime := newTunnelRuntimeForTest()
 	targetSide, writerSide := net.Pipe()
 	defer writerSide.Close()
 
@@ -188,7 +184,7 @@ func TestPipeMultiplexedUDPStopsAfterFirstDatagram(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		pipeMultiplexed(t.Context(), ch)
+		pipeMultiplexed(runtime, t.Context(), ch)
 		close(done)
 	}()
 
@@ -202,7 +198,7 @@ func TestPipeMultiplexedUDPStopsAfterFirstDatagram(t *testing.T) {
 		t.Fatalf("pipeMultiplexed did not stop after first UDP datagram")
 	}
 
-	pkts := waitForPendingPackets(t)
+	pkts := waitForPendingPackets(t, runtime)
 	commandID, payload := parseFinalPacketForTest(t, pkts[0])
 	if commandID != CommandTunnelData {
 		t.Fatalf("command id = %d, want %d", commandID, CommandTunnelData)
@@ -217,7 +213,7 @@ func TestPipeMultiplexedUDPStopsAfterFirstDatagram(t *testing.T) {
 }
 
 func TestPipeMultiplexedUDPIdleTimeoutSendsClose(t *testing.T) {
-	resetTunnelRuntimeForTest()
+	runtime := newTunnelRuntimeForTest()
 	targetSide, writerSide := net.Pipe()
 	defer writerSide.Close()
 
@@ -232,7 +228,7 @@ func TestPipeMultiplexedUDPIdleTimeoutSendsClose(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		pipeMultiplexed(t.Context(), ch)
+		pipeMultiplexed(runtime, t.Context(), ch)
 		close(done)
 	}()
 
@@ -242,7 +238,7 @@ func TestPipeMultiplexedUDPIdleTimeoutSendsClose(t *testing.T) {
 		t.Fatalf("pipeMultiplexed did not stop after UDP idle timeout")
 	}
 
-	pkts := waitForPendingPackets(t)
+	pkts := waitForPendingPackets(t, runtime)
 	commandID, payload := parseFinalPacketForTest(t, pkts[0])
 	if commandID != CommandTunnelControl {
 		t.Fatalf("command id = %d, want %d", commandID, CommandTunnelControl)

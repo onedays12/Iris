@@ -28,7 +28,7 @@ BOOL InjectGetProcessMachine(HANDLE process,
     if (!IsWow64Process(process, &is_wow64)) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "%s arch query failed: %lu",
-                             label, (unsigned long)GetLastError());
+                             label, (ULONG)GetLastError());
         return FALSE;
     }
 
@@ -43,7 +43,7 @@ BOOL InjectGetProcessMachine(HANDLE process,
 
     if (err) _snprintf_s(err, err_size, _TRUNCATE,
                          "unsupported %s architecture: %u",
-                         label, (unsigned int)native_info.wProcessorArchitecture);
+                         label, (UINT)native_info.wProcessorArchitecture);
     return FALSE;
 }
 
@@ -72,18 +72,18 @@ BOOL InjectRemoteProcessAlive(HANDLE process,
         if (GetExitCodeProcess(process, &exit_code)) {
             if (status) _snprintf_s(status, status_size, _TRUNCATE,
                                     "process=exited:0x%08lx",
-                                    (unsigned long)exit_code);
+                                    (ULONG)exit_code);
         } else if (status) {
             _snprintf_s(status, status_size, _TRUNCATE,
                         "process=exited:GetExitCodeProcess failed:%lu",
-                        (unsigned long)GetLastError());
+                        (ULONG)GetLastError());
         }
         return FALSE;
     }
 
     if (status) _snprintf_s(status, status_size, _TRUNCATE,
                             "process=wait_failed:%lu",
-                            (unsigned long)GetLastError());
+                            (ULONG)GetLastError());
     return FALSE;
 }
 
@@ -137,7 +137,7 @@ BOOL InjectCreateRemoteThread(HANDLE process,
         if (last_error != ERROR_ACCESS_DENIED || attempt + 1 >= attempts) {
             if (err) _snprintf_s(err, err_size, _TRUNCATE,
                                  "CreateRemoteThread failed: %lu (%s)",
-                                 (unsigned long)last_error,
+                                 (ULONG)last_error,
                                  process_status);
             return FALSE;
         }

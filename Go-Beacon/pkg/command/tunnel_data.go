@@ -9,12 +9,20 @@ import (
 type TunnelDataCommand struct{}
 
 func (c *TunnelDataCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
+	return nil, nil
+}
+
+func HandleTunnelDataTask(runtime *TunnelRuntime, p *packet.Parser) ([][]byte, error) {
+	if runtime == nil {
+		return nil, nil
+	}
+
 	req, err := ParseTunnelData(p)
 	if err != nil {
 		return nil, err
 	}
 
-	ch, ok := tunnelRuntime.Get(req.TunnelID, req.ChannelID)
+	ch, ok := runtime.Get(req.TunnelID, req.ChannelID)
 	if !ok {
 		// 如果通道不存在，可能已经关闭，直接丢弃
 		return nil, nil
@@ -28,9 +36,9 @@ func (c *TunnelDataCommand) Execute(p *packet.Parser, acp int) ([][]byte, error)
 					return nil, err
 				}
 				// 写入失败，通知服务端关闭通道 (Action: "close")
-				sendControlPacket(req.TunnelID, req.ChannelID, "close", mapTunnelError(err), nil)
+				sendControlPacket(runtime, req.TunnelID, req.ChannelID, "close", mapTunnelError(err), nil)
 				ch.Close()
-				tunnelRuntime.Remove(req.TunnelID, req.ChannelID)
+				runtime.Remove(req.TunnelID, req.ChannelID)
 				return nil, err
 			}
 			ch.TouchLastSeen(time.Now())

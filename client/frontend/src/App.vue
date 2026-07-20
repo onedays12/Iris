@@ -7,6 +7,9 @@ import { useListenerStore } from './stores/listener.js'
 import { useAgentStore } from './stores/agent.js'
 import { usePluginStore } from './stores/plugin.js'
 import { useThemeStore } from './stores/theme.js'
+import { useConsoleStore } from './stores/console.js'
+import { useExplorerStore } from './stores/explorer.js'
+import { useEventPanelStore } from './stores/eventPanel.js'
 import Sidebar from './components/layout/Sidebar.vue'
 import ToastContainer from './components/common/ToastContainer.vue'
 import EventPanel from './components/common/EventPanel.vue'
@@ -23,17 +26,32 @@ const route = useRoute()
 
 themeStore.initTheme()
 
-watch(() => authStore.token, (newToken) => {
+// 初始化事件总线订阅(必须在 wsStore.connect 之前,保证 WS 消息到达时订阅已注册)。
+// 各 store 的 initSubscriptions 幂等,重复调用不重复注册。
+const consoleStore = useConsoleStore()
+const explorerStore = useExplorerStore()
+const eventPanelStore = useEventPanelStore()
+agentStore.initSubscriptions()
+consoleStore.initSubscriptions()
+explorerStore.initSubscriptions()
+listenerStore.initSubscriptions()
+eventPanelStore.initSubscriptions()
+
+watch(() => authStore.token, async (newToken) => {
   if (newToken) {
     // 1. 建立长连接
     wsStore.connect()
 
-    // 2. 异步非阻塞预加载业务数据，防止 TeamServer 响应慢导致界面卡顿
-    setTimeout(() => {
+    // 2. 等 WS 握手成功后再并行预加载业务数据(事件驱动,替代原 setTimeout 100ms hack)。
+    //    WS 失败则跳过预加载,由各页面按需重试。
+    try {
+      await wsStore.waitForConnection()
       listenerStore.fetchListeners().catch(() => {})
       agentStore.fetchAgents().catch(() => {})
       pluginStore.fetchPlugins().catch(() => {})
-    }, 100)
+    } catch {
+      // WS 连接失败:不预加载,用户操作时各 store 自行重试
+    }
   } else {
     wsStore.disconnect()
   }

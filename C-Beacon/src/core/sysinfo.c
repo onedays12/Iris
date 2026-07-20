@@ -8,6 +8,7 @@
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "iphlpapi.lib")
 
+/* 收集上线 metadata 所需的主机、用户、权限、进程和内网 IP 信息。 */
 VOID SysinfoCollect(MetaData* m)
 {
     DWORD size;

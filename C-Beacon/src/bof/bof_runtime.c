@@ -22,11 +22,13 @@ static BOOL CALLBACK BofRuntimeInitOnce(PINIT_ONCE init_once, PVOID parameter, P
     return g_BofTlsIndex != TLS_OUT_OF_INDEXES;
 }
 
+/* 确保 BOF runtime 全局锁和 TLS slot 已初始化。 */
 BOOL BofRuntimeEnsureInit(VOID)
 {
     return InitOnceExecuteOnce(&g_BofRuntimeInitOnce, BofRuntimeInitOnce, NULL, NULL);
 }
 
+/* 设置当前线程正在执行的 BOF runtime。 */
 VOID BofRuntimeSetCurrent(BofJobRuntime* runtime)
 {
     if (BofRuntimeEnsureInit()) {
@@ -34,6 +36,7 @@ VOID BofRuntimeSetCurrent(BofJobRuntime* runtime)
     }
 }
 
+/* 注册 BOF 映射区，用于 Beacon API 从 return address 反查 runtime。 */
 VOID BofRuntimeRegister(BofJobRuntime* runtime, PVOID image_base, SIZE_T image_size)
 {
     if (!runtime || !image_base || image_size == 0 || !BofRuntimeEnsureInit()) return;
@@ -47,6 +50,7 @@ VOID BofRuntimeRegister(BofJobRuntime* runtime, PVOID image_base, SIZE_T image_s
     LeaveCriticalSection(&g_BofRuntimeLock);
 }
 
+/* 从全局 runtime 映射表移除 BOF runtime。 */
 VOID BofRuntimeUnregister(BofJobRuntime* runtime)
 {
     BofJobRuntime** pp;
@@ -67,6 +71,7 @@ VOID BofRuntimeUnregister(BofJobRuntime* runtime)
     LeaveCriticalSection(&g_BofRuntimeLock);
 }
 
+/* 查找当前 BOF runtime；优先 TLS，失败时按返回地址落入的映射区反查。 */
 BofJobRuntime* BofGetCurrentRuntime(PVOID return_address)
 {
     BofJobRuntime* runtime = NULL;
@@ -97,16 +102,19 @@ BofJobRuntime* BofGetCurrentRuntime(PVOID return_address)
     return runtime;
 }
 
+/* 返回 BOF runtime 绑定的 BeaconContext。 */
 BeaconContext* BofRuntimeGetContext(BofJobRuntime* runtime)
 {
     return runtime ? runtime->ctx : NULL;
 }
 
+/* 返回 BOF runtime 对应的 task id。 */
 UINT32 BofRuntimeGetTaskId(BofJobRuntime* runtime)
 {
     return runtime && runtime->job ? runtime->job->task_id : 0;
 }
 
+/* 返回 BOF job 的取消事件句柄。 */
 HANDLE BofRuntimeGetStopEvent(BofJobRuntime* runtime)
 {
     return runtime ? runtime->stop_event : NULL;

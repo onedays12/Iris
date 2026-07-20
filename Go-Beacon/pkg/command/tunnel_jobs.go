@@ -7,12 +7,15 @@ import (
 	"time"
 )
 
-func TunnelJobRows() []jobs.Row {
+func TunnelJobRows(runtime *TunnelRuntime) []jobs.Row {
+	if runtime == nil {
+		return nil
+	}
 	now := time.Now()
 	rows := make([]jobs.Row, 0)
 
-	tunnelRuntime.mu.RLock()
-	for _, ch := range tunnelRuntime.channels {
+	runtime.mu.RLock()
+	for _, ch := range runtime.channels {
 		if ch.OriginalTaskID == 0 {
 			continue
 		}
@@ -31,33 +34,33 @@ func TunnelJobRows() []jobs.Row {
 			Detail:    ch.TargetAddress,
 		})
 	}
-	tunnelRuntime.mu.RUnlock()
+	runtime.mu.RUnlock()
 
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 	return rows
 }
 
-func CancelTunnelJob(jobID uint32) (string, bool) {
-	if jobID == 0 {
+func CancelTunnelJob(runtime *TunnelRuntime, jobID uint32) (string, bool) {
+	if runtime == nil || jobID == 0 {
 		return "", false
 	}
 
-	tunnelRuntime.mu.RLock()
+	runtime.mu.RLock()
 	var target *TunnelChannel
-	for _, ch := range tunnelRuntime.channels {
+	for _, ch := range runtime.channels {
 		if ch.OriginalTaskID == jobID {
 			target = ch
 			break
 		}
 	}
-	tunnelRuntime.mu.RUnlock()
+	runtime.mu.RUnlock()
 
 	if target == nil {
 		return "", false
 	}
 
 	target.Close()
-	tunnelRuntime.Remove(target.TunnelID, target.ChannelID)
-	sendControlPacket(target.TunnelID, target.ChannelID, "close", TunnelReasonCanceled, nil)
+	runtime.Remove(target.TunnelID, target.ChannelID)
+	sendControlPacket(runtime, target.TunnelID, target.ChannelID, "close", TunnelReasonCanceled, nil)
 	return fmt.Sprintf("tunnel job %d canceled", jobID), true
 }

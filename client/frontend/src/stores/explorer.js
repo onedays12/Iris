@@ -5,9 +5,11 @@
  */
 
 import { defineStore } from 'pinia'
-import { useAgentStore } from './agent.js'
+import { bus } from '../shared/bus.js'
+
 import { sendPwdCommand } from '../features/beacon/actions/beaconCommandActions.js'
 import { explorerFiles } from '../features/files/api/fileApi.js'
+import { pick } from '../utils/object.js'
 
 // ─── 路径工具（导出供外部使用） ───
 
@@ -89,23 +91,21 @@ function parseMaybeJson(value) {
 function unwrapExplorerResult(result) {
   let value = parseMaybeJson(result)
   if (!value || typeof value !== 'object') return value
-  value = value.explorer_files || value.explorerFiles || value.ExplorerFiles ||
-    value.result || value.Result || value.data || value.Data || value
+  value = pick(value, ['explorer_files', 'explorerFiles', 'ExplorerFiles', 'result', 'Result', 'data', 'Data'], value)
   return parseMaybeJson(value)
 }
 
 function normalizeFileInfo(file) {
   if (!file || typeof file !== 'object') return file
-  const isDir = file.is_dir ?? file.isDir ?? file.IsDir ?? false
   return {
-    name: file.name ?? file.Name ?? '',
-    path: file.path ?? file.Path ?? '',
-    is_dir: Boolean(isDir),
-    size: Number(file.size ?? file.Size ?? 0),
-    mod_time: Number(file.mod_time ?? file.modTime ?? file.ModTime ?? 0),
-    permission: file.permission ?? file.Permission ?? '',
-    owner: file.owner ?? file.Owner ?? '',
-    is_hidden: Boolean(file.is_hidden ?? file.isHidden ?? file.IsHidden ?? false),
+    name: pick(file, ['name', 'Name'], ''),
+    path: pick(file, ['path', 'Path'], ''),
+    is_dir: Boolean(pick(file, ['is_dir', 'isDir', 'IsDir'], false)),
+    size: Number(pick(file, ['size', 'Size'], 0)),
+    mod_time: Number(pick(file, ['mod_time', 'modTime', 'ModTime'], 0)),
+    permission: pick(file, ['permission', 'Permission'], ''),
+    owner: pick(file, ['owner', 'Owner'], ''),
+    is_hidden: Boolean(pick(file, ['is_hidden', 'isHidden', 'IsHidden'], false)),
   }
 }
 
@@ -184,7 +184,12 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * Linux/Unix Beacon 当前工作目录（由 pwd 获取）
      */
-    workingDirectories: {}
+    workingDirectories: {},
+    /**
+     * Beacon OS 镜像(替代原 import agent 取 os)。
+     * 由 initSubscriptions 订阅 agent:registered/os-changed 维护,clearCache 时清除。
+     */
+    osByBeacon: {},
   }),
 
   // ─── 方法 ───
@@ -247,8 +252,7 @@ export const useExplorerStore = defineStore('explorer', {
      * @param {boolean} force 是否强制刷新
      */
     async loadDirectory(beaconid, path, force = false, options = {}) {
-      const agentStore = useAgentStore()
-      const agentOS = String(agentStore.getAgentById(beaconid)?.os || '').toLowerCase()
+      const agentOS = String(this.osByBeacon[beaconid] || '').toLowerCase()
       const isWindowsAgent = agentOS.includes('windows')
       let requestPath = path
 
@@ -319,8 +323,7 @@ export const useExplorerStore = defineStore('explorer', {
      * 处理后端响应
      */
     handleExplorerResponse(beaconid, result) {
-      const agentStore = useAgentStore()
-      const agentOS = String(agentStore.getAgentById(beaconid)?.os || '').toLowerCase()
+      const agentOS = String(this.osByBeacon[beaconid] || '').toLowerCase()
       const isWindowsAgent = agentOS.includes('windows')
       const value = unwrapExplorerResult(result)
       if (!value || typeof value !== 'object') {
@@ -330,17 +333,17 @@ export const useExplorerStore = defineStore('explorer', {
         return
       }
 
-      const responsePath = String(value.path ?? value.Path ?? this.uiCurrentPath[beaconid] ?? '')
+      const responsePath = String(pick(value, ['path', 'Path'], this.uiCurrentPath[beaconid] ?? ''))
       const rawPath = responsePath === '' && !isWindowsAgent ? '/' : responsePath
       const nPath = normalizePathKey(rawPath)
-      const rawFiles = value.files ?? value.Files ?? []
+      const rawFiles = pick(value, ['files', 'Files'], [])
       const files = Array.isArray(rawFiles)
         ? rawFiles.map(file => absolutizeExplorerFile(file, rawPath === '/' ? '/' : rawPath, isWindowsAgent))
         : []
-      const limit = Math.min(5000, Math.max(1, Number(value.limit ?? value.Limit ?? 1000) || 1000))
-      const offset = Math.max(0, Number(value.offset ?? value.Offset ?? 0) || 0)
-      const hasMore = Boolean(value.has_more ?? value.hasMore ?? value.HasMore ?? false)
-      const errMsg = String(value.error_message ?? value.errorMessage ?? value.ErrorMessage ?? '')
+      const limit = Math.min(5000, Math.max(1, Number(pick(value, ['limit', 'Limit'], 1000)) || 1000))
+      const offset = Math.max(0, Number(pick(value, ['offset', 'Offset'], 0)) || 0)
+      const hasMore = Boolean(pick(value, ['has_more', 'hasMore', 'HasMore'], false))
+      const errMsg = String(pick(value, ['error_message', 'errorMessage', 'ErrorMessage'], ''))
       const timerKey = getRequestTimerKey(beaconid, nPath)
       clearTimeout(explorerRequestTimers.get(timerKey))
       explorerRequestTimers.delete(timerKey)
@@ -435,7 +438,31 @@ export const useExplorerStore = defineStore('explorer', {
       if (this.workingDirectories[beaconid]) delete this.workingDirectories[beaconid]
       if (this.loadingPaths[beaconid]) delete this.loadingPaths[beaconid]
       if (this.uiCurrentPath[beaconid]) delete this.uiCurrentPath[beaconid]
+      if (this.osByBeacon[beaconid]) delete this.osByBeacon[beaconid]
       console.log(`[ExplorerStore] Memory recovered for beacon: ${beaconid}`)
-    }
+    },
+
+    /**
+     * 初始化事件总线订阅(解除 explorer→agent 硬依赖)。
+     * 幂等:用 _subscribed flag 去重。App.vue 启动时调用。
+     * 维护 osByBeacon 镜像,替代原 import agent 取 os getter。
+     */
+    initSubscriptions() {
+      if (this._subscribed) return
+      this._subscribed = true
+
+      // agent 注册/更新时维护 os 镜像(原 loadDirectory/handleExplorerResponse 调 agentStore.getAgentById)
+      bus.on('agent:registered', ({ beaconid, os }) => {
+        if (beaconid) this.osByBeacon[beaconid] = os
+      })
+      bus.on('agent:os-changed', ({ beaconid, os }) => {
+        if (beaconid) this.osByBeacon[beaconid] = os
+      })
+
+      // agent 删除时级联清理缓存(原 agent.removeBeacon/removeAgent 调 clearCache)
+      bus.on('agent:removed', ({ beaconid }) => {
+        this.clearCache(beaconid)
+      })
+    },
   }
 })

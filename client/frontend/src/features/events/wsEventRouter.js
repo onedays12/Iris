@@ -1,8 +1,11 @@
 /**
  * WebSocket 事件路由模块 - 分发实时推送事件到各业务处理器
  *
- * 接收 WebSocket 原始消息，解析事件类型后分发到对应的 handler，
+ * 接收 WebSocket 原始消息，解析事件类型后通过事件总线分发,
  * 同时记录事件到事件面板和更新相关 store 状态。
+ *
+ * router 不再直接 import store,改为 bus.emit,各 store 在
+ * initSubscriptions 时订阅 ws:* 事件,彻底解除 router→store 的 await import 环。
  */
 
 // ─── 导入 ───
@@ -18,6 +21,7 @@ import {
 } from './eventPayload.js'
 import { handleCommandEvent } from './commandEventHandler.js'
 import { handleTunnelEvent } from './tunnelEventHandler.js'
+import { bus } from '../../shared/bus.js'
 
 // ─── 常量 ───
 
@@ -56,8 +60,8 @@ export async function handleWsEventMessage(rawData) {
   }
 
   if (type !== EVENT_TYPE.BEACON_TICK && !QUIET_EVENT_TYPES.includes(type)) {
-    const { useEventPanelStore } = await import('../../stores/eventPanel.js')
-    useEventPanelStore().recordEvent({
+    // 通过事件总线通知 eventPanel 记录(原 await import eventPanelStore)
+    bus.emit('ws:event-record', {
       rawType,
       type,
       data: data && typeof data === 'object' ? data : msg,
@@ -73,32 +77,28 @@ export async function handleWsEventMessage(rawData) {
 
   switch (type) {
     case EVENT_TYPE.BEACON_REGISTERED:
-      {
-        const { useAgentStore } = await import('../../stores/agent.js')
-        useAgentStore().addAgent(data)
-      }
+      // 通过事件总线通知 agentStore(原 await import agentStore)
+      bus.emit('ws:beacon-registered', { data })
       break
 
-    case EVENT_TYPE.BEACON_TICK:
-      {
-        const { useAgentStore } = await import('../../stores/agent.js')
-        const agentStore = useAgentStore()
-        const receivedAt = Date.now()
-        agentStore.now = receivedAt
-        agentStore.updateAgent(getBeaconId(data), {
-          lastSeen: new Date(receivedAt).toISOString(),
-          status: 'online',
-        })
-      }
+    case EVENT_TYPE.BEACON_TICK: {
+      // agentStore 在订阅里设置 now + updateAgent(原 await import agentStore)
+      const beaconid = getBeaconId(data)
+      const receivedAt = Date.now()
+      bus.emit('ws:beacon-tick', {
+        beaconid,
+        lastSeen: new Date(receivedAt).toISOString(),
+        status: 'online',
+      })
       break
+    }
 
-    case EVENT_TYPE.BEACON_REMOVED:
-      {
-        const bid = getBeaconId(data)
-        const { useAgentStore } = await import('../../stores/agent.js')
-        if (bid) useAgentStore().removeAgent(String(bid))
-      }
+    case EVENT_TYPE.BEACON_REMOVED: {
+      // 通过事件总线通知 agentStore(原 await import agentStore)
+      const bid = getBeaconId(data)
+      bus.emit('ws:beacon-removed', { beaconid: bid ? String(bid) : '' })
       break
+    }
 
     case EVENT_TYPE.COMMAND_EVENT:
       await handleCommandEvent({
@@ -112,10 +112,8 @@ export async function handleWsEventMessage(rawData) {
       break
 
     case EVENT_TYPE.LISTENER_STATE_CHANGED:
-      {
-        const { useListenerStore } = await import('../../stores/listener.js')
-        useListenerStore().upsertListener(data)
-      }
+      // 通过事件总线通知 listenerStore(原 await import listenerStore)
+      bus.emit('ws:listener-changed', { data })
       break
 
     case EVENT_TYPE.TUNNEL_STARTED:

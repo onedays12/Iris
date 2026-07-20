@@ -112,7 +112,7 @@ static\beacon_templates\C-Beacon\
 sync_teamserver_templates.bat
 ```
 
-默认 TeamServer 路径为 `..\..\..\go\TeamServer`（即 `D:\代码\go\TeamServer`）。如果 TeamServer 在其他位置，可传入路径：
+默认 TeamServer 路径为 `D:\code\go\TeamServer`。如果 TeamServer 在其他位置，可传入路径：
 
 ```bat
 sync_teamserver_templates.bat E:\other\TeamServer

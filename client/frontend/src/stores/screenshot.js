@@ -6,20 +6,21 @@
 import { defineStore } from 'pinia'
 import { listScreenshots } from '../features/screenshots/api/screenshotApi.js'
 import { pick, toNumber } from '../utils/object.js'
+import { pickScreenshot } from '../shared/protocol/adapter.js'
 
 function normalizeScreenshot(item) {
-  const screenshotId = String(pick(item, ['screenshot_id', 'screenshotId', 'ScreenshotID', 'ScreenshotId']))
+  const c = pickScreenshot(item)
   return {
-    screenshotId,
-    beaconId: String(pick(item, ['beacon_id', 'beaconId', 'BeaconID', 'BeaconId'])),
-    hostname: String(pick(item, ['hostname', 'host_name', 'hostName', 'Hostname'], '未知')),
-    username: String(pick(item, ['username', 'user_name', 'userName', 'Username'], '未知')),
-    resolution: String(pick(item, ['resolution', 'Resolution'], '-')),
-    imageSize: toNumber(pick(item, ['image_size', 'imageSize', 'ImageSize'], 0)),
-    capturedAt: toNumber(pick(item, ['captured_at', 'capturedAt', 'CapturedAt'], 0)),
-    fileName: String(pick(item, ['file_name', 'fileName', 'FileName'], 'screenshot.jpg')),
-    previewUrl: String(pick(item, ['preview_url', 'previewUrl', 'PreviewURL', 'PreviewUrl'], '')),
-    downloadUrl: String(pick(item, ['download_url', 'downloadUrl', 'DownloadURL', 'DownloadUrl'], '')),
+    screenshotId: String(c.screenshotId),
+    beaconId: String(c.beaconId),
+    hostname: String(c.hostname || '未知'),
+    username: String(c.username || '未知'),
+    resolution: String(c.resolution || '-'),
+    imageSize: toNumber(c.imageSize),
+    capturedAt: toNumber(c.capturedAt),
+    fileName: String(c.fileName || 'screenshot.jpg'),
+    previewUrl: String(c.previewUrl),
+    downloadUrl: String(c.downloadUrl),
     raw: item,
   }
 }

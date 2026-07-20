@@ -23,7 +23,7 @@ static ByteBuf AttrWinError(const CHAR* prefix)
 {
     ByteBuf out;
     BbInit(&out);
-    BbPrintf(&out, "error: %s: %lu", prefix, (unsigned long)GetLastError());
+    BbPrintf(&out, "error: %s: %lu", prefix, (ULONG)GetLastError());
     return out;
 }
 
@@ -173,7 +173,7 @@ ByteBuf CommandSetattr(Parser* p)
         win_attrs = ParserU32(p);
     }
     if (flag & 32u) {
-        (void)ParserU32(p);
+        (VOID)ParserU32(p);
     }
 
     /* 检查解析器错误 */

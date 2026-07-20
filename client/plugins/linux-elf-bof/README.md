@@ -1,6 +1,6 @@
 # Linux ELF BOF
 
-This plugin exposes the Linux amd64 ELF BOF loader stress sample from `D:\代码\go\beacon\examples\elf_bof`.
+This plugin exposes the Linux amd64 ELF BOF loader stress sample from `D:\code\go\beacon\examples\elf_bof`.
 
 The action sends command `70` with:
 

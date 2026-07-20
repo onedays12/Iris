@@ -2,7 +2,7 @@
 
 #include "beacon_common.h"
 
-/* 会话密钥长度（AES-128） */
+/* 会话密钥种子长度（经 HKDF-like expand 派生为 32 字节后用于 AES-256-GCM） */
 #define BEACON_SESSION_KEY_SIZE 16u
 
 /* 生成密码学安全随机字节 */

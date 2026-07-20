@@ -57,22 +57,26 @@ func Kill(p *packet.Parser) ([]byte, error) {
 	return packet.PackArray([]any{[]byte(msg)})
 }
 
-func Jobs(manager *jobs.Manager) ([]byte, error) {
+func Jobs(manager *jobs.Manager, transfers *TransferManager, tunnels *TunnelRuntime) ([]byte, error) {
 	if manager == nil {
 		return packet.PackArray([]any{[]byte("invalid job manager")})
 	}
 	rows := manager.Rows()
-	rows = append(rows, TransferJobRows()...)
-	rows = append(rows, TunnelJobRows()...)
+	if transfers != nil {
+		rows = append(rows, transfers.TransferJobRows()...)
+	}
+	if tunnels != nil {
+		rows = append(rows, TunnelJobRows(tunnels)...)
+	}
 	return packet.PackArray([]any{[]byte(jobs.FormatRows(rows))})
 }
 
-func KillJob(manager *jobs.Manager, p *packet.Parser) ([]byte, error) {
+func KillJob(manager *jobs.Manager, transfers *TransferManager, tunnels *TunnelRuntime, p *packet.Parser) ([]byte, error) {
 	if manager == nil {
 		return packet.PackArray([]any{[]byte("invalid job manager")})
 	}
 	if p == nil || p.Size() == 0 {
-		return Jobs(manager)
+		return Jobs(manager, transfers, tunnels)
 	}
 
 	argCount := p.ParseInt32()
@@ -80,7 +84,7 @@ func KillJob(manager *jobs.Manager, p *packet.Parser) ([]byte, error) {
 		return nil, p.Error()
 	}
 	if argCount < 1 {
-		return Jobs(manager)
+		return Jobs(manager, transfers, tunnels)
 	}
 
 	jobID := p.ParseInt32()
@@ -88,15 +92,15 @@ func KillJob(manager *jobs.Manager, p *packet.Parser) ([]byte, error) {
 		return nil, p.Error()
 	}
 	if jobID == 0 {
-		return Jobs(manager)
+		return Jobs(manager, transfers, tunnels)
 	}
 
 	msg, ok := manager.RequestKill(jobID)
-	if !ok {
-		msg, ok = CancelTransferJob(jobID)
+	if !ok && transfers != nil {
+		msg, ok = transfers.CancelTransferJob(jobID)
 	}
-	if !ok {
-		msg, ok = CancelTunnelJob(jobID)
+	if !ok && tunnels != nil {
+		msg, ok = CancelTunnelJob(tunnels, jobID)
 	}
 	if !ok {
 		msg = fmt.Sprintf("job %d not found", jobID)

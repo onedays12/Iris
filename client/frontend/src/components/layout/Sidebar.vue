@@ -7,7 +7,7 @@
 
 import { computed, ref } from 'vue'
 import { Dialogs } from '@wailsio/runtime'
-import * as FileService from '../../../bindings/changeme/service/fileservice.js'
+import * as FileService from '../../../bindings/irisclient/service/fileservice.js'
 import { useRoute, useRouter } from 'vue-router'
 import { logout } from '../../features/auth/api/authApi.js'
 import { useAuthStore } from '../../stores/auth.js'

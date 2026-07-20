@@ -10,7 +10,7 @@ import { sendExecutionBofCommand } from '../../features/beacon/actions/beaconCom
 import { generateShellcode } from '../../features/payload/api/payloadApi.js'
 import { useConsoleStore } from '../../stores/console.js'
 import { useNotificationStore } from '../../stores/notification.js'
-import * as FileService from '../../../bindings/changeme/service/fileservice.js'
+import * as FileService from '../../../bindings/irisclient/service/fileservice.js'
 import { Dialogs } from '@wailsio/runtime'
 
 const consoleStore = useConsoleStore()

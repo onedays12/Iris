@@ -803,9 +803,9 @@ static VOID RefRegisterExceptionTable(PBYTE imageBase, PIMAGE_NT_HEADERS nt, REF
         api->RtlAddFunctionTable(functions, count, (DWORD64)imageBase);
     }
 #else
-    (void)imageBase;
-    (void)nt;
-    (void)api;
+    (VOID)imageBase;
+    (VOID)nt;
+    (VOID)api;
 #endif
 }
 

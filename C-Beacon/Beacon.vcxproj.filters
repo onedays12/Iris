@@ -101,7 +101,13 @@
     <ClCompile Include="src\loader\reflective_loader.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\managers\tunnel.c">
+    <ClCompile Include="src\managers\tunnel_frame.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\tunnel_client.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\tunnel_server.c">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\managers\transfer.c">
@@ -217,7 +223,7 @@
     <ClInclude Include="include\beacon_postex_module.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\managers\postex_internal.h">
+    <ClInclude Include="include\postex_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_profile.h">
@@ -230,6 +236,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_tunnel.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_tunnel_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_transport.h">
@@ -268,7 +277,7 @@
     <ClInclude Include="include\beacon_inject.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\inject\inject_internal.h">
+    <ClInclude Include="include\inject_internal.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

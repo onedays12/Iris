@@ -143,7 +143,7 @@ static DWORD WINAPI BofJobThread(PVOID param)
     if (JobIsCancelRequested(args->job)) {
         ByteBuf msg;
         BbInit(&msg);
-        BbPrintf(&msg, "BOF job %lu canceled before start", (unsigned long)args->job->task_id);
+        BbPrintf(&msg, "BOF job %lu canceled before start", (ULONG)args->job->task_id);
         JobEnqueueResult(args->ctx, args->job->task_id, args->job->command_id, &msg);
         BbFree(&msg);
     } else {
@@ -262,7 +262,7 @@ PacketList CommandBofHandle(BeaconContext* ctx, UINT32 task_id, Parser* p)
 
     /* 返回启动成功消息 */
     BbInit(&msg);
-    BbPrintf(&msg, "BOF job %lu started", (unsigned long)task_id);
+    BbPrintf(&msg, "BOF job %lu started", (ULONG)task_id);
     PlistAdd(&out, msg);
 
     return out;

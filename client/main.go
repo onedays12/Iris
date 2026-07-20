@@ -7,7 +7,7 @@ import (
 	"os"
 	"runtime"
 
-	"changeme/service"
+	"irisclient/service"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -34,7 +34,7 @@ func main() {
 		Name:        "Iris Client",
 		Description: "Command & Control Client Management Platform",
 		Services: []application.Service{
-			application.NewService(&service.FileService{}),
+			application.NewService(service.NewFileService()),
 			application.NewService(service.NewPluginService()),
 			application.NewService(service.NewProxyService()),
 			application.NewService(service.NewWebSocketService()),

