@@ -1,5 +1,9 @@
 #include "beacon_outbox.h"
 
+#ifdef BEACON_TEST
+#include "beacon_test_hooks.h"
+#endif
+
 #define OUTBOX_MAX_PACKETS 1024
 #define OUTBOX_MAX_BYTES   (64 * 1024 * 1024)
 
@@ -81,6 +85,9 @@ VOID OutboxEnqueue(Outbox* outbox, ByteBuf packet)
     outbox->tail = n;
     ++outbox->count;
     outbox->bytes += packet.len;
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_OUTBOX_ENQUEUE, 0, (ULONG)packet.len);
+#endif
     LeaveCriticalSection(&outbox->lock);
 }
 

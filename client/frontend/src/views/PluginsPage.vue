@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * PluginsPage - 插件管理页面
  *
@@ -6,12 +6,16 @@
  */
 
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Dialogs } from '@wailsio/runtime'
-import { useModalStore } from '../stores/modal.js'
-import { useNotificationStore } from '../stores/notification.js'
-import { usePluginStore } from '../stores/plugin.js'
+import { useModalStore } from '../stores/modal'
+import { useNotificationStore } from '../stores/notification'
+import { usePluginStore } from '../stores/plugin'
+import { localizedText } from '../features/plugin/model'
+import type { Plugin } from '../features/plugin/model'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
+const { t, locale } = useI18n()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
 const pluginStore = usePluginStore()
@@ -19,7 +23,16 @@ const pluginStore = usePluginStore()
 const plugins = computed(() => pluginStore.plugins)
 const selectedPlugin = computed(() => pluginStore.selectedPlugin)
 
-function statusClass(status) {
+/** schema v2 本地化 display_name(string 或 {zh,en})。 */
+function displayName(plugin: Plugin): string {
+  return localizedText(plugin.displayName, locale.value) || plugin.name || plugin.id || 'Plugin'
+}
+
+function displayDescription(plugin: Plugin): string {
+  return localizedText(plugin.description, locale.value)
+}
+
+function statusClass(status: string | null | undefined) {
   const value = String(status || '').toLowerCase()
   if (['ready', 'loaded', 'running', 'active', 'ok'].includes(value)) return 'online'
   if (['loading'].includes(value)) return 'connecting'
@@ -27,66 +40,66 @@ function statusClass(status) {
   return 'offline'
 }
 
-function statusLabel(status) {
+function statusLabel(status: string | null | undefined) {
   const value = String(status || '').toLowerCase()
-  if (value === 'ready') return '就绪'
-  if (value === 'loaded') return '已加载'
-  if (value === 'loading') return '加载中'
-  if (value === 'error' || value === 'failed') return '异常'
-  if (value === 'running' || value === 'active') return '运行中'
+  if (value === 'ready') return t('plugins.ready')
+  if (value === 'loaded') return t('plugins.loaded')
+  if (value === 'loading') return t('plugins.loadingStatus')
+  if (value === 'error' || value === 'failed') return t('plugins.errorStatus')
+  if (value === 'running' || value === 'active') return t('plugins.running')
   return value || '-'
 }
 
-function formatPath(value) {
+function formatPath(value: string) {
   const text = String(value || '').trim()
   return text || '-'
 }
 
 function getSelectedPluginLabel() {
-  if (!selectedPlugin.value) return '未选择'
-  return selectedPlugin.value.displayName || selectedPlugin.value.name || selectedPlugin.value.id || 'Plugin'
+  if (!selectedPlugin.value) return t('plugins.notSelected')
+  return displayName(selectedPlugin.value)
 }
 
-function selectPlugin(pluginId) {
+function selectPlugin(pluginId: string) {
   pluginStore.selectPlugin(pluginId)
 }
 
 async function handleAddPlugin() {
   try {
     const picked = await Dialogs.OpenFile({
-      Title: '选择 plugin.json',
-      Message: '请选择插件根目录中的 plugin.json 文件',
+      Title: t('plugins.selectFileTitle'),
+      Message: t('plugins.selectFileMessage'),
       CanChooseFiles: true,
       AllowsMultipleSelection: false,
       Filters: [
-        { DisplayName: '插件元数据', Pattern: '*.json' },
+        { DisplayName: t('plugins.metadataFilter'), Pattern: '*.json' },
       ],
     })
     const sourcePath = Array.isArray(picked) ? picked[0] : picked
     if (!sourcePath) return
 
     if (!/[/\\]plugin\.json$/i.test(String(sourcePath))) {
-      notificationStore.warn('请选择 plugin.json 文件')
+      notificationStore.warn(t('plugins.selectFileWarning'))
       return
     }
 
     await pluginStore.addPlugin(sourcePath)
-    notificationStore.success('插件已添加')
+    notificationStore.success(t('plugins.addSuccess'))
   } catch (err) {
-    notificationStore.error(err.message || '添加插件失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('plugins.addError'))
     console.error('[PluginsPage] 添加插件失败:', err)
   }
 }
 
 async function handleDeletePlugin() {
   if (!selectedPlugin.value) {
-    notificationStore.warn('请先选择一个插件')
+    notificationStore.warn(t('plugins.selectWarning'))
     return
   }
 
   const confirmed = await modalStore.showConfirm({
-    title: '删除插件',
-    message: `确定要删除插件 [${getSelectedPluginLabel()}] 吗？\n这会移除插件目录并重新加载插件列表。`,
+    title: t('plugins.deleteConfirmTitle'),
+    message: t('plugins.deleteConfirmMessage', { name: getSelectedPluginLabel() }),
     type: 'danger',
   })
 
@@ -94,9 +107,9 @@ async function handleDeletePlugin() {
 
   try {
     await pluginStore.deletePlugin(selectedPlugin.value.id)
-    notificationStore.success('插件已删除')
+    notificationStore.success(t('plugins.deleteSuccess'))
   } catch (err) {
-    notificationStore.error(err.message || '删除插件失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('plugins.deleteError'))
     console.error('[PluginsPage] 删除插件失败:', err)
   }
 }
@@ -104,9 +117,9 @@ async function handleDeletePlugin() {
 async function handleReloadPlugins() {
   try {
     await pluginStore.reloadPlugins()
-    notificationStore.success('插件已重新加载')
+    notificationStore.success(t('plugins.reloadSuccess'))
   } catch (err) {
-    notificationStore.error(err.message || '重新加载插件失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('plugins.reloadError'))
     console.error('[PluginsPage] 重新加载插件失败:', err)
   }
 }
@@ -128,31 +141,31 @@ onMounted(async () => {
           <div class="page-icon">
             <PageTitleIcon name="plugins" :size="22" />
           </div>
-          <h1 class="page-title">插件系统</h1>
+          <h1 class="page-title">{{ t('plugins.title') }}</h1>
         </div>
         <p class="page-subtitle">
-          只展示插件条目与管理按钮。右键 Beacon 时会按插件主题展开为树状动作菜单。
+          {{ t('plugins.subtitle') }}
         </p>
       </div>
 
       <div class="page-actions">
-        <button class="btn btn-ghost" type="button" :disabled="pluginStore.loading" @click="handleAddPlugin">添加插件</button>
-        <button class="btn btn-ghost danger" type="button" :disabled="pluginStore.loading || !selectedPlugin" @click="handleDeletePlugin">删除插件</button>
-        <button class="btn btn-primary" type="button" :disabled="pluginStore.loading" @click="handleReloadPlugins">重新加载插件</button>
+        <button class="btn btn-ghost" type="button" :disabled="pluginStore.loading" @click="handleAddPlugin">{{ t('plugins.add') }}</button>
+        <button class="btn btn-ghost danger" type="button" :disabled="pluginStore.loading || !selectedPlugin" @click="handleDeletePlugin">{{ t('plugins.delete') }}</button>
+        <button class="btn btn-primary" type="button" :disabled="pluginStore.loading" @click="handleReloadPlugins">{{ t('plugins.reload') }}</button>
       </div>
     </header>
 
     <section class="list-section glass-card">
       <div class="panel-heading">
         <div>
-          <div class="panel-title">插件列表</div>
+          <div class="panel-title">{{ t('plugins.list') }}</div>
           <div class="panel-subtitle">
-            {{ plugins.length }} 个插件
-            <span v-if="selectedPlugin"> · 已选择 {{ getSelectedPluginLabel() }}</span>
+            {{ t('plugins.count', { count: plugins.length }) }}
+            <span v-if="selectedPlugin"> · {{ t('plugins.selected', { name: getSelectedPluginLabel() }) }}</span>
           </div>
         </div>
         <div class="panel-status" :class="statusClass(pluginStore.loading ? 'loading' : selectedPlugin?.status)">
-          {{ pluginStore.loading ? '加载中' : (selectedPlugin ? statusLabel(selectedPlugin.status) : '未选择') }}
+          {{ pluginStore.loading ? t('plugins.loading') : (selectedPlugin ? statusLabel(selectedPlugin.status) : t('plugins.notSelected')) }}
         </div>
       </div>
 
@@ -164,10 +177,10 @@ onMounted(async () => {
         <thead>
           <tr>
             <th style="width: 32px"></th>
-            <th>插件名称</th>
-            <th>路径</th>
-            <th>作用</th>
-            <th style="width: 120px">状态</th>
+            <th>{{ t('plugins.name') }}</th>
+            <th>{{ t('plugins.path') }}</th>
+            <th>{{ t('plugins.purpose') }}</th>
+            <th style="width: 120px">{{ t('plugins.status') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -181,10 +194,13 @@ onMounted(async () => {
               <span class="status-dot" :class="statusClass(plugin.status)"></span>
             </td>
             <td>
-              <div class="cell-name">{{ plugin.displayName }}</div>
+              <div class="cell-name">{{ displayName(plugin) }}</div>
+              <div v-if="plugin.capabilities.length" class="cell-capabilities">
+                {{ t('plugins.capabilityCommandIds', { ids: plugin.capabilities.join(', ') }) }}
+              </div>
             </td>
             <td class="cell-path">{{ formatPath(plugin.path) }}</td>
-            <td class="cell-desc">{{ plugin.description || '暂无描述' }}</td>
+            <td class="cell-desc">{{ displayDescription(plugin) || t('plugins.noDescription') }}</td>
             <td>
               <span class="plugin-status" :class="statusClass(plugin.status)">{{ statusLabel(plugin.status) }}</span>
             </td>
@@ -194,8 +210,8 @@ onMounted(async () => {
 
       <div v-else class="empty-state">
         <div class="empty-icon">🧩</div>
-        <div class="empty-title">还没有加载插件</div>
-        <div class="empty-text">点击「添加插件」选择一个 plugin.json，或者先重新加载当前目录。</div>
+        <div class="empty-title">{{ t('plugins.emptyTitle') }}</div>
+        <div class="empty-text">{{ t('plugins.emptyText') }}</div>
       </div>
     </section>
   </div>
@@ -336,6 +352,13 @@ onMounted(async () => {
 .cell-name {
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.cell-capabilities {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
 }
 
 .cell-path,

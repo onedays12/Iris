@@ -1,15 +1,24 @@
-<script setup>
-import { watch, computed } from 'vue'
+<script setup lang="ts">
+import { watch, computed, onErrorCaptured } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAuthStore } from './stores/auth.js'
-import { useWSStore } from './stores/ws.js'
-import { useListenerStore } from './stores/listener.js'
-import { useAgentStore } from './stores/agent.js'
-import { usePluginStore } from './stores/plugin.js'
-import { useThemeStore } from './stores/theme.js'
-import { useConsoleStore } from './stores/console.js'
-import { useExplorerStore } from './stores/explorer.js'
-import { useEventPanelStore } from './stores/eventPanel.js'
+import router from './router/index'
+import { useAuthStore } from './stores/auth'
+import { useWSStore } from './stores/ws'
+import { useListenerStore } from './stores/listener'
+import { useAgentStore } from './stores/agent'
+import { usePluginStore } from './stores/plugin'
+import { useThemeStore } from './stores/theme'
+import { useConsoleStore } from './stores/console'
+import { useExplorerStore } from './stores/explorer'
+import { useEventPanelStore } from './stores/eventPanel'
+import { useFileTransferStore } from './stores/fileTransfer'
+import { useTunnelStore } from './stores/tunnel'
+import { useProcessBrowserStore } from './stores/processBrowser'
+import { useNetworkBrowserStore } from './stores/networkBrowser'
+import { useModalStore } from './stores/modal'
+import { useLocaleStore } from './stores/locale'
+import { useNotificationStore } from './stores/notification'
+import { bus } from './shared/bus'
 import Sidebar from './components/layout/Sidebar.vue'
 import ToastContainer from './components/common/ToastContainer.vue'
 import EventPanel from './components/common/EventPanel.vue'
@@ -22,6 +31,7 @@ const listenerStore = useListenerStore()
 const agentStore = useAgentStore()
 const pluginStore = usePluginStore()
 const themeStore = useThemeStore()
+const notificationStore = useNotificationStore()
 const route = useRoute()
 
 themeStore.initTheme()
@@ -31,24 +41,42 @@ themeStore.initTheme()
 const consoleStore = useConsoleStore()
 const explorerStore = useExplorerStore()
 const eventPanelStore = useEventPanelStore()
+const fileTransferStore = useFileTransferStore()
+const tunnelStore = useTunnelStore()
+const processBrowserStore = useProcessBrowserStore()
+const networkBrowserStore = useNetworkBrowserStore()
+const modalStore = useModalStore()
+const localeStore = useLocaleStore()
 agentStore.initSubscriptions()
 consoleStore.initSubscriptions()
 explorerStore.initSubscriptions()
 listenerStore.initSubscriptions()
 eventPanelStore.initSubscriptions()
+fileTransferStore.initSubscriptions()
+tunnelStore.initSubscriptions()
+processBrowserStore.initSubscriptions()
+networkBrowserStore.initSubscriptions()
+modalStore.initSubscriptions()
+bus.on('ws:connected', () => {
+  listenerStore.fetchListeners().catch(() => {})
+  agentStore.fetchAgents().catch(() => {})
+  pluginStore.fetchPlugins().catch(() => {})
+  tunnelStore.fetchTunnels({ silent: true }).catch(() => {})
+})
+
+// 初始化语言(懒加载消息文件; main.js 已同步设置首帧 locale)
+localeStore.initLocale().catch(err => {
+  console.warn('[Locale] 语言初始化失败, 使用回退语言:', err)
+})
 
 watch(() => authStore.token, async (newToken) => {
   if (newToken) {
     // 1. 建立长连接
     wsStore.connect()
 
-    // 2. 等 WS 握手成功后再并行预加载业务数据(事件驱动,替代原 setTimeout 100ms hack)。
-    //    WS 失败则跳过预加载,由各页面按需重试。
+    // 2. 等 WS 握手成功；ws:connected 统一负责首次连接和重连后的全量加载。
     try {
       await wsStore.waitForConnection()
-      listenerStore.fetchListeners().catch(() => {})
-      agentStore.fetchAgents().catch(() => {})
-      pluginStore.fetchPlugins().catch(() => {})
     } catch {
       // WS 连接失败:不预加载,用户操作时各 store 自行重试
     }
@@ -58,6 +86,17 @@ watch(() => authStore.token, async (newToken) => {
 }, { immediate: true })
 
 const isLoginPage = computed(() => route.name === 'Login')
+
+router.onError((err) => {
+  notificationStore.error(err?.message || String(err))
+  console.error('[Router]', err)
+})
+
+onErrorCaptured((err) => {
+  notificationStore.error(err?.message || String(err))
+  console.error('[App render]', err)
+  return false
+})
 </script>
 
 <template>
@@ -76,7 +115,7 @@ const isLoginPage = computed(() => route.name === 'Login')
     <Sidebar v-if="!isLoginPage" />
     <div class="workspace" :class="{ 'full-width': isLoginPage }">
       <main class="content" :class="{ 'full-width': isLoginPage }">
-        <RouterView :key="route.fullPath" />
+        <RouterView />
       </main>
       <EventPanel v-if="!isLoginPage" />
     </div>
@@ -141,7 +180,7 @@ const isLoginPage = computed(() => route.name === 'Login')
 }
 
 .content {
-  flex: 1;
+  flex: 1 1 auto;
   margin-left: var(--sidebar-w);
   overflow-y: auto;
   overflow-x: hidden;
@@ -151,6 +190,7 @@ const isLoginPage = computed(() => route.name === 'Login')
   transition: margin-left 0.3s ease;
   min-width: 0;
   min-height: 0;
+  height: 100%;
 }
 
 .content.full-width {
@@ -162,6 +202,7 @@ const isLoginPage = computed(() => route.name === 'Login')
   display: flex;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   position: relative;
   z-index: 10;
 }

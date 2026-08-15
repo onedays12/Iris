@@ -58,34 +58,45 @@ type postExModuleManifestOutput struct {
 	MIME   []string `json:"mime,omitempty"`
 }
 
+// loadPostExModuleManifest 读取并校验 module manifest(beacon.postex.module/v1)。
+// 供 validatePostExModuleManifest 与 derivePostExFromModule 共用。
+func loadPostExModuleManifest(root, manifestPath string) (postExModuleManifest, error) {
+	if err := validatePluginRelativeFile(root, manifestPath); err != nil {
+		return postExModuleManifest{}, fmt.Errorf("invalid postex module manifest: %w", err)
+	}
+
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return postExModuleManifest{}, err
+	}
+	manifestAbs, err := filepath.Abs(filepath.Join(rootAbs, manifestPath))
+	if err != nil {
+		return postExModuleManifest{}, err
+	}
+	data, err := os.ReadFile(manifestAbs)
+	if err != nil {
+		return postExModuleManifest{}, fmt.Errorf("read postex module manifest failed: %w", err)
+	}
+
+	var manifest postExModuleManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return postExModuleManifest{}, fmt.Errorf("parse postex module manifest failed: %w", err)
+	}
+	if err := lintPostExModuleManifest(manifest); err != nil {
+		return postExModuleManifest{}, fmt.Errorf("invalid postex module manifest: %w", err)
+	}
+	return manifest, nil
+}
+
 func validatePostExModuleManifest(root string, action PluginAction) error {
 	actionID := strings.TrimSpace(action.ID)
 	manifestPath := strings.TrimSpace(action.PostEx.Manifest)
 	if manifestPath == "" {
 		return nil
 	}
-	if err := validatePluginRelativeFile(root, manifestPath); err != nil {
-		return fmt.Errorf("invalid postex module manifest for plugin action %s: %w", actionID, err)
-	}
 
-	rootAbs, err := filepath.Abs(root)
+	manifest, err := loadPostExModuleManifest(root, manifestPath)
 	if err != nil {
-		return err
-	}
-	manifestAbs, err := filepath.Abs(filepath.Join(rootAbs, manifestPath))
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(manifestAbs)
-	if err != nil {
-		return fmt.Errorf("read postex module manifest for plugin action %s failed: %w", actionID, err)
-	}
-
-	var manifest postExModuleManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return fmt.Errorf("parse postex module manifest for plugin action %s failed: %w", actionID, err)
-	}
-	if err := lintPostExModuleManifest(manifest); err != nil {
 		return fmt.Errorf("invalid postex module manifest for plugin action %s: %w", actionID, err)
 	}
 	if err := validatePostExManifestMatchesAction(action, manifest); err != nil {

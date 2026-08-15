@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * FileZipDialog - ZIP 压缩配置对话框
  * 配置源路径、输出路径、覆盖选项、是否包含根目录名，
@@ -6,6 +6,7 @@
  */
 
 import { ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 // ─── Props / Emits ───
 
@@ -16,10 +17,11 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'submit'])
 
+const { t } = useI18n()
 const submitting = ref(false)
 const form = ref(createEmptyForm())
 
-function buildZipOutputPath(file) {
+function buildZipOutputPath(file: Record<string, any> | null) {
   const sourcePath = String(file?.path || '').trim()
   if (!sourcePath) return ''
   if (sourcePath.toLowerCase().endsWith('.zip')) {
@@ -28,7 +30,7 @@ function buildZipOutputPath(file) {
   return `${sourcePath}.zip`
 }
 
-function createEmptyForm(target = null) {
+function createEmptyForm(target: Record<string, any> | null = null) {
   const file = target?.file || null
   return {
     sourcePath: String(file?.path || target?.path || ''),
@@ -40,7 +42,7 @@ function createEmptyForm(target = null) {
   }
 }
 
-function resetForm(target = null) {
+function resetForm(target: Record<string, any> | null = null) {
   form.value = createEmptyForm(target)
 }
 
@@ -85,9 +87,9 @@ watch(() => props.visible, (visible) => {
         <div class="zip-dialog" @click.stop>
           <div class="zip-header">
             <div>
-              <div class="zip-title">压缩为 ZIP</div>
+              <div class="zip-title">{{ t('zipDialog.title') }}</div>
               <div class="zip-subtitle" :title="form.sourcePath">
-                {{ target?.file?.name || form.sourceName || '目标对象' }}
+                {{ target?.file?.name || form.sourceName || t('zipDialog.targetObject') }}
               </div>
             </div>
             <button class="zip-close" @click="close">×</button>
@@ -95,16 +97,16 @@ watch(() => props.visible, (visible) => {
 
           <div class="zip-body">
             <div class="zip-field">
-              <label class="zip-label">源路径</label>
+              <label class="zip-label">{{ t('zipDialog.sourcePath') }}</label>
               <input class="zip-input readonly" :value="form.sourcePath" readonly />
             </div>
 
             <div class="zip-field">
-              <label class="zip-label">输出 ZIP 路径</label>
+              <label class="zip-label">{{ t('zipDialog.outputPath') }}</label>
               <input
                 class="zip-input"
                 v-model="form.zipPath"
-                placeholder="请输入输出 zip 路径"
+                :placeholder="t('zipDialog.outputPlaceholder')"
               />
             </div>
 
@@ -112,31 +114,31 @@ watch(() => props.visible, (visible) => {
               <div class="zip-section">
                 <label class="zip-toggle">
                   <input type="checkbox" v-model="form.overwrite" />
-                  <span>覆盖已存在 ZIP</span>
+                  <span>{{ t('zipDialog.overwrite') }}</span>
                 </label>
-                <div class="zip-hint">勾选后 overwrite 将发送为 1，否则发送为 0。</div>
+                <div class="zip-hint">{{ t('zipDialog.overwriteHint') }}</div>
               </div>
 
               <div class="zip-section">
                 <label class="zip-toggle">
                   <input type="checkbox" v-model="form.includeRoot" :disabled="!form.isDir" />
-                  <span>包含根目录名</span>
+                  <span>{{ t('zipDialog.includeRoot') }}</span>
                 </label>
                 <div class="zip-hint">
-                  {{ form.isDir ? '目录压缩时勾选表示保留根目录名。' : '目标是文件，include_root 固定发送为 1。' }}
+                  {{ form.isDir ? t('zipDialog.dirHint') : t('zipDialog.fileHint') }}
                 </div>
               </div>
             </div>
           </div>
 
           <div class="zip-footer">
-            <button class="zip-btn secondary" @click="close">取消</button>
+            <button class="zip-btn secondary" @click="close">{{ t('common.cancel') }}</button>
             <button
               class="zip-btn primary"
               :disabled="submitting || !form.zipPath.trim()"
               @click="submit"
             >
-              {{ submitting ? '提交中...' : '提交压缩任务' }}
+              {{ submitting ? t('zipDialog.submitting') : t('zipDialog.submit') }}
             </button>
           </div>
         </div>

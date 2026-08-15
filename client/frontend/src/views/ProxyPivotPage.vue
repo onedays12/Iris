@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ProxyPivotPage - 代理透视页面
  * 管理端口转发和 SOCKS 隧道的创建、查看、删除，
@@ -9,10 +9,12 @@
  */
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useAgentStore } from '../stores/agent.js'
-import { useModalStore } from '../stores/modal.js'
-import { useNotificationStore } from '../stores/notification.js'
-import { useTunnelStore } from '../stores/tunnel.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../stores/agent'
+import { useModalStore } from '../stores/modal'
+import { useNotificationStore } from '../stores/notification'
+import { useTunnelStore } from '../stores/tunnel'
+import type { Tunnel } from '../features/tunnel/model'
 import {
   shortId,
   formatTime,
@@ -21,16 +23,18 @@ import {
   formatTunnelType,
   statusClass,
   statusLabel,
+  statusLabelKey,
   isRunningTunnel,
   isPausedTunnel,
   formatBytes,
   formatCount,
   displayCount,
-} from '../utils/tunnelFormat.js'
+} from '../utils/tunnelFormat'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 import TunnelCreateDialog from '../components/tunnel/TunnelCreateDialog.vue'
 import TunnelDetailDialog from '../components/tunnel/TunnelDetailDialog.vue'
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
@@ -63,7 +67,7 @@ const availableAgents = computed(() => {
 })
 
 // TunnelCreateDialog 组件引用(用于 edit 模式调用其 fillTunnelFormFromTunnel)
-const createDialogRef = ref(null)
+const createDialogRef = ref<InstanceType<typeof TunnelCreateDialog> | null>(null)
 
 watch(availableAgents, (agents) => {
   if (!agents.length) {
@@ -77,12 +81,12 @@ watch(availableAgents, (agents) => {
   }
 }, { immediate: true })
 
-function findAgent(beaconId) {
+function findAgent(beaconId: string) {
   const id = String(beaconId || '')
   return availableAgents.value.find(agent => agent.beaconid === id || agent.beaconid.startsWith(id) || id.startsWith(agent.beaconid)) || null
 }
 
-function agentLabel(beaconId) {
+function agentLabel(beaconId: string) {
   const agent = findAgent(beaconId)
   if (!agent) return shortId(beaconId)
   return `${agent.hostname || 'Unknown'} · ${shortId(agent.beaconid)}`
@@ -99,10 +103,10 @@ function openCreateModal(mode = 'socks5') {
   }, 0)
 }
 
-function openEditModal(tunnel) {
+function openEditModal(tunnel: Tunnel) {
   if (!tunnel?.tunnelId) return
   if (!isPausedTunnel(tunnel)) {
-    notificationStore.warn('仅暂停状态的 Tunnel 可编辑')
+    notificationStore.warn(t('tunnelPage.editOnlyPaused'))
     return
   }
 
@@ -136,7 +140,7 @@ function onCreateSubmitted() {
   refreshTunnels()
 }
 
-async function openChannels(tunnel) {
+async function openChannels(tunnel: Tunnel) {
   if (!tunnel?.tunnelId) return
   activeTunnelId.value = tunnel.tunnelId
   detailVisible.value = true
@@ -152,11 +156,11 @@ function closeChannels() {
   activeTunnelId.value = ''
 }
 
-async function pauseTunnel(tunnel) {
+async function pauseTunnel(tunnel: Tunnel) {
   if (!tunnel?.tunnelId) return
   const confirmed = await modalStore.showConfirm({
-    title: '暂停 Tunnel',
-    message: `确定要暂停 ${formatTunnelType(tunnel.mode || tunnel.type)} (${formatBind(tunnel)}) 吗？`,
+    title: t('tunnelPage.pauseTitle'),
+    message: t('tunnelPage.pauseMessage', { type: formatTunnelType(tunnel.mode || tunnel.type), bind: formatBind(tunnel) }),
     type: 'warning',
   })
 
@@ -164,18 +168,18 @@ async function pauseTunnel(tunnel) {
 
   try {
     await tunnelStore.pauseTunnel(tunnel.tunnelId)
-    notificationStore.success('Tunnel 已暂停')
+    notificationStore.success(t('tunnelPage.paused'))
     await refreshTunnels()
   } catch (err) {
     console.error('[ProxyPivotPage] 暂停 Tunnel 失败:', err)
   }
 }
 
-async function stopTunnel(tunnel) {
+async function stopTunnel(tunnel: Tunnel) {
   if (!tunnel?.tunnelId) return
   const confirmed = await modalStore.showConfirm({
-    title: '停止 Tunnel',
-    message: `确定要停止 ${formatTunnelType(tunnel.mode || tunnel.type)} (${formatBind(tunnel)}) 吗？\n这会关闭本地监听并保留记录，后续可清除。`,
+    title: t('tunnelPage.stopTitle'),
+    message: t('tunnelPage.stopMessage', { type: formatTunnelType(tunnel.mode || tunnel.type), bind: formatBind(tunnel) }),
     type: 'warning',
   })
 
@@ -183,18 +187,18 @@ async function stopTunnel(tunnel) {
 
   try {
     await tunnelStore.stopTunnel(tunnel.tunnelId)
-    notificationStore.success('Tunnel 已停止')
+    notificationStore.success(t('tunnelPage.stopped'))
     await refreshTunnels()
   } catch (err) {
     console.error('[ProxyPivotPage] 停止 Tunnel 失败:', err)
   }
 }
 
-async function resumeTunnel(tunnel) {
+async function resumeTunnel(tunnel: Tunnel) {
   if (!tunnel?.tunnelId) return
   const confirmed = await modalStore.showConfirm({
-    title: '恢复 Tunnel',
-    message: `确定要恢复 ${formatTunnelType(tunnel.mode || tunnel.type)} (${formatBind(tunnel)}) 吗？`,
+    title: t('tunnelPage.resumeTitle'),
+    message: t('tunnelPage.resumeMessage', { type: formatTunnelType(tunnel.mode || tunnel.type), bind: formatBind(tunnel) }),
     type: 'warning',
   })
 
@@ -202,18 +206,18 @@ async function resumeTunnel(tunnel) {
 
   try {
     await tunnelStore.resumeTunnel(tunnel.tunnelId)
-    notificationStore.success('Tunnel 已恢复')
+    notificationStore.success(t('tunnelPage.resumed'))
     await refreshTunnels()
   } catch (err) {
     console.error('[ProxyPivotPage] 恢复 Tunnel 失败:', err)
   }
 }
 
-async function clearTunnel(tunnel) {
+async function clearTunnel(tunnel: Tunnel) {
   if (!tunnel?.tunnelId) return
   const confirmed = await modalStore.showConfirm({
-    title: '清除 Tunnel',
-    message: `确定要清除 ${formatTunnelType(tunnel.mode || tunnel.type)} (${formatBind(tunnel)}) 吗？\n这会删除该 Tunnel 及其连接记录。`,
+    title: t('tunnelPage.clearTitle'),
+    message: t('tunnelPage.clearMessage', { type: formatTunnelType(tunnel.mode || tunnel.type), bind: formatBind(tunnel) }),
     type: 'warning',
   })
 
@@ -221,7 +225,7 @@ async function clearTunnel(tunnel) {
 
   try {
     await tunnelStore.clearTunnel(tunnel.tunnelId)
-    notificationStore.success('Tunnel 已清除')
+    notificationStore.success(t('tunnelPage.cleared'))
     if (detailVisible.value && activeTunnelId.value === tunnel.tunnelId) {
       closeChannels()
     }
@@ -235,13 +239,13 @@ async function recycleChannels() {
   if (!activeTunnel.value?.tunnelId) return
   const count = recyclableChannelCount.value
   if (!count) {
-    notificationStore.info('当前没有可回收的终态 channel')
+    notificationStore.info(t('tunnelPage.noRecyclable'))
     return
   }
 
   try {
     await tunnelStore.recycleTunnelChannels(activeTunnel.value.tunnelId, count)
-    notificationStore.success(`已回收 ${count} 个终态 channel`)
+    notificationStore.success(t('tunnelPage.recycled', { count }))
     await refreshTunnels()
   } catch (err) {
     console.error('[ProxyPivotPage] 回收 channel 失败:', err)
@@ -249,7 +253,7 @@ async function recycleChannels() {
 }
 
 // 周期性 silent 刷新 tunnel 列表，作为 WS 推送的保险，确保 bytes_in/bytes_out 实时更新。
-let statsTimer = null
+let statsTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   refreshTunnels()
   statsTimer = setInterval(() => {
@@ -274,19 +278,19 @@ onBeforeUnmount(() => {
       <div class="header-left">
         <h1 class="page-title">
           <PageTitleIcon name="proxy" />
-          代理与穿透
+          {{ t('tunnelPage.title') }}
         </h1>
-        <p class="page-subtitle">管理基于 Beacon 建立的统一 Tunnel</p>
+        <p class="page-subtitle">{{ t('tunnelPage.subtitle') }}</p>
       </div>
 
       <div class="header-actions">
           <button class="btn btn-secondary" :disabled="loading" @click="refreshTunnels">
           <span class="icon">↻</span>
-          {{ loading ? '刷新中...' : '刷新列表' }}
+          {{ loading ? t('tunnelPage.refreshing') : t('tunnelPage.refresh') }}
         </button>
         <button class="btn btn-primary" @click="openCreateModal('socks5')">
           <span class="icon">➕</span>
-          新建 Tunnel
+          {{ t('tunnelPage.create') }}
         </button>
       </div>
     </header>
@@ -297,31 +301,31 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="loading && tunnels.length === 0" class="state-line">
-        正在读取 Tunnel 列表...
+        {{ t('tunnelPage.loading') }}
       </div>
 
       <div v-else class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
-              <th>开启时间</th>
+              <th>{{ t('tunnelPage.colStartedAt') }}</th>
               <th>Beacon</th>
-              <th>主机名</th>
-              <th>类型</th>
-              <th>绑定地址</th>
-              <th>远程地址</th>
-              <th>活跃连接</th>
-              <th>流入</th>
-              <th>流出</th>
-              <th>状态</th>
-              <th class="actions-col">操作</th>
+              <th>{{ t('tunnelPage.colHostname') }}</th>
+              <th>{{ t('tunnelPage.colType') }}</th>
+              <th>{{ t('tunnelPage.colBind') }}</th>
+              <th>{{ t('tunnelPage.colRemote') }}</th>
+              <th>{{ t('tunnelPage.colActive') }}</th>
+              <th>{{ t('tunnelPage.colIn') }}</th>
+              <th>{{ t('tunnelPage.colOut') }}</th>
+              <th>{{ t('tunnelPage.colStatus') }}</th>
+              <th class="actions-col">{{ t('tunnelPage.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="tunnel in tunnels" :key="tunnel.tunnelId || `${tunnel.beaconId}-${tunnel.bindPort}`">
-              <td class="cell-time">{{ formatTime(tunnel.createdAt || tunnel.updatedAt) }}</td>
+              <td class="cell-time">{{ formatTime(tunnel.createdAt || tunnel.updatedAt, locale) }}</td>
               <td class="cell-id" :title="tunnel.beaconId">{{ shortId(tunnel.beaconId) }}</td>
-              <td class="cell-hostname">{{ findAgent(tunnel.beaconId)?.hostname || '未知' }}</td>
+              <td class="cell-hostname">{{ findAgent(tunnel.beaconId)?.hostname || t('tunnelPage.unknown') }}</td>
               <td>
                 <span class="tag-protocol">{{ formatTunnelType(tunnel.mode || tunnel.type) }}</span>
               </td>
@@ -332,20 +336,20 @@ onBeforeUnmount(() => {
               <td class="cell-size">{{ formatBytes(tunnel.bytesOut) }}</td>
               <td>
                 <span class="status-tag" :class="statusClass(tunnel.status)" :title="tunnel.errorMessage || ''">
-                  {{ statusLabel(tunnel.status) }}
+                  {{ statusLabelKey(tunnel.status) ? t(statusLabelKey(tunnel.status) ?? '') : statusLabel(tunnel.status) }}
                 </span>
               </td>
               <td class="actions-col">
-                <button class="action-btn" @click="openChannels(tunnel)">连接</button>
-                <button v-if="isPausedTunnel(tunnel)" class="action-btn" @click="openEditModal(tunnel)">编辑</button>
-                <button v-if="isRunningTunnel(tunnel)" class="action-btn" @click="pauseTunnel(tunnel)">暂停</button>
-                <button v-else-if="isPausedTunnel(tunnel)" class="action-btn" @click="resumeTunnel(tunnel)">恢复</button>
-                <button v-if="isRunningTunnel(tunnel) || isPausedTunnel(tunnel)" class="action-btn" @click="stopTunnel(tunnel)">停止</button>
-                <button class="action-btn danger" @click="clearTunnel(tunnel)">清除</button>
+                <button class="action-btn" @click="openChannels(tunnel)">{{ t('tunnelPage.connect') }}</button>
+                <button v-if="isPausedTunnel(tunnel)" class="action-btn" @click="openEditModal(tunnel)">{{ t('tunnelPage.edit') }}</button>
+                <button v-if="isRunningTunnel(tunnel)" class="action-btn" @click="pauseTunnel(tunnel)">{{ t('tunnelPage.pause') }}</button>
+                <button v-else-if="isPausedTunnel(tunnel)" class="action-btn" @click="resumeTunnel(tunnel)">{{ t('tunnelPage.resume') }}</button>
+                <button v-if="isRunningTunnel(tunnel) || isPausedTunnel(tunnel)" class="action-btn" @click="stopTunnel(tunnel)">{{ t('tunnelPage.stop') }}</button>
+                <button class="action-btn danger" @click="clearTunnel(tunnel)">{{ t('tunnelPage.clear') }}</button>
               </td>
             </tr>
             <tr v-if="tunnels.length === 0 && !loading">
-              <td colspan="11" class="empty-cell">暂无活跃的代理隧道</td>
+              <td colspan="11" class="empty-cell">{{ t('tunnelPage.empty') }}</td>
             </tr>
           </tbody>
         </table>
@@ -366,7 +370,7 @@ onBeforeUnmount(() => {
 
 <TunnelDetailDialog
         :visible="detailVisible"
-        :tunnel="activeTunnel"
+        :tunnel="activeTunnel || undefined"
         :channels="activeChannels"
         :channel-loading="activeChannelLoading"
         :channel-error="activeChannelError"

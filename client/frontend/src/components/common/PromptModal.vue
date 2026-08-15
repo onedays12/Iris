@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * PromptModal - 通用输入提示弹窗
  *
@@ -6,10 +6,12 @@
  */
 
 import { ref, watch, nextTick } from 'vue'
-import { useModalStore } from '../../stores/modal.js'
+import { useI18n } from 'vue-i18n'
+import { useModalStore } from '../../stores/modal'
 
+const { t } = useI18n()
 const modalStore = useModalStore()
-const inputRef = ref(null)
+const inputRef = ref<HTMLInputElement | null>(null)
 const inputValue = ref('')
 
 // 当弹窗可见时，重置输入值并自动聚焦
@@ -34,7 +36,7 @@ function handleCancel() {
   }
 }
 
-function handleKeydown(e) {
+function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter') {
     handleConfirm()
   } else if (e.key === 'Escape') {
@@ -72,8 +74,8 @@ function handleKeydown(e) {
           </div>
 
           <div class="prompt-footer">
-            <button class="btn btn-ghost" @click="handleCancel">取消</button>
-            <button class="btn btn-primary" @click="handleConfirm">确认</button>
+            <button class="btn btn-ghost" @click="handleCancel">{{ t('common.cancel') }}</button>
+            <button class="btn btn-primary" @click="handleConfirm">{{ t('common.confirm') }}</button>
           </div>
         </div>
       </div>

@@ -1,194 +1,49 @@
 {
+  "schema_version": 2,
   "name": "postex-template",
-  "display_name": "PostEx Template",
-  "version": "0.1.0",
-  "description": "PostEx DLL 插件模板，提供 spawn-dll 与 inject-dll 两条验证链路",
+  "display_name": { "zh": "PostEx 模板", "en": "PostEx Template" },
+  "version": "2.0.0",
+  "description": {
+    "zh": "PostEx DLL 插件模板，提供 spawn-dll 与 inject-dll 两条验证链路",
+    "en": "PostEx DLL plugin template with spawn-dll and inject-dll verification chains"
+  },
+  "capabilities": { "command_ids": [90] },
+  "hashes": {
+    "bin/postex_template.x64.dll": "3003b8222269fe350eed0297ec346a5dbe32915422e79fa173b87085ec2dedd8",
+    "bin/postex_template.x86.dll": "c69a71b7e653c380091c0aa95b1b64f5024c76d22daaf9a36319f1c972328c58",
+    "postex-template.manifest.json": "3ac6be84dfde105a6fe079d5b688ca6de71d2b2a45c7e49ab1a34d4ee6e1d3d8"
+  },
   "actions": [
     {
       "id": "postex_template_spawn",
-      "kind": "postex",
-      "label": "Template Spawn DLL",
-      "description": "创建宿主进程并加载 PostEx template DLL",
-      "os": ["windows"],
-      "arch": ["amd64", "x86"],
-      "requires_input": true,
+      "label": { "zh": "模板 Spawn DLL", "en": "Template Spawn DLL" },
+      "description": {
+        "zh": "创建宿主进程并加载 PostEx template DLL",
+        "en": "Create a host process and load the PostEx template DLL"
+      },
+      "module": "postex-template.manifest.json",
       "postex": {
-        "mode": "spawn-dll",
-        "manifest": "postex-template.manifest.json",
-        "dll_by_arch": {
-          "amd64": "bin/postex_template.x64.dll",
-          "x86": "bin/postex_template.x86.dll"
-        },
-        "wait_ms": 3000,
-        "max_runtime_ms": 0,
-        "idle_timeout_ms": 0,
         "description": "postex-template-spawn",
         "spawn_path": "C:\\Windows\\System32\\cmd.exe",
         "spawn_path_by_arch": {
           "amd64": "C:\\Windows\\System32\\cmd.exe",
           "x86": "C:\\Windows\\SysWOW64\\cmd.exe"
         },
-        "spawn_args": "/c timeout /t 30 /nobreak > nul",
-        "backend": "remote-thread"
-      },
-      "fields": [
-        {
-          "name": "wait_ms",
-          "label": "Wait MS",
-          "type": "int32",
-          "default": 3000,
-          "required": true,
-          "role": "wait_ms",
-          "help": "等待 PostEx pipe 连接的超时时间"
-        },
-        {
-          "name": "max_runtime_ms",
-          "label": "Max Runtime MS",
-          "type": "int32",
-          "default": 0,
-          "role": "max_runtime_ms",
-          "help": "最大运行时长，0 表示关闭；超时后 Beacon 发起协作式 cancel"
-        },
-        {
-          "name": "idle_timeout_ms",
-          "label": "Idle Timeout MS",
-          "type": "int32",
-          "default": 0,
-          "role": "idle_timeout_ms",
-          "help": "无输出空闲超时，0 表示关闭；超时后 Beacon 发起协作式 cancel"
-        },
-        {
-          "name": "spawn_path",
-          "label": "Spawn Path",
-          "type": "string",
-          "default": "C:\\Windows\\System32\\cmd.exe",
-          "default_by_arch": {
-            "amd64": "C:\\Windows\\System32\\cmd.exe",
-            "x86": "C:\\Windows\\SysWOW64\\cmd.exe"
-          },
-          "required": true,
-          "role": "spawn_path"
-        },
-        {
-          "name": "spawn_args",
-          "label": "Spawn Args",
-          "type": "string",
-          "default": "/c timeout /t 30 /nobreak > nul",
-          "role": "spawn_args"
-        },
-        {
-          "name": "count",
-          "label": "Count",
-          "type": "int32",
-          "default": 3,
-          "postex_arg": "--count"
-        },
-        {
-          "name": "delay_ms",
-          "label": "Delay MS",
-          "type": "int32",
-          "default": 1000,
-          "postex_arg": "--delay"
-        },
-        {
-          "name": "message",
-          "label": "Message",
-          "type": "string",
-          "default": "hello",
-          "postex_arg": "--message"
-        },
-        {
-          "name": "artifact",
-          "label": "Artifact",
-          "type": "bool",
-          "default": false,
-          "postex_arg": "--artifact",
-          "help": "结束前输出一个 text/plain artifact frame"
-        }
-      ]
+        "spawn_args": "/c timeout /t 30 /nobreak > nul"
+      }
     },
     {
       "id": "postex_template_inject",
-      "kind": "postex",
-      "label": "Template Inject DLL",
-      "description": "注入 PostEx template DLL 到指定进程",
-      "os": ["windows"],
-      "arch": ["amd64", "x86"],
-      "requires_input": true,
+      "label": { "zh": "模板 Inject DLL", "en": "Template Inject DLL" },
+      "description": {
+        "zh": "注入 PostEx template DLL 到指定进程",
+        "en": "Inject the PostEx template DLL into a target process"
+      },
+      "module": "postex-template.manifest.json",
       "postex": {
         "mode": "inject-dll",
-        "manifest": "postex-template.manifest.json",
-        "dll_by_arch": {
-          "amd64": "bin/postex_template.x64.dll",
-          "x86": "bin/postex_template.x86.dll"
-        },
-        "wait_ms": 3000,
-        "max_runtime_ms": 0,
-        "idle_timeout_ms": 0,
-        "description": "postex-template-inject",
-        "backend": "remote-thread"
-      },
-      "fields": [
-        {
-          "name": "pid",
-          "label": "Target PID",
-          "type": "int32",
-          "required": true,
-          "role": "target_pid",
-          "help": "目标进程 PID；killjob 不会终止 inject 目标进程"
-        },
-        {
-          "name": "wait_ms",
-          "label": "Wait MS",
-          "type": "int32",
-          "default": 3000,
-          "required": true,
-          "role": "wait_ms"
-        },
-        {
-          "name": "max_runtime_ms",
-          "label": "Max Runtime MS",
-          "type": "int32",
-          "default": 0,
-          "role": "max_runtime_ms"
-        },
-        {
-          "name": "idle_timeout_ms",
-          "label": "Idle Timeout MS",
-          "type": "int32",
-          "default": 0,
-          "role": "idle_timeout_ms"
-        },
-        {
-          "name": "count",
-          "label": "Count",
-          "type": "int32",
-          "default": 3,
-          "postex_arg": "--count"
-        },
-        {
-          "name": "delay_ms",
-          "label": "Delay MS",
-          "type": "int32",
-          "default": 1000,
-          "postex_arg": "--delay"
-        },
-        {
-          "name": "message",
-          "label": "Message",
-          "type": "string",
-          "default": "hello",
-          "postex_arg": "--message"
-        },
-        {
-          "name": "artifact",
-          "label": "Artifact",
-          "type": "bool",
-          "default": false,
-          "postex_arg": "--artifact",
-          "help": "结束前输出一个 text/plain artifact frame"
-        }
-      ]
+        "description": "postex-template-inject"
+      }
     }
   ]
 }

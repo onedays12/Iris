@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ListenerList - 监听器列表组件
  * 展示所有监听器的协议、地址、端口信息，
@@ -6,21 +6,24 @@
  */
 
 import { ref, computed } from 'vue'
-import { useListenerStore } from '../../stores/listener.js'
-import { useModalStore } from '../../stores/modal.js'
-import { useNotificationStore } from '../../stores/notification.js'
+import { useI18n } from 'vue-i18n'
+import { useListenerStore } from '../../stores/listener'
+import { useModalStore } from '../../stores/modal'
+import { useNotificationStore } from '../../stores/notification'
+import type { Listener } from '../../features/listener/model'
 
-const props = defineProps({
-  listeners: { type: Array, required: true },
-})
+const props = defineProps<{
+  listeners: Listener[]
+}>()
 
 const emit = defineEmits(['delete', 'edit'])
+const { t, locale } = useI18n()
 const listenerStore = useListenerStore()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
 
 // 排序状态
-const sortBy = ref('') // 'name' | 'created_at'
+const sortBy = ref('') // 'name' | 'createdAt'
 const sortOrder = ref('asc') // 'asc' | 'desc'
 
 const sortedListeners = computed(() => {
@@ -28,8 +31,9 @@ const sortedListeners = computed(() => {
   if (!sortBy.value) return result
 
   return result.sort((a, b) => {
-    let valA = a[sortBy.value]
-    let valB = b[sortBy.value]
+    const key = sortBy.value as keyof Listener
+    const valA = String(a[key] ?? '')
+    const valB = String(b[key] ?? '')
 
     // 处理字符串排序 (Case Insensitive)
     if (sortBy.value === 'name') {
@@ -39,7 +43,7 @@ const sortedListeners = computed(() => {
     }
 
     // 处理日期排序
-    if (sortBy.value === 'created_at') {
+    if (sortBy.value === 'createdAt') {
       const timeA = new Date(valA).getTime()
       const timeB = new Date(valB).getTime()
       return sortOrder.value === 'asc' ? timeA - timeB : timeB - timeA
@@ -49,7 +53,7 @@ const sortedListeners = computed(() => {
   })
 })
 
-function handleSort(key) {
+function handleSort(key: string) {
   if (sortBy.value === key) {
     if (sortOrder.value === 'asc') {
       sortOrder.value = 'desc'
@@ -63,24 +67,24 @@ function handleSort(key) {
   }
 }
 
-function getStatusClass(status) {
+function getStatusClass(status: string) {
   if (status === 'started') return 'tag-success'
   if (status === 'paused') return 'tag-warning'
   if (status === 'error') return 'tag-danger'
   return 'tag-danger'
 }
 
-function getStatusLabel(status) {
+function getStatusLabel(status: string) {
   const map = {
-    'started': '运行中',
-    'paused': '已暂停',
-    'stopped': '已停止',
-    'error': '启动失败'
+    'started': t('listenerList.statusStarted'),
+    'paused': t('listenerList.statusPaused'),
+    'stopped': t('listenerList.statusStopped'),
+    'error': t('listenerList.statusError')
   }
-  return map[status] || status
+  return map[status as keyof typeof map] || status
 }
 
-function parseConfigObject(configSource) {
+function parseConfigObject(configSource: unknown): Record<string, any> {
   if (typeof configSource === 'string') {
     try {
       return JSON.parse(configSource || '{}')
@@ -88,13 +92,13 @@ function parseConfigObject(configSource) {
       return {}
     }
   } else if (configSource && typeof configSource === 'object' && !Array.isArray(configSource)) {
-    return configSource
+    return configSource as Record<string, any>
   }
 
   return {}
 }
 
-function readConfigValue(configSource, keys) {
+function readConfigValue(configSource: unknown, keys: string[]) {
   const config = parseConfigObject(configSource)
   for (const key of keys) {
     if (config[key] !== undefined && config[key] !== '') {
@@ -104,21 +108,21 @@ function readConfigValue(configSource, keys) {
   return '-'
 }
 
-function getListenerHost(listener) {
-  const keys = listener.listener_type === 'internal'
+function getListenerHost(listener: Listener) {
+  const keys = listener.listenerType === 'internal'
     ? ['bind_host', 'host']
     : ['host', 'bind_host']
   return readConfigValue(listener.config, keys)
 }
 
-function getListenerPort(listener) {
-  const keys = listener.listener_type === 'internal'
+function getListenerPort(listener: Listener) {
+  const keys = listener.listenerType === 'internal'
     ? ['bind_port', 'port']
     : ['port', 'bind_port']
   return readConfigValue(listener.config, keys)
 }
 
-function toggleListener(listener) {
+function toggleListener(listener: Listener) {
   if (listener.status === 'started') {
     listenerStore.stopListener(listener.name)
   } else {
@@ -126,18 +130,18 @@ function toggleListener(listener) {
   }
 }
 
-function handleGenerateClient(listener) {
+function handleGenerateClient(listener: Listener) {
   if (listener.status !== 'started') {
-    notificationStore.warning('只有运行中的监听器才能生成客户端')
+    notificationStore.warning(t('listenerList.onlyStartedCanGenerate'))
     return
   }
   modalStore.openGenerateBeacon(listener.id)
 }
 
-function formatTime(iso) {
+function formatTime(iso: string) {
   if (!iso) return '-'
   const d = new Date(iso)
-  return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleDateString(locale.value) + ' ' + d.toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
 }
 </script>
 
@@ -149,22 +153,22 @@ function formatTime(iso) {
           <th style="width: 40px"></th>
           <th class="sortable" @click="handleSort('name')">
             <div class="header-content">
-              <span>名称</span>
+              <span>{{ t('listenerList.colName') }}</span>
               <span class="sort-icon" v-if="sortBy === 'name'">{{ sortOrder === 'asc' ? '↑' : '↓' }}</span>
             </div>
           </th>
-          <th>协议</th>
-          <th>类型</th>
-          <th>地址</th>
-          <th>端口</th>
-          <th>状态</th>
-          <th class="sortable" @click="handleSort('created_at')">
+          <th>{{ t('listenerList.colProtocol') }}</th>
+          <th>{{ t('listenerList.colType') }}</th>
+          <th>{{ t('listenerList.colAddress') }}</th>
+          <th>{{ t('listenerList.colPort') }}</th>
+          <th>{{ t('listenerList.colStatus') }}</th>
+          <th class="sortable" @click="handleSort('createdAt')">
             <div class="header-content">
-              <span>创建时间</span>
-              <span class="sort-icon" v-if="sortBy === 'created_at'">{{ sortOrder === 'asc' ? '↑' : '↓' }}</span>
+              <span>{{ t('listenerList.colCreatedAt') }}</span>
+              <span class="sort-icon" v-if="sortBy === 'createdAt'">{{ sortOrder === 'asc' ? '↑' : '↓' }}</span>
             </div>
           </th>
-          <th style="width: 120px">操作</th>
+          <th style="width: 120px">{{ t('listenerList.colActions') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -181,28 +185,28 @@ function formatTime(iso) {
           <td>
             <span 
               class="ltype-tag" 
-              :class="listener.listener_type === 'external' ? 'tag-external' : 'tag-internal'"
+              :class="listener.listenerType === 'external' ? 'tag-external' : 'tag-internal'"
             >
-              {{ listener.listener_type === 'external' ? 'External' : 'Internal' }}
+              {{ listener.listenerType === 'external' ? 'External' : 'Internal' }}
             </span>
           </td>
           <td class="cell-mono">{{ getListenerHost(listener) }}</td>
           <td class="cell-mono">
             {{ getListenerPort(listener) }}
-            <span v-if="listener.listener_type === 'internal'" class="p2p-badge">P2P</span>
+            <span v-if="listener.listenerType === 'internal'" class="p2p-badge">P2P</span>
           </td>
           <td>
             <span class="tag" :class="getStatusClass(listener.status)">
               {{ getStatusLabel(listener.status) }}
             </span>
           </td>
-          <td class="cell-time">{{ formatTime(listener.created_at) }}</td>
+          <td class="cell-time">{{ formatTime(listener.createdAt) }}</td>
           <td>
             <div class="action-btns">
               <button
                 class="btn btn-sm btn-ghost"
                 @click="toggleListener(listener)"
-                :title="listener.status === 'started' ? '停止' : '启动'"
+                :title="listener.status === 'started' ? t('listenerList.stop') : t('listenerList.start')"
               >
                 <svg v-if="listener.status === 'started'" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                   <rect x="6" y="4" width="4" height="16" rx="1"/>
@@ -216,7 +220,7 @@ function formatTime(iso) {
                 class="btn btn-sm btn-ghost"
                 @click="handleGenerateClient(listener)"
                 :disabled="listener.status !== 'started'"
-                title="生成客户端"
+                :title="t('listenerList.generateClient')"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M2 3h20v14a2 2 0 01-2 2H4a2 2 0 01-2-2V3z"/>
@@ -228,7 +232,7 @@ function formatTime(iso) {
               <button
                 class="btn btn-sm btn-ghost"
                 @click="$emit('edit', listener)"
-                title="编辑配置"
+                :title="t('listenerList.edit')"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
@@ -238,7 +242,7 @@ function formatTime(iso) {
               <button
                 class="btn btn-sm btn-ghost danger-hover"
                 @click="$emit('delete', listener.name)"
-                title="删除"
+                :title="t('listenerList.delete')"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"/>
@@ -254,8 +258,8 @@ function formatTime(iso) {
     <!-- 空状态 -->
     <div v-else class="empty-state">
       <div class="icon">📡</div>
-      <div class="title">暂无监听器</div>
-      <div class="desc">点击上方「新建监听器」按钮创建你的第一个监听器</div>
+      <div class="title">{{ t('listenerList.emptyTitle') }}</div>
+      <div class="desc">{{ t('listenerList.emptyDesc') }}</div>
     </div>
   </div>
 </template>

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TopologyPage - 网络拓扑可视化页面
  *
@@ -6,14 +6,17 @@
  */
 
 import { reactive, ref, computed, watch, nextTick, onMounted } from 'vue'
-import { useAgentStore } from '../stores/agent.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../stores/agent'
+import type { Beacon } from '../features/beacon/model'
 import TopologyCanvas from '../components/topology/TopologyCanvas.vue'
 import TopologyToolbar from '../components/topology/TopologyToolbar.vue'
 import BeaconContextMenu from '../components/beacon/BeaconContextMenu.vue'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
+const { t } = useI18n()
 const agentStore = useAgentStore()
-const canvasRef = ref(null)
+const canvasRef = ref<InstanceType<typeof TopologyCanvas> | null>(null)
 
 const selectedBeaconId = ref('')
 const contextMenu = reactive({ visible: false, x: 0, y: 0, targetType: '', beaconid: '' })
@@ -24,16 +27,18 @@ const V_GAP = 190
 
 // --- Layout Algorithm ---
 
-function computeLayout(agents) {
+type LayoutPosition = { x: number; y: number }
+
+function computeLayout(agents: Beacon[]): Record<string, LayoutPosition> {
   if (!agents.length) return {}
 
-  const childrenMap = new Map()
+  const childrenMap = new Map<string, Beacon[]>()
 
   for (const a of agents) {
     const pid = resolveParentId(a, agents)
     if (pid) {
       if (!childrenMap.has(pid)) childrenMap.set(pid, [])
-      childrenMap.get(pid).push(a)
+      childrenMap.get(pid)!.push(a)
     }
   }
 
@@ -44,10 +49,10 @@ function computeLayout(agents) {
   const roots = agents.filter(a => !resolveParentId(a, agents))
   roots.sort((a, b) => a.beaconid.localeCompare(b.beaconid))
 
-  const result = {}
+  const result: Record<string, LayoutPosition> = {}
   let globalX = 0
 
-  function layoutSubtree(node, depth) {
+  function layoutSubtree(node: Beacon, depth: number) {
     const children = childrenMap.get(node.beaconid) || []
 
     if (children.length === 0) {
@@ -90,7 +95,7 @@ function computeLayout(agents) {
   return result
 }
 
-function resolveParentId(agent, agents) {
+function resolveParentId(agent: Beacon, agents: Beacon[]) {
   const parentId = String(agent.parentId || '')
   if (!parentId) return ''
   const selfId = String(agent.beaconid || '')
@@ -103,7 +108,7 @@ function resolveParentId(agent, agents) {
 
 // --- Positions State ---
 
-const positions = reactive({})
+const positions = reactive<Record<string, LayoutPosition>>({})
 
 // Initialize positions for all agents
 function initPositions() {
@@ -153,18 +158,18 @@ function resetLayout() {
   scheduleFitView()
 }
 
-function onUpdatePosition(beaconid, newPos) {
+function onUpdatePosition(beaconid: string, newPos: LayoutPosition) {
   if (positions[beaconid]) {
     positions[beaconid].x = newPos.x
     positions[beaconid].y = newPos.y
   }
 }
 
-function onSelectNode(beaconid) {
+function onSelectNode(beaconid: string) {
   selectedBeaconId.value = selectedBeaconId.value === beaconid ? '' : beaconid
 }
 
-function onContextMenu(payload) {
+function onContextMenu(payload: { clientX: number; clientY: number; targetType?: string; beaconid: string }) {
   contextMenu.visible = true
   contextMenu.x = payload.clientX
   contextMenu.y = payload.clientY
@@ -186,18 +191,18 @@ const hasAgents = computed(() => agentStore.agents.length > 0)
     <div class="page-header">
       <div class="page-title">
         <PageTitleIcon name="topology" />
-        <span>网络拓扑</span>
+        <span>{{ t('topology.title') }}</span>
       </div>
       <div class="header-stats">
         <div class="header-stats-inner">
           <div class="stat-item">
             <span class="stat-value">{{ agentStore.agents.length }}</span>
-            <span class="stat-label">节点</span>
+            <span class="stat-label">{{ t('topology.nodes') }}</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat-item">
             <span class="stat-value online">{{ agentStore.onlineCount }}</span>
-            <span class="stat-label">在线</span>
+            <span class="stat-label">{{ t('topology.online') }}</span>
           </div>
         </div>
       </div>
@@ -226,9 +231,9 @@ const hasAgents = computed(() => agentStore.agents.length > 0)
       <!-- Empty State -->
       <div v-else class="empty-state">
         <div class="icon">📡</div>
-        <div class="title">等待 Agent 上线</div>
+        <div class="title">{{ t('topology.waitingAgent') }}</div>
         <div class="desc">
-          当 Agent 连接到服务器后，会自动显示拓扑关系图
+          {{ t('topology.emptyDescription') }}
         </div>
         <div class="pulse-ring"></div>
       </div>

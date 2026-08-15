@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ConsolePanel - 全局控制台面板
  * 支持多 Tab 切换、命令历史、Tab 补全、
@@ -6,12 +6,13 @@
  */
 
 import { ref, nextTick, watch, computed, onUnmounted } from 'vue'
-import { useAgentStore } from '../../stores/agent.js'
-import { useConsoleStore } from '../../stores/console.js'
-import { ReadBinaryFileBase64 } from '../../../bindings/irisclient/service/fileservice.js'
-import { useModalStore } from '../../stores/modal.js'
-import { useConsoleHistory } from '../../composables/useConsoleHistory.js'
-import { parseCommandLine, getRawCommandAfterName } from '../../utils/commandParser.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../../stores/agent'
+import { useConsoleStore } from '../../stores/console'
+import { ReadBinaryFileBase64 } from '../../../bindings/irisclient/service/fileservice'
+import { useModalStore } from '../../stores/modal'
+import { useConsoleHistory } from '../../composables/useConsoleHistory'
+import { parseCommandLine, getRawCommandAfterName } from '../../utils/commandParser'
 import {
   COMMAND_HELP,
   COMMAND_HELP_ALIASES,
@@ -23,10 +24,11 @@ import {
   getSupportedCommandHelpEntriesForOS,
   getSupportedLocalCommandHelpEntriesForOS,
   getUnsupportedCommandMessage,
-} from '../../constants/commands.js'
+} from '../../constants/commands'
 
 // ─── 初始化 ───
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const consoleStore = useConsoleStore()
 const modalStore = useModalStore()
@@ -36,12 +38,12 @@ const modalStore = useModalStore()
 // ─── 状态 ───
 
 const commandInput = ref('')
-const outputRef = ref(null)
+const outputRef = ref<HTMLElement | null>(null)
 
 // ─── 计算属性 ───
 
 const currentConsole = computed(() => consoleStore.currentConsole)
-const activeBeacon = computed(() => agentStore.getAgentById(consoleStore.activeBeaconId))
+const activeBeacon = computed(() => agentStore.getAgentById(consoleStore.activeBeaconId ?? ''))
 const activeBeaconOs = computed(() => String(activeBeacon.value?.os || ''))
 
 // ─── 命令历史与 Tab 补全(委托给 useConsoleHistory composable) ───
@@ -57,7 +59,7 @@ const {
   getHistory: () => consoleStore.commandHistory,
 })
 
-function isCommandAllowed(command) {
+function isCommandAllowed(command: string | number) {
   return isCommandSupportedForOS(command, activeBeaconOs.value)
 }
 
@@ -67,7 +69,7 @@ let isDragging = false
 let startY = 0
 let startHeight = 0
 
-function startDrag(e) {
+function startDrag(e: MouseEvent) {
   isDragging = true
   startY = e.clientY
   startHeight = panelHeight.value
@@ -76,7 +78,7 @@ function startDrag(e) {
   document.body.style.userSelect = 'none' // 防止拖拽时选中文本
 }
 
-function onDrag(e) {
+function onDrag(e: MouseEvent) {
   if (!isDragging) return
   // 向上拖拽 clientY 减小，面板高度应该增加
   const delta = startY - e.clientY
@@ -119,12 +121,12 @@ watch(
 /**
  * 显示帮助信息
  */
-function showHelp(specificCmd = null) {
+function showHelp(specificCmd: string | null = null) {
   const bid = consoleStore.activeBeaconId
   if (!bid) return
 
   // 辅助函数：计算视觉宽度（中文计2，英文计1）
-  const getVisualWidth = (str) => {
+  const getVisualWidth = (str: string) => {
     let width = 0
     for (let i = 0; i < str.length; i++) {
       width += str.charCodeAt(i) > 255 ? 2 : 1
@@ -133,7 +135,7 @@ function showHelp(specificCmd = null) {
   }
 
   // 辅助函数：根据视觉宽度进行补齐
-  const visualPadEnd = (str, target) => {
+  const visualPadEnd = (str: string, target: number) => {
     const current = getVisualWidth(str)
     return str + (target > current ? ' '.repeat(target - current) : '')
   }
@@ -149,9 +151,9 @@ function showHelp(specificCmd = null) {
           consoleStore.appendToConsole(bid, 'error', getUnsupportedCommandMessage(specificCmd, activeBeaconOs.value))
           return
         }
-        helpContent += `用法: ${help.usage}\n描述: ${help.desc}\n注意: ${help.notes}\n`
+        helpContent += `${t('console.helpUsage', { value: help.usage })}\n${t('console.helpDesc', { value: help.desc })}\n${t('console.helpNotes', { value: help.notes })}\n`
     } else {
-      consoleStore.appendToConsole(bid, 'error', `未找到指令 "${specificCmd}" 的详细说明。`)
+      consoleStore.appendToConsole(bid, 'error', t('console.helpNotFound', { cmd: specificCmd }))
       return
     }
   } else {
@@ -164,7 +166,7 @@ function showHelp(specificCmd = null) {
       const usage = visualPadEnd(info.usage, 45)
       helpContent += `  ${usage} - ${info.desc}\n`
     })
-    helpContent += '\n用法指引: 输入 help <command> 查看特定指令。'
+    helpContent += `\n${t('console.helpFooter')}`
   }
   
   helpContent += '\n-----------------------------------------\n'
@@ -207,7 +209,7 @@ async function sendCommand() {
       return
     }
     modalStore.openExecuteModal(consoleStore.activeBeaconId, 'bof')
-    consoleStore.appendToConsole(consoleStore.activeBeaconId, 'output', '已打开 BOF 执行窗口。')
+    consoleStore.appendToConsole(consoleStore.activeBeaconId, 'output', t('console.bofWindowOpened'))
 
     if (rawInput && consoleStore.commandHistory[consoleStore.commandHistory.length - 1] !== rawInput) {
       consoleStore.commandHistory.push(rawInput)
@@ -224,7 +226,7 @@ async function sendCommand() {
     consoleStore.appendToConsole(
       consoleStore.activeBeaconId, 
       'error', 
-      `未知指令: "${parsed.cmdName}"。请检查输入或查看帮助。`
+      t('console.unknownCommand', { cmd: parsed.cmdName })
    )
     commandInput.value = ''
     return
@@ -238,7 +240,7 @@ async function sendCommand() {
   }
 
   // 3. [特化封装] SLEEP 指令任务包封装
-  let finalArgs = parsed.args
+  let finalArgs: unknown[] = parsed.args
   if (parsed.cmdId === COMMAND_ID.SLEEP) {
     const timeRaw = parsed.args[0]
     const jitterRaw = parsed.args[1]
@@ -246,7 +248,7 @@ async function sendCommand() {
     // 强制校验 Time
     if (!timeRaw) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】sleep 指令至少需要一个时间参数 (ms)。用法: sleep <ms> [jitter]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.sleepNeedsTime', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
@@ -254,7 +256,7 @@ async function sendCommand() {
     const time = parseInt(timeRaw)
     if (isNaN(time) || time <= 0 || time > 60000) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', `【指令校验失败】非法的时间参数 "${timeRaw}"，必须为 1-60000 之间的整数。`)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.sleepInvalidTime', { prefix: t('console.validationPrefix'), value: timeRaw }))
       commandInput.value = ''
       return
     }
@@ -265,7 +267,7 @@ async function sendCommand() {
       jitter = parseInt(jitterRaw)
       if (isNaN(jitter) || jitter < 0 || jitter > 200) {
         consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-        consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', `【指令校验失败】非法的抖动比例 "${jitterRaw}"，必须在 0-200 之间。`)
+        consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.sleepInvalidJitter', { prefix: t('console.validationPrefix'), value: jitterRaw }))
         commandInput.value = ''
         return
       }
@@ -273,7 +275,7 @@ async function sendCommand() {
 
     // 重新封装为结构化参数（数值）
     finalArgs = [time, jitter]
-  } else if ([COMMAND_ID.SHELL, COMMAND_ID.POWERSHELL].includes(parsed.cmdId)) {
+  } else if (parsed.cmdId === COMMAND_ID.SHELL || parsed.cmdId === COMMAND_ID.POWERSHELL) {
     const rawCommand = getRawCommandAfterName(rawInput, parsed.cmdName)
     if (!rawCommand.trim()) {
       const cmdName = parsed.cmdName.toLowerCase()
@@ -281,24 +283,24 @@ async function sendCommand() {
       consoleStore.appendToConsole(
         consoleStore.activeBeaconId,
         'error',
-        `【指令校验失败】${cmdName} 指令需要提供一整条原始命令字符串。用法: ${cmdName} <raw_command>`
+        t('console.rawCommandNeeded', { prefix: t('console.validationPrefix'), cmd: cmdName })
      )
       commandInput.value = ''
       return
     }
     finalArgs = [rawCommand]
-  } else if ([COMMAND_ID.KILLJOB, COMMAND_ID.KILL, COMMAND_ID.STEAL_TOKEN].includes(parsed.cmdId)) {
+  } else if (parsed.cmdId === COMMAND_ID.KILLJOB || parsed.cmdId === COMMAND_ID.KILL || parsed.cmdId === COMMAND_ID.STEAL_TOKEN) {
     const targetRaw = parsed.args[0]
     const targetId = parseInt(targetRaw)
     if (!targetRaw || isNaN(targetId) || targetId <= 0) {
       const cmdName = parsed.cmdName.toLowerCase()
-      const label = parsed.cmdId === COMMAND_ID.KILLJOB ? '后台 job ID' : '目标进程 PID'
+      const label = parsed.cmdId === COMMAND_ID.KILLJOB ? t('console.jobId') : t('console.pid')
       const placeholder = parsed.cmdId === COMMAND_ID.KILLJOB ? 'job_id' : 'PID'
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
       consoleStore.appendToConsole(
         consoleStore.activeBeaconId, 
         'error', 
-        `【指令校验失败】${cmdName} 指令需要提供有效的${label}。用法: ${cmdName} <${placeholder}>`
+        t('console.targetNeeded', { prefix: t('console.validationPrefix'), cmd: cmdName, label, placeholder })
      )
       commandInput.value = ''
       return
@@ -315,19 +317,19 @@ async function sendCommand() {
       consoleStore.appendToConsole(
         consoleStore.activeBeaconId,
         'error',
-        '【指令校验失败】zip 指令至少需要 source_path 和 zip_path。用法: zip <source_path> <zip_path> [overwrite] [include_root]'
+        t('console.zipNeedsPaths', { prefix: t('console.validationPrefix') })
      )
       commandInput.value = ''
       return
     }
 
-    const parseBinaryFlag = (value, fallback, label) => {
+    const parseBinaryFlag = (value: string | undefined, fallback: number, label: string) => {
       if (value === undefined || value === null || String(value).trim() === '') {
         return fallback
       }
       const numeric = parseInt(String(value).trim(), 10)
       if (!Number.isInteger(numeric) || ![0, 1].includes(numeric)) {
-        throw new Error(`【指令校验失败】${label} 只能是 0 或 1。`)
+        throw new Error(t('console.binaryFlagOnly', { prefix: t('console.validationPrefix'), label }))
       }
       return numeric
     }
@@ -341,24 +343,26 @@ async function sendCommand() {
       ]
     } catch (err) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', err.message || String(err))
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', err instanceof Error ? err.message : String(err))
       commandInput.value = ''
       return
     }
   } else if (parsed.cmdName.toLowerCase() === 'postex_spawn_dll') {
     // postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]
+    const POSTEX_SPAWN_USAGE = 'postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]'
+    const prefix = t('console.validationPrefix')
     const spawnDllPath = String(parsed.args[0] || '').trim()
     const spawnPath = String(parsed.args[5] || '').trim()
     if (!spawnDllPath) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_spawn_dll 需要提供 dll_path。用法: postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.postexSpawnNeedsDll', { prefix, usage: POSTEX_SPAWN_USAGE }))
       commandInput.value = ''
       return
     }
     const spawnWaitMs = parseInt(parsed.args[1])
     if (!spawnWaitMs || spawnWaitMs <= 0) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】wait_ms 必须是正整数。用法: postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.waitMsPositive', { prefix, usage: POSTEX_SPAWN_USAGE }))
       commandInput.value = ''
       return
     }
@@ -366,13 +370,13 @@ async function sendCommand() {
     const spawnIdleTimeoutMs = parseInt(parsed.args[3] || '0')
     if (isNaN(spawnMaxRuntimeMs) || spawnMaxRuntimeMs < 0 || isNaN(spawnIdleTimeoutMs) || spawnIdleTimeoutMs < 0) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】max_runtime_ms 和 idle_timeout_ms 必须是非负整数，0 表示关闭。')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.runtimeNonNegative', { prefix }))
       commandInput.value = ''
       return
     }
     if (!spawnPath) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_spawn_dll 需要提供 spawn_path。用法: postex_spawn_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <spawn_path> <spawn_args> [module_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.postexSpawnNeedsPath', { prefix, usage: POSTEX_SPAWN_USAGE }))
       commandInput.value = ''
       return
     }
@@ -384,24 +388,26 @@ async function sendCommand() {
       finalArgs = [5, spawnWaitMs, spawnMaxRuntimeMs, spawnIdleTimeoutMs, spawnDesc, spawnModuleArgs, spawnPath, spawnArgs, { kind: 'bytes', value: spawnDllBase64 }]
     } catch (err) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', `读取 DLL 文件失败: ${err.message || err}`)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.dllReadFailed', { message: err instanceof Error ? err.message : String(err) }))
       commandInput.value = ''
       return
     }
   } else if (parsed.cmdName.toLowerCase() === 'postex_inject_dll') {
     // postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]
+    const POSTEX_INJECT_USAGE = 'postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]'
+    const prefix = t('console.validationPrefix')
     const injectDllPath = String(parsed.args[0] || '').trim()
     const injectPid = parseInt(parsed.args[5])
     if (!injectDllPath) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_inject_dll 需要提供 dll_path。用法: postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.postexInjectNeedsDll', { prefix, usage: POSTEX_INJECT_USAGE }))
       commandInput.value = ''
       return
     }
     const injectWaitMs = parseInt(parsed.args[1])
     if (!injectWaitMs || injectWaitMs <= 0) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】wait_ms 必须是正整数。用法: postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.waitMsPositive', { prefix, usage: POSTEX_INJECT_USAGE }))
       commandInput.value = ''
       return
     }
@@ -409,13 +415,13 @@ async function sendCommand() {
     const injectIdleTimeoutMs = parseInt(parsed.args[3] || '0')
     if (isNaN(injectMaxRuntimeMs) || injectMaxRuntimeMs < 0 || isNaN(injectIdleTimeoutMs) || injectIdleTimeoutMs < 0) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】max_runtime_ms 和 idle_timeout_ms 必须是非负整数，0 表示关闭。')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.runtimeNonNegative', { prefix }))
       commandInput.value = ''
       return
     }
     if (!injectPid || injectPid <= 0) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】postex_inject_dll 需要提供有效的 pid。用法: postex_inject_dll <dll_path> <wait_ms> <max_runtime_ms> <idle_timeout_ms> <description> <pid> [module_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.postexInjectNeedsPid', { prefix, usage: POSTEX_INJECT_USAGE }))
       commandInput.value = ''
       return
     }
@@ -426,7 +432,7 @@ async function sendCommand() {
       finalArgs = [6, injectWaitMs, injectMaxRuntimeMs, injectIdleTimeoutMs, injectDesc, injectModuleArgs, injectPid, { kind: 'bytes', value: injectDllBase64 }]
     } catch (err) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', `读取 DLL 文件失败: ${err.message || err}`)
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.dllReadFailed', { message: err instanceof Error ? err.message : String(err) }))
       commandInput.value = ''
       return
     }
@@ -435,13 +441,13 @@ async function sendCommand() {
     const migrateSpawnPath = String(parsed.args[1] || '').trim()
     if (!['x86', 'x64', 'amd64'].includes(migrateArch)) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】spawnto 需要提供 x86 或 x64。用法: spawnto <x86|x64> <spawn_path>')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.spawntoNeedsArch', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
     if (!migrateSpawnPath) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】spawnto 需要提供 spawn_path。用法: spawnto <x86|x64> <spawn_path>')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.spawntoNeedsPath', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
@@ -453,13 +459,13 @@ async function sendCommand() {
     const migrateSpawnArgs = String(parsed.args[3] || '')
     if (!listenerName) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_spawn 需要提供 listener。用法: migrate_spawn <listener> <x86|x64> [spawn_path] [spawn_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.migrateSpawnNeedsListener', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
     if (!['x86', 'x64', 'amd64'].includes(migrateArch)) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_spawn 需要提供 x86 或 x64。用法: migrate_spawn <listener> <x86|x64> [spawn_path] [spawn_args]')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.migrateSpawnNeedsArch', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
@@ -470,19 +476,19 @@ async function sendCommand() {
     const migratePid = parseInt(parsed.args[2], 10)
     if (!listenerName) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_inject 需要提供 listener。用法: migrate_inject <listener> <x86|x64> <pid>')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.migrateInjectNeedsListener', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
     if (!['x86', 'x64', 'amd64'].includes(migrateArch)) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_inject 需要提供 x86 或 x64。用法: migrate_inject <listener> <x86|x64> <pid>')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.migrateInjectNeedsArch', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
     if (!migratePid || migratePid <= 0) {
       consoleStore.appendToConsole(consoleStore.activeBeaconId, 'input', rawInput)
-      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', '【指令校验失败】migrate_inject 需要提供有效的 pid。用法: migrate_inject <listener> <x86|x64> <pid>')
+      consoleStore.appendToConsole(consoleStore.activeBeaconId, 'error', t('console.migrateInjectNeedsPid', { prefix: t('console.validationPrefix') }))
       commandInput.value = ''
       return
     }
@@ -500,22 +506,22 @@ async function sendCommand() {
   commandInput.value = ''
 }
 
-function closeTab(e, beaconid) {
+function closeTab(e: MouseEvent, beaconid: string) {
   e.stopPropagation()
   consoleStore.closeConsole(beaconid)
 }
 
-function getAgentLabel(beaconid) {
+function getAgentLabel(beaconid: string) {
   if (!beaconid) return 'Unknown'
   const agent = agentStore.getAgentById(beaconid)
   if (!agent) return beaconid.substring(0, 8)
   return `${agent.beaconid.substring(0, 8)}@${agent.hostname}`
 }
 
-function formatTimestamp(iso) {
+function formatTimestamp(iso: string) {
   if (!iso) return ''
   const d = new Date(iso)
-  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return d.toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 </script>
 
@@ -546,7 +552,7 @@ function formatTimestamp(iso) {
           </button>
         </div>
       </div>
-      <button class="console-collapse" @click="consoleStore.consolePanelVisible = false" title="收起控制台">
+      <button class="console-collapse" @click="consoleStore.consolePanelVisible = false" :title="t('console.collapse')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="6 15 12 9 18 15"/>
         </svg>
@@ -557,7 +563,7 @@ function formatTimestamp(iso) {
     <div class="console-body" v-if="currentConsole">
       <div class="console-output user-select-text" ref="outputRef">
         <div class="console-welcome">
-          <span class="console-prompt-text">[ {{ getAgentLabel(consoleStore.activeBeaconId) }} ] 控制台已连接</span>
+          <span class="console-prompt-text">{{ t('console.connected', { label: getAgentLabel(consoleStore.activeBeaconId ?? '') }) }}</span>
         </div>
         <div
           v-for="(line, idx) in currentConsole.history"
@@ -580,7 +586,7 @@ function formatTimestamp(iso) {
           v-model="commandInput"
           class="console-input"
           type="text"
-          placeholder="输入命令 (Tab 补全, ↑↓ 历史, help 查看帮助)..."
+          :placeholder="t('console.inputPlaceholder')"
           autocomplete="off"
           spellcheck="false"
           @keydown.enter="sendCommand"
@@ -597,7 +603,7 @@ function formatTimestamp(iso) {
 
     <!-- 无活跃控制台 -->
     <div v-else class="console-empty">
-      <span>选择一个标签查看控制台</span>
+      <span>{{ t('console.noConsole') }}</span>
     </div>
   </div>
 </template>

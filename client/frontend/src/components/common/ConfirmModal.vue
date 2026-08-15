@@ -1,12 +1,14 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ConfirmModal - 通用确认弹窗
  *
  * 全局可复用的确认/取消弹窗，支持自定义标题和内容，通过 modalStore 控制显隐。
  */
 
-import { useModalStore } from '../../stores/modal.js'
+import { useI18n } from 'vue-i18n'
+import { useModalStore } from '../../stores/modal'
 
+const { t } = useI18n()
 const modalStore = useModalStore()
 
 function handleConfirm() {
@@ -44,13 +46,13 @@ function handleCancel() {
           </div>
 
           <div class="confirm-footer">
-            <button class="btn btn-ghost" @click="handleCancel">{{ modalStore.confirm.cancelText || '取消' }}</button>
+            <button class="btn btn-ghost" @click="handleCancel">{{ modalStore.confirm.cancelText || t('common.cancel') }}</button>
             <button 
               class="btn" 
               :class="modalStore.confirm.type === 'danger' ? 'btn-danger' : 'btn-primary'" 
               @click="handleConfirm"
             >
-              {{ modalStore.confirm.confirmText || '继续操作' }}
+              {{ modalStore.confirm.confirmText || t('common.confirm') }}
             </button>
           </div>
         </div>

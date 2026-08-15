@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * GenerateBeaconModal - Beacon 生成弹窗
  * 配置并生成 Beacon Payload（可执行文件/DLL/Shellcode），
@@ -6,13 +6,26 @@
  */
 
 import { ref, computed, watch } from 'vue'
-import { useModalStore } from '../../stores/modal.js'
-import { useListenerStore } from '../../stores/listener.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import { generatePayload, generateShellcode } from '../../features/payload/api/payloadApi.js'
-import * as FileService from '../../../bindings/irisclient/service/fileservice.js'
-import { Dialogs } from '@wailsio/runtime'
+import { useI18n } from 'vue-i18n'
+import { useModalStore } from '../../stores/modal'
+import { useListenerStore } from '../../stores/listener'
+import { useNotificationStore } from '../../stores/notification'
+import { generatePayload, generateShellcode } from '../../features/payload/api/payloadApi'
+import type {
+  BeaconType,
+  PayloadArch,
+  PayloadFormat,
+  PayloadGenerateRequest,
+  PayloadGenerateResult,
+  PayloadOs,
+  PayloadStageMode,
+  ShellcodeGenerateRequest,
+  ShellcodeGenerateResult,
+} from '../../features/payload/api/types'
+import * as FileService from '../../../bindings/irisclient/service/fileservice'
+import { openSaveFileDialog } from '../../utils/saveFileDialog'
 
+const { t } = useI18n()
 const modalStore = useModalStore()
 const listenerStore = useListenerStore()
 const notificationStore = useNotificationStore()
@@ -25,9 +38,9 @@ const stageMode = ref('stagerless')
 const beaconType = ref('go')
 const generating = ref(false)
 const generatingShellcode = ref(false)
-const shellcodeFileInputRef = ref(null)
+const shellcodeFileInputRef = ref<HTMLInputElement | null>(null)
 const shellcodeFilePath = ref('')
-const shellcodeSelectedFile = ref(null)
+const shellcodeSelectedFile = ref<File | null>(null)
 const shellcodeMode = ref('front')
 const shellcodeLoaderName = ref('ReflectiveLoader')
 
@@ -50,7 +63,7 @@ const activeListenerConfig = computed(() => {
 
 const activeListenerProtocol = computed(() => String(activeListener.value?.protocol || '').toLowerCase())
 const activeListenerType = computed(() => {
-  return String(activeListener.value?.listener_type || activeListenerConfig.value?.listener_type || 'external').toLowerCase()
+  return String(activeListener.value?.listenerType || activeListenerConfig.value?.listener_type || 'external').toLowerCase()
 })
 const activeListenerStatus = computed(() => String(activeListener.value?.status || '').toLowerCase())
 const activeListenerStagerConfig = computed(() => {
@@ -91,37 +104,39 @@ const osOptions = computed(() => {
   ]
 })
 
-const windowsArchOptions = [
-  { label: 'amd64 (64位)', value: 'amd64' },
-  { label: 'x86 (32位)', value: 'x86' },
+type ArchOption = { value: string; labelKey?: string; label?: string }
+
+const windowsArchOptions: ArchOption[] = [
+  { labelKey: 'genBeacon.archAmd64', value: 'amd64' },
+  { labelKey: 'genBeacon.archX86', value: 'x86' },
 ]
 // Go-Beacon only supports amd64 on Windows (no x86 template)
-const goWindowsArchOptions = [
-  { label: 'amd64 (64位)', value: 'amd64' },
+const goWindowsArchOptions: ArchOption[] = [
+  { labelKey: 'genBeacon.archAmd64', value: 'amd64' },
 ]
-const linuxArchOptions = [
-  { label: 'amd64 (64位)', value: 'amd64' },
+const linuxArchOptions: ArchOption[] = [
+  { labelKey: 'genBeacon.archAmd64', value: 'amd64' },
 ]
-const macArchOptions = [
+const macArchOptions: ArchOption[] = [
   { label: 'arm (Apple Silicon)', value: 'arm' },
 ]
 
 const generationModeOptions = [
-  { label: '生成 Beacon 客户端', value: 'beacon' },
-  { label: '生成 Shellcode', value: 'shellcode' },
+  { labelKey: 'genBeacon.modeBeacon', value: 'beacon' },
+  { labelKey: 'genBeacon.modeShellcode', value: 'shellcode' },
 ]
 const stageModeOptions = [
-  { label: 'Stagerless（完整 Payload）', value: 'stagerless', description: '生成完整 Beacon payload，行为与旧版本一致。' },
-  { label: 'Stager（分阶段）', value: 'stager', description: '生成 stager payload，并由 Listener HTTP Stager 下载完整 stage。' },
+  { labelKey: 'genBeacon.stageStagerless', value: 'stagerless', descriptionKey: 'genBeacon.stageStagerlessDesc' },
+  { labelKey: 'genBeacon.stageStager', value: 'stager', descriptionKey: 'genBeacon.stageStagerDesc' },
 ]
 const beaconTypeOptions = [
-  { label: 'Go-Beacon', value: 'go', description: 'Go 实现，支持 Windows / Linux / macOS' },
-  { label: 'C-Beacon', value: 'c', description: 'C 实现，仅支持 Windows' },
+  { labelKey: 'genBeacon.goBeacon', value: 'go', descriptionKey: 'genBeacon.goBeaconDesc' },
+  { labelKey: 'genBeacon.cBeacon', value: 'c', descriptionKey: 'genBeacon.cBeaconDesc' },
 ]
-const shellcodeModeOptions = [
-  { label: 'front', value: 'front', description: '在 PE 前拼接 bootstrap 和 RDI shellcode，再追加 PE 内容' },
-  { label: 'post', value: 'post', description: '将 bootstrap 写入 PE 起始位置，并在 PE 后追加 RDI shellcode' },
-  { label: 'embed', value: 'embed', description: '查找 DLL 导出的 loader 函数，将 DOS 头替换为跳转 stub' },
+const shellcodeModeOptions: { labelKey: string; value: string; descriptionKey: string; label?: string }[] = [
+  { labelKey: 'genBeacon.shellcodeFront', value: 'front', descriptionKey: 'genBeacon.shellcodeFrontDesc' },
+  { labelKey: 'genBeacon.shellcodePost', value: 'post', descriptionKey: 'genBeacon.shellcodePostDesc' },
+  { labelKey: 'genBeacon.shellcodeEmbed', value: 'embed', descriptionKey: 'genBeacon.shellcodeEmbedDesc' },
 ]
 
 const isInternal = computed(() => activeListenerType.value === 'internal')
@@ -159,24 +174,29 @@ const availableStageModeOptions = computed(() => {
     disabled: item.value === 'stager' && (os.value !== 'windows' || isInternal.value),
   }))
 })
-const availableBeaconTypes = computed(() => {
+const availableBeaconTypes = computed<{ value: string; label?: string; labelKey?: string; descriptionKey?: string; description?: string }[]>(() => {
   // External TCP: server explicitly rejects Go-Beacon
   if (isExternalTcp.value) {
-    return [{ label: 'C-Beacon', value: 'c', description: 'C 实现，External TCP 不支持 Go-Beacon' }]
+    return [{ label: 'C-Beacon', value: 'c', descriptionKey: 'genBeacon.extTcpNoGo' }]
   }
   // Mac/Linux: Go-Beacon only
   if (os.value === 'mac' || os.value === 'linux') {
-    return [{ label: 'Go-Beacon', value: 'go', description: 'Go 实现，当前 OS 固定使用' }]
+    return [{ label: 'Go-Beacon', value: 'go', descriptionKey: 'genBeacon.currentOsFixed' }]
   }
   // Windows (external HTTP, internal TCP/SMB): both available
   return beaconTypeOptions
 })
-const modalTitle = computed(() => isShellcodeMode.value ? '生成 Shellcode' : '生成 Beacon 客户端')
+
+function beaconTypeHint(bt: { descriptionKey?: string; description?: string } | undefined): string {
+  if (!bt) return ''
+  return bt.descriptionKey ? t(bt.descriptionKey) : (bt.description ?? '')
+}
+const modalTitle = computed(() => isShellcodeMode.value ? t('genBeacon.titleShellcode') : t('genBeacon.titleBeacon'))
 const primaryButtonLabel = computed(() => {
   if (isShellcodeMode.value) {
-    return generatingShellcode.value ? '生成中...' : '💾 生成并保存'
+    return generatingShellcode.value ? t('genBeacon.generating') : t('genBeacon.generateAndSave')
   }
-  return generating.value ? '编译中...' : '🚀 编译并保存'
+  return generating.value ? t('genBeacon.compiling') : t('genBeacon.compileAndSave')
 })
 const isBusy = computed(() => generating.value || generatingShellcode.value)
 const canGenerateBeacon = computed(() => {
@@ -190,43 +210,43 @@ const generateDisabled = computed(() => {
 })
 const warningText = computed(() => {
   if (isShellcodeMode.value) {
-    return `前端会把你选择的本地 PE 文件编码后发送给后端，以 ${currentShellcodeModeMeta.value.label} 模式生成 shellcode，再保存到本地。`
+    return t('genBeacon.warnShellcode', { mode: t(currentShellcodeModeMeta.value.labelKey || currentShellcodeModeMeta.value.label || '') })
   }
   // Go-Beacon + External TCP: server will reject
   if (isGoTcpBlocked.value) {
-    return 'Go-Beacon 不支持 External TCP 监听器，服务端将拒绝请求。请切换为 C-Beacon，或选择 HTTP/HTTPS/Internal 类型的监听器。'
+    return t('genBeacon.warnGoTcpBlocked')
   }
   if (isInternal.value) {
     if (beaconType.value === 'go') {
-      return 'Go-Beacon Internal Cascade Beacon 目前仅有 Windows amd64 / exe 模板，由父级 Beacon 承载并转发通信。后端将自动注入级联配置（加密密钥、协议特征）到模板中。'
+      return t('genBeacon.warnInternalGo')
     }
-    return 'C-Beacon Internal Cascade Beacon 仅支持 Windows，由父级 Beacon 承载并转发通信。后端将自动注入级联配置（加密密钥、协议特征）到模板中。'
+    return t('genBeacon.warnInternalC')
   }
   if (activeListener.value && activeListenerStatus.value !== 'started') {
-    return '生成前要求 Listener 状态为 started；paused、stopped、error 等状态都会被后端拒绝。'
+    return t('genBeacon.warnListenerNotStarted')
   }
   if (stageMode.value === 'stager') {
     if (os.value !== 'windows') {
-      return 'Stager 模板当前支持 Windows amd64 和 Windows 32 位；Linux 请使用 Stagerless。'
+      return t('genBeacon.warnStagerOnlyWin')
     }
     if (!activeListenerSupportsHttpStager.value) {
       if (!['http', 'https'].includes(activeListenerProtocol.value) || activeListenerType.value !== 'external') {
-        return 'Stager 模式要求 Listener 类型为 external http/https。'
+        return t('genBeacon.warnStagerNeedsHttp')
       }
       if (!activeListenerStagerEnabled.value) {
-        return '当前选择了 Stager 模式，但目标 Listener 的 C2 Profile 未启用 HTTP Stager。'
+        return t('genBeacon.warnStagerNotEnabled')
       }
-      return '当前选择了 Stager 模式，但目标 Listener 缺少 HTTP Stager 端点配置。'
+      return t('genBeacon.warnStagerMissingEndpoint')
     }
     if (arch.value === 'x86') {
-      return '当前选择了 32 位 Stager；后端使用 stager_windows_32.*，完整 stage 需要匹配 beacon_windows_x86.dll，并写入 static/stages/<stage_id>/stage.bin。'
+      return t('genBeacon.warnStagerX86')
     }
     if (format.value === 'c') {
-      return '当前选择了 Stager C 数组格式；后端返回 base64 编码的 C 源码文本，保存后为 .c 文件，完整 stage 会写入 TeamServer 的 static/stages/<stage_id>/stage.bin。'
+      return t('genBeacon.warnStagerCFormat')
     }
-    return '当前选择了 Stager 模式；format=exe 返回 PE stager，format=bin 返回 shellcode stager，format=c 返回 C 数组源码，完整 stage 会写入 TeamServer 的 static/stages/<stage_id>/stage.bin。'
+    return t('genBeacon.warnStagerGeneral')
   }
-  return '生成过程将根据监听模式自动注入加密密钥与传输协议特征。format=exe 返回 PE，format=bin 返回 shellcode。'
+  return t('genBeacon.warnDefault')
 })
 
 // 根据 OS、Beacon 类型和 Stage 模式动态计算可用格式
@@ -341,19 +361,19 @@ watch(availableBeaconTypes, (newTypes) => {
   }
 })
 
-function readFileAsBase64(file) {
-  return new Promise((resolve, reject) => {
+function readFileAsBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
       const result = String(reader.result || '')
       resolve(result.includes(',') ? result.split(',')[1] : result)
     }
-    reader.onerror = () => reject(reader.error || new Error('读取本地文件失败'))
+    reader.onerror = () => reject(reader.error || new Error(t('genBeacon.readLocalFailed')))
     reader.readAsDataURL(file)
   })
 }
 
-function buildShellcodeDefaultName(fileName) {
+function buildShellcodeDefaultName(fileName: string) {
   const sourceName = String(fileName || 'shellcode')
   const trimmed = sourceName.replace(/\.(exe|dll)$/i, '')
   return `${trimmed || 'shellcode'}.bin`
@@ -366,49 +386,51 @@ function triggerShellcodeFileInput() {
   }
 }
 
-async function generateShellcodeFromFile(file) {
+async function generateShellcodeFromFile(file: File) {
   generatingShellcode.value = true
   try {
     const peBase64 = await readFileAsBase64(file)
     const result = await generateShellcode({
-      mode: shellcodeMode.value,
+      mode: shellcodeMode.value as 'front' | 'post' | 'embed',
       pe_base64: peBase64,
       loader_name: needsShellcodeLoaderName.value
         ? String(shellcodeLoaderName.value || 'ReflectiveLoader')
         : undefined,
-    })
+    } as unknown as ShellcodeGenerateRequest) as ShellcodeGenerateResult & { message?: string; error?: string }
 
-    const shellcode = result?.shellcode ?? result?.data?.shellcode
+    // 契约: request() 已解包 {ok, data} 信封, shellcode 为顶层字段
+    const shellcode = result?.shellcode
     if (!shellcode) {
-      throw new Error(result?.message || result?.error || '生成 shellcode 失败')
+      throw new Error(result?.message || result?.error || t('genBeacon.shellcodeGenFailed'))
     }
 
-    const savePath = await Dialogs.SaveFile({
-      Title: '保存生成的 Shellcode',
+    const savePath = await openSaveFileDialog({
+      Title: t('genBeacon.saveShellcodeTitle'),
       Filename: buildShellcodeDefaultName(file?.name),
       Filters: [
-        { Name: 'Shellcode Files', Pattern: '*.bin' }
+        { DisplayName: 'Shellcode Files', Pattern: '*.bin' }
       ]
     })
 
     if (!savePath) {
-      notificationStore.info('已取消保存')
+      notificationStore.info(t('genBeacon.cancelSave'))
       return
     }
 
     await FileService.WriteBinaryFile(savePath, shellcode)
-    notificationStore.success('Shellcode 生成成功并已保存到本地')
+    notificationStore.success(t('genBeacon.shellcodeSaved'))
   } catch (err) {
     console.error('Shellcode generation failed:', err)
-    notificationStore.error(`生成 Shellcode 失败: ${err.message || err}`)
+    notificationStore.error(t('genBeacon.shellcodeGenError', { message: err instanceof Error ? err.message : String(err) }))
   } finally {
     generatingShellcode.value = false
   }
 }
 
-async function handleShellcodeFileSelected(event) {
-  const file = event.target.files?.[0]
-  event.target.value = ''
+async function handleShellcodeFileSelected(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  target.value = ''
   if (!file) return
   shellcodeSelectedFile.value = file
   shellcodeFilePath.value = file.name
@@ -416,7 +438,7 @@ async function handleShellcodeFileSelected(event) {
 
 async function handleGenerateShellcode() {
   if (!shellcodeSelectedFile.value) {
-    notificationStore.warn('请先选择待转换的 PE 文件')
+    notificationStore.warn(t('genBeacon.selectPeFirst'))
     return
   }
 
@@ -425,95 +447,95 @@ async function handleGenerateShellcode() {
 
 async function handleGenerateBeacon() {
   if (!activeListener.value) {
-    notificationStore.warn('请先选择 Listener')
+    notificationStore.warn(t('genBeacon.selectListener'))
     return
   }
   if (activeListenerStatus.value !== 'started') {
-    notificationStore.warn('生成前请先启动 Listener')
+    notificationStore.warn(t('genBeacon.listenerNotStarted'))
     return
   }
   // Go-Beacon does not support External TCP listeners
   if (beaconType.value === 'go' && isExternalTcp.value) {
-    notificationStore.warn('Go-Beacon 不支持 External TCP 监听器，请切换为 C-Beacon')
+    notificationStore.warn(t('genBeacon.goNotSupported'))
     return
   }
 
   if (stageMode.value === 'stager') {
     if (os.value !== 'windows') {
-      notificationStore.warn('Stager 当前仅支持 Windows amd64 / 32 位')
+      notificationStore.warn(t('genBeacon.stagerOnlyWinWarn'))
       return
     }
     if (!activeListenerSupportsHttpStager.value) {
       if (!['http', 'https'].includes(activeListenerProtocol.value) || activeListenerType.value !== 'external') {
-        notificationStore.warn('Stager 模式要求 Listener 类型为 external http/https')
+        notificationStore.warn(t('genBeacon.warnStagerNeedsHttp'))
         return
       }
       if (!activeListenerStagerEnabled.value) {
-        notificationStore.warn('当前 Listener 的 C2 Profile 未启用 HTTP Stager，请编辑 Listener 并选择启用了 stager 的 profile')
+        notificationStore.warn(t('genBeacon.warnStagerNotEnabledWarn'))
         return
       }
-      notificationStore.warn('当前 Listener 缺少 HTTP Stager 端点配置，请编辑 Listener 后再生成')
+      notificationStore.warn(t('genBeacon.warnStagerMissingEndpointWarn'))
       return
     }
   } else if (format.value === 'c') {
-    notificationStore.warn('C 数组格式仅支持 Stager 模式')
+    notificationStore.warn(t('genBeacon.cFormatStagerOnly'))
     return
   }
 
   generating.value = true
   try {
     // 1. 调用后端生成 Payload
-    const payloadParams = {
+    const payloadParams: PayloadGenerateRequest = {
       listener_id: activeListener.value.id,
-      os: os.value,
-      arch: arch.value,
-      format: format.value,
-      stage_mode: stageMode.value,
+      os: os.value as PayloadOs,
+      arch: arch.value as PayloadArch,
+      format: format.value as PayloadFormat,
+      stage_mode: stageMode.value as PayloadStageMode,
     }
     if (stageMode.value !== 'stager') {
-      payloadParams.beacon_type = beaconType.value
+      payloadParams.beacon_type = beaconType.value as BeaconType
     }
-    const result = await generatePayload(payloadParams)
+    const result = await generatePayload(payloadParams) as PayloadGenerateResult & { message?: string; error?: string }
 
-    const payload = result?.payload ?? result?.data?.payload
+    const payload = result?.payload
     if (!payload) {
-      throw new Error(result?.message || result?.error || '生成失败')
+      throw new Error(result?.message || result?.error || t('genBeacon.genFailed'))
     }
 
     // 2. 弹出系统保存对话框
     const ext = format.value === 'c' ? 'c' : format.value
-    const responseFileName = result?.file_name ?? result?.data?.file_name ?? ''
+    const responseFileName = result?.file_name ?? ''
     const defaultName = responseFileName || `${stageMode.value === 'stager' ? 'stager' : 'beacon'}_${os.value}_${arch.value}_${activeListener.value.name}.${ext}`
     const filterName = format.value === 'c' ? 'C Source Files' : 'Payload Files'
     
-    const savePath = await Dialogs.SaveFile({
-      Title: stageMode.value === 'stager' ? '保存生成的 Stager' : '保存生成的 Beacon',
+    const savePath = await openSaveFileDialog({
+      Title: t('genBeacon.saveTitle', { mode: stageMode.value === 'stager' ? t('genBeacon.stager') : t('genBeacon.beacon') }),
       Filename: defaultName,
       Filters: [
-        { Name: filterName, Pattern: `*.${ext}` }
+        { DisplayName: filterName, Pattern: `*.${ext}` }
       ]
     })
 
     if (!savePath) {
-      notificationStore.info('已取消保存')
+      notificationStore.info(t('genBeacon.cancelSave'))
       return
     }
 
     // 3. 写入文件
     await FileService.WriteBinaryFile(savePath, payload)
 
-    const responseStageMode = result?.stage_mode ?? result?.data?.stage_mode ?? stageMode.value
-    const stageId = result?.stage_id ?? result?.data?.stage_id ?? ''
-    const stageUrl = result?.stage_url ?? result?.data?.stage_url ?? ''
+    const responseStageMode = result?.stage_mode ?? stageMode.value
+    const stageId = result?.stage_id ?? ''
+    const stageUrl = result?.stage_url ?? ''
     notificationStore.success(
       stageUrl
-        ? `${format.value === 'c' ? 'Stager C 源码' : 'Stager'} 生成成功并已保存到本地，Stage ID: ${stageId || '-'}，Stage URL: ${stageUrl}`
-        : `Beacon 生成成功并已保存到本地 (${responseStageMode})`
+        ? t('genBeacon.stagerSavedWithStage', { format: format.value === 'c' ? 'C' : '', stageId: stageId || '-', stageUrl })
+        : t('genBeacon.beaconSaved', { stageMode: responseStageMode })
     )
     modalStore.closeGenerateBeacon()
   } catch (err) {
     console.error('Payload generation failed:', err)
-    notificationStore.error(`生成失败: ${err.message}`)
+    notificationStore.error(t('genBeacon.genFailedError', { message: err instanceof Error ? err.message : String(err) }))
   } finally {
     generating.value = false
   }
@@ -554,9 +576,9 @@ watch(generationMode, (mode) => {
 
       <div class="modal-body">
         <div class="form-group">
-          <label>生成类型</label>
+          <label>{{ t('genBeacon.fieldGenType') }}</label>
           <select v-model="generationMode" class="glass-select">
-            <option v-for="item in generationModeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+            <option v-for="item in generationModeOptions" :key="item.value" :value="item.value">{{ t(item.labelKey) }}</option>
           </select>
         </div>
 
@@ -564,7 +586,7 @@ watch(generationMode, (mode) => {
         <div class="info-banner" v-if="!isShellcodeMode && activeListener">
           <span class="icon">📡</span>
           <div class="info-content">
-            <label>目标监听器</label>
+            <label>{{ t('genBeacon.targetListener') }}</label>
             <div class="value">{{ activeListener.name }} ({{ activeListener.protocol.toUpperCase() }})</div>
           </div>
         </div>
@@ -572,7 +594,7 @@ watch(generationMode, (mode) => {
         <div v-if="!isShellcodeMode" class="config-sections">
           <!-- 维度 1: 操作系统 -->
           <div class="form-group">
-            <label>目标操作系统 (OS)</label>
+            <label>{{ t('genBeacon.fieldOs') }}</label>
             <div class="os-grid">
               <div
                 v-for="opt in osOptions"
@@ -590,15 +612,15 @@ watch(generationMode, (mode) => {
           <div class="form-row">
             <!-- 维度 2: 架构 -->
             <div class="form-group flex-1">
-              <label>处理器架构 (Arch)</label>
+              <label>{{ t('genBeacon.fieldArch') }}</label>
               <select v-model="arch" class="glass-select" :disabled="availableArchOptions.length === 1">
-                <option v-for="a in availableArchOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
+                <option v-for="a in availableArchOptions" :key="a.value" :value="a.value">{{ a.labelKey ? t(a.labelKey) : a.label }}</option>
               </select>
             </div>
 
             <!-- 维度 3: 输出格式 -->
             <div class="form-group flex-1">
-              <label>输出格式 (Format)</label>
+              <label>{{ t('genBeacon.fieldFormat') }}</label>
               <select v-model="format" class="glass-select" :disabled="availableFormats.length === 1">
                 <option v-for="f in availableFormats" :key="f.value" :value="f.value">{{ f.label }}</option>
               </select>
@@ -606,46 +628,46 @@ watch(generationMode, (mode) => {
 
             <!-- 维度 4: Beacon 类型 -->
             <div v-if="stageMode !== 'stager'" class="form-group flex-1">
-              <label>Beacon 类型</label>
+              <label>{{ t('genBeacon.fieldBeaconType') }}</label>
               <select v-model="beaconType" class="glass-select" :disabled="availableBeaconTypes.length === 1">
-                <option v-for="bt in availableBeaconTypes" :key="bt.value" :value="bt.value">{{ bt.label }}</option>
+                <option v-for="bt in availableBeaconTypes" :key="bt.value" :value="bt.value">{{ bt.labelKey ? t(bt.labelKey) : bt.label }}</option>
               </select>
-              <p class="field-hint">{{ availableBeaconTypes.find(bt => bt.value === beaconType)?.description }}</p>
+              <p class="field-hint">{{ beaconTypeHint(availableBeaconTypes.find(bt => bt.value === beaconType)) }}</p>
             </div>
           </div>
 
           <div v-if="isInternal" class="internal-hint">
             <span class="hint-icon">🔗</span>
             <div>
-              <strong>Cascade Internal Beacon</strong>
-              <p v-if="beaconType === 'go'">Go-Beacon 目前仅有 Windows amd64 / exe 模板，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
-              <p v-else>C-Beacon 固定使用 Windows / amd64 或 x86 / exe，由父级 Beacon 承载并转发通信，不支持 Stager 模式。</p>
+              <strong>{{ t('genBeacon.cascadeInternalBeacon') }}</strong>
+              <p v-if="beaconType === 'go'">{{ t('genBeacon.internalGoDetail') }}</p>
+              <p v-else>{{ t('genBeacon.internalCDetail') }}</p>
             </div>
           </div>
           <div v-if="isGoTcpBlocked" class="internal-hint go-tcp-blocked">
             <span class="hint-icon">⛔</span>
             <div>
-              <strong>Go-Beacon 不支持 External TCP</strong>
-              <p>服务端明确拒绝此组合。请切换为 C-Beacon，或选择 HTTP / HTTPS / Internal 类型的监听器。</p>
+              <strong>{{ t('genBeacon.goNoExtTcpTitle') }}</strong>
+              <p>{{ t('genBeacon.goNoExtTcpDesc') }}</p>
             </div>
           </div>
           <div v-if="!isInternal && os === 'mac'" class="internal-hint">
             <span class="hint-icon">🍎</span>
             <div>
-              <strong>macOS Beacon</strong>
-              <p>macOS 仅支持 Go-Beacon (arm / macho)。</p>
+              <strong>{{ t('genBeacon.macBeaconTitle') }}</strong>
+              <p>{{ t('genBeacon.macBeaconDesc') }}</p>
             </div>
           </div>
           <div v-if="!isInternal && os === 'linux'" class="internal-hint">
             <span class="hint-icon">🐧</span>
             <div>
-              <strong>Linux Beacon</strong>
-              <p>Linux 仅支持 Go-Beacon (amd64 / elf)。</p>
+              <strong>{{ t('genBeacon.linuxBeaconTitle') }}</strong>
+              <p>{{ t('genBeacon.linuxBeaconDesc') }}</p>
             </div>
           </div>
 
           <div v-if="!isInternal" class="form-group stage-mode-group">
-            <label>Stage 模式</label>
+            <label>{{ t('genBeacon.fieldStageMode') }}</label>
             <select v-model="stageMode" class="glass-select">
               <option
                 v-for="item in availableStageModeOptions"
@@ -653,53 +675,53 @@ watch(generationMode, (mode) => {
                 :value="item.value"
                 :disabled="item.disabled"
               >
-                {{ item.label }}
+                {{ t(item.labelKey) }}
               </option>
             </select>
-            <p class="help-text">{{ currentStageModeMeta.description }}</p>
+            <p class="help-text">{{ t(currentStageModeMeta.descriptionKey) }}</p>
             <p v-if="stageMode === 'stager' && !activeListenerStagerEnabled" class="help-text warning-text">
-              当前 Listener 的 C2 Profile 未启用 HTTP Stager，请编辑 Listener 并选择启用了 stager 的 profile。
+              {{ t('genBeacon.warnStagerNotEnabledWarn') }}
             </p>
             <p v-else-if="stageMode === 'stager' && !activeListenerSupportsHttpStager" class="help-text warning-text">
-              Stager 要求 external http/https Listener，并配置 HTTP Stager 端点。
+              {{ t('genBeacon.stagerNeedsHttpListener') }}
             </p>
           </div>
         </div>
 
         <div v-else class="config-sections">
           <div class="form-group">
-            <label>Shellcode 模式</label>
+            <label>{{ t('genBeacon.fieldShellcodeMode') }}</label>
             <select v-model="shellcodeMode" class="glass-select">
-              <option v-for="item in shellcodeModeOptions" :key="item.value" :value="item.value">{{ item.label }}</option>
+              <option v-for="item in shellcodeModeOptions" :key="item.value" :value="item.value">{{ t(item.labelKey) }}</option>
             </select>
-            <p class="help-text">{{ currentShellcodeModeMeta.description }}</p>
+            <p class="help-text">{{ t(currentShellcodeModeMeta.descriptionKey) }}</p>
           </div>
 
           <div class="form-group">
-            <label>PE 文件</label>
+            <label>{{ t('genBeacon.fieldPeFile') }}</label>
             <div class="path-input-group">
               <input
                 type="text"
                 :value="shellcodeFilePath"
                 class="form-control"
-                placeholder="请选择本地 PE 文件（.exe / .dll）..."
+                :placeholder="t('genBeacon.pePlaceholder')"
                 readonly
                 @click="triggerShellcodeFileInput"
               >
-              <button class="browse-btn" type="button" @click="triggerShellcodeFileInput">选择文件</button>
+              <button class="browse-btn" type="button" @click="triggerShellcodeFileInput">{{ t('genBeacon.chooseFile') }}</button>
             </div>
-            <p class="help-text">支持的后缀类型: .exe, .dll</p>
+            <p class="help-text">{{ t('genBeacon.supportedExts') }}</p>
           </div>
 
           <div v-if="needsShellcodeLoaderName" class="form-group">
-            <label>Loader 名称</label>
+            <label>{{ t('genBeacon.fieldLoaderName') }}</label>
             <input
               v-model="shellcodeLoaderName"
               type="text"
               class="form-control"
-              placeholder="请输入导出的 Loader 名称..."
+              :placeholder="t('genBeacon.loaderPlaceholder')"
             >
-            <p class="help-text">仅 embed 模式需要。默认值为 ReflectiveLoader。</p>
+            <p class="help-text">{{ t('genBeacon.loaderHint') }}</p>
           </div>
         </div>
 
@@ -718,7 +740,7 @@ watch(generationMode, (mode) => {
           @change="handleShellcodeFileSelected"
         >
         <button class="btn btn-ghost" @click="modalStore.closeGenerateBeacon()" :disabled="isBusy">
-          取消
+          {{ t('common.cancel') }}
         </button>
         <button class="btn btn-primary btn-generate" @click="handleGenerate()" :disabled="generateDisabled">
           <span v-if="isBusy" class="loader" :class="{ 'shellcode-loader': isShellcodeMode }"></span>

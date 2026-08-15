@@ -1,0 +1,415 @@
+/* ============================================
+   Iris Client - Sketch 手绘主题
+   ============================================
+   风格参考: uiprompt.site visual-handDrawnSketch（手绘草图风格）
+   实现借鉴:
+   - 抖动边框: PaperCSS (MIT) 的 SVG feTurbulence + feDisplacementMap 方案
+   - 字体: Google Fonts Patrick Hand / Permanent Marker / 之芒星 (OFL)
+   本文件仅在 html[data-ui-theme="sketch"] 下生效, 不影响其他主题。
+   ============================================ */
+
+/* ---------- 手写字体（与应用既有 Inter @import 同模式） ---------- */
+@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Permanent+Marker&family=Zhi+Mang+Xing&display=swap');
+
+html[data-ui-theme="sketch"] {
+  color-scheme: light;
+
+  /* 手绘风字体栈:
+     拉丁/数字用 Google Fonts 手写体 Patrick Hand / Permanent Marker;
+     中文改用系统楷体(KaiTi, 带 hinting, 小字号渲染清晰) —
+     之芒星(Zhi Mang Xing)书法体笔画过细, 13-15px 下渲染发虚 */
+  --font-hand: 'Patrick Hand', 'KaiTi', '楷体', 'STKaiti', 'Comic Sans MS', cursive, sans-serif;
+  --font-marker: 'Permanent Marker', 'KaiTi', '楷体', 'STKaiti', 'Comic Sans MS', cursive, sans-serif;
+
+  /* 马克笔色板 */
+  --color-primary: #4f46e5;
+  --color-primary-rgb: 79, 70, 229;
+  --color-primary-dim: rgba(79, 70, 229, 0.1);
+  --color-primary-light: #6366f1;
+  --color-accent: #0d9488;
+  --color-accent-dim: rgba(13, 148, 136, 0.1);
+  --color-success: #15803d;
+  --color-success-dim: rgba(21, 128, 61, 0.1);
+  --color-warning: #b45309;
+  --color-warning-dim: rgba(180, 83, 9, 0.1);
+  --color-danger: #dc2626;
+  --color-danger-dim: rgba(220, 38, 38, 0.1);
+
+  /* 纸张底色 */
+  --bg-deep: #f7f3ea;
+  --bg-sidebar: #f1ecdf;
+  --bg-card: #fdfbf5;
+  --bg-card-hover: #faf6ec;
+  --bg-input: #fdfbf5;
+  --bg-input-focus: #ffffff;
+  --bg-overlay: rgba(58, 50, 34, 0.32);
+  --bg-console: #f4efe4;
+
+  --glass-panel-bg: #fdfbf5;
+  --glass-card-bg: #fdfbf5;
+  --glass-modal-bg: #fdfbf5;
+  --glass-popover-bg: #fdfbf5;
+  --glass-border: rgba(43, 42, 38, 0.28);
+  --glass-border-strong: rgba(43, 42, 38, 0.45);
+  --glass-highlight: transparent;
+  --glass-grain: transparent;
+  --glass-blur-sm: 0px;
+  --glass-blur-md: 0px;
+  --glass-blur-lg: 0px;
+
+  /* 墨色文本 */
+  --text-primary: #2b2a26;
+  --text-secondary: #55524a;
+  --text-muted: #8a857a;
+  --text-console: #33302a;
+
+  /* 墨色边框 */
+  --border: rgba(43, 42, 38, 0.32);
+  --border-light: rgba(43, 42, 38, 0.16);
+  --border-focus: rgba(79, 70, 229, 0.6);
+
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+
+  --shadow-sm: 0 2px 6px rgba(60, 50, 30, 0.1);
+  --shadow-md: 0 6px 16px rgba(60, 50, 30, 0.12);
+  --shadow-lg: 0 12px 32px rgba(60, 50, 30, 0.16);
+  --shadow-xl: 0 20px 56px rgba(60, 50, 30, 0.2);
+  --shadow-glow-primary: 0 4px 12px rgba(79, 70, 229, 0.18);
+  --shadow-glow-accent: 0 4px 12px rgba(13, 148, 136, 0.14);
+  --shadow-glow-success: 0 4px 12px rgba(21, 128, 61, 0.14);
+
+  --bg-secondary: #f1ecdf;
+
+  /* 抖动边框（SVG feTurbulence 位移, PaperCSS 同款技术） */
+  --sketch-border-ink: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.015' numOctaves='2' seed='3' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='10'/%3E%3C/filter%3E%3Crect width='200' height='200' fill='none' stroke='%232b2a26' stroke-width='9' filter='url(%23r)'/%3E%3C/svg%3E");
+  --sketch-border-primary: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.015' numOctaves='2' seed='7' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='10'/%3E%3C/filter%3E%3Crect width='200' height='200' fill='none' stroke='%234f46e5' stroke-width='9' filter='url(%23r)'/%3E%3C/svg%3E");
+  --sketch-border-danger: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='r'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.015' numOctaves='2' seed='11' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='10'/%3E%3C/filter%3E%3Crect width='200' height='200' fill='none' stroke='%23dc2626' stroke-width='9' filter='url(%23r)'/%3E%3C/svg%3E");
+}
+
+/* ---------- 全局: 关闭毛玻璃, 纸张化 ---------- */
+html[data-ui-theme="sketch"] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-ui-theme="sketch"] ::selection {
+  background: rgba(255, 214, 79, 0.5);
+  color: var(--text-primary);
+}
+
+html[data-ui-theme="sketch"] ::-webkit-scrollbar-thumb {
+  background: rgba(43, 42, 38, 0.3);
+  border-radius: 4px;
+}
+
+/* ---------- 字体 ---------- */
+html[data-ui-theme="sketch"] body {
+  font-family: var(--font-hand);
+  /* 手写体小字号笔画偏细，放大一级保证清晰度 */
+  font-size: 15px;
+}
+
+html[data-ui-theme="sketch"] .data-table td {
+  font-size: 14px;
+}
+
+html[data-ui-theme="sketch"] .data-table th {
+  font-size: 12px;
+}
+
+html[data-ui-theme="sketch"] .form-label {
+  font-size: 13px;
+}
+
+html[data-ui-theme="sketch"] .input,
+html[data-ui-theme="sketch"] .select {
+  font-size: 14px;
+}
+
+html[data-ui-theme="sketch"] .tag {
+  font-size: 12px;
+}
+
+html[data-ui-theme="sketch"] .page-title,
+html[data-ui-theme="sketch"] .modal-title,
+html[data-ui-theme="sketch"] .panel-header,
+html[data-ui-theme="sketch"] .table-header,
+html[data-ui-theme="sketch"] .logo-name {
+  font-family: var(--font-marker);
+  letter-spacing: 0.5px;
+}
+
+html[data-ui-theme="sketch"] .logo-name {
+  letter-spacing: 0;
+}
+
+/* ---------- 背景: 笔记本横线 + 纸张颗粒 ---------- */
+html[data-ui-theme="sketch"] .blob,
+html[data-ui-theme="sketch"] .background-decor {
+  display: none;
+}
+
+html[data-ui-theme="sketch"] .liquid-bg {
+  background-color: var(--bg-deep);
+  background-image:
+    repeating-linear-gradient(to bottom, transparent 0, transparent 23px, rgba(43, 42, 38, 0.03) 23px, rgba(43, 42, 38, 0.03) 24px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* ---------- 卡片（无旋转，避免悬停抖动） ---------- */
+html[data-ui-theme="sketch"] .glass-card {
+  background: var(--glass-card-bg);
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-ink) 8 round;
+  border-radius: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+html[data-ui-theme="sketch"] .glass-card:hover {
+  border-image: var(--sketch-border-primary) 8 round;
+  box-shadow: var(--shadow-md);
+}
+
+/* ---------- 模态框 ---------- */
+html[data-ui-theme="sketch"] .modal-overlay {
+  background: var(--bg-overlay);
+}
+
+html[data-ui-theme="sketch"] .modal-content,
+html[data-ui-theme="sketch"] .modal-card,
+html[data-ui-theme="sketch"] .prompt-card,
+html[data-ui-theme="sketch"] .confirm-card,
+html[data-ui-theme="sketch"] .listener-modal,
+html[data-ui-theme="sketch"] .modal-container {
+  background: var(--glass-modal-bg);
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-ink) 8 round;
+  border-radius: 0;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---------- 按钮 ---------- */
+html[data-ui-theme="sketch"] .btn::before {
+  display: none;
+}
+
+html[data-ui-theme="sketch"] .btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-primary) 8 round;
+  border-radius: 0;
+  box-shadow: var(--shadow-glow-primary);
+}
+
+html[data-ui-theme="sketch"] .btn-primary:hover {
+  transform: none;
+  filter: brightness(1.04);
+}
+
+html[data-ui-theme="sketch"] .btn-primary:active {
+  transform: none;
+  filter: brightness(0.98);
+}
+
+html[data-ui-theme="sketch"] .btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-danger) 8 round;
+  border-radius: 0;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.18);
+}
+
+html[data-ui-theme="sketch"] .btn-danger:hover {
+  transform: none;
+  filter: brightness(1.04);
+}
+
+html[data-ui-theme="sketch"] .btn-danger:active {
+  transform: none;
+  filter: brightness(0.98);
+}
+
+html[data-ui-theme="sketch"] .btn-ghost,
+html[data-ui-theme="sketch"] .btn-secondary,
+html[data-ui-theme="sketch"] .browse-btn,
+html[data-ui-theme="sketch"] .btn-small,
+html[data-ui-theme="sketch"] .modal-close-btn,
+html[data-ui-theme="sketch"] .close-btn {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-ink) 8 round;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-ui-theme="sketch"] .btn-ghost:hover,
+html[data-ui-theme="sketch"] .btn-secondary:hover,
+html[data-ui-theme="sketch"] .browse-btn:hover,
+html[data-ui-theme="sketch"] .btn-small:hover,
+html[data-ui-theme="sketch"] .modal-close-btn:hover,
+html[data-ui-theme="sketch"] .close-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+  transform: none;
+}
+
+/* ---------- 输入框 / 下拉 ---------- */
+html[data-ui-theme="sketch"] .input,
+html[data-ui-theme="sketch"] .glass-input,
+html[data-ui-theme="sketch"] .glass-select,
+html[data-ui-theme="sketch"] .form-control,
+html[data-ui-theme="sketch"] .select,
+html[data-ui-theme="sketch"] .search-input-wrapper {
+  background-color: var(--bg-input);
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-ink) 8 round;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html[data-ui-theme="sketch"] .input:hover,
+html[data-ui-theme="sketch"] .glass-input:hover,
+html[data-ui-theme="sketch"] .glass-select:hover,
+html[data-ui-theme="sketch"] .form-control:hover {
+  background-color: var(--bg-input-focus);
+}
+
+html[data-ui-theme="sketch"] .input:focus,
+html[data-ui-theme="sketch"] .glass-input:focus,
+html[data-ui-theme="sketch"] .glass-select:focus,
+html[data-ui-theme="sketch"] .form-control:focus,
+html[data-ui-theme="sketch"] .select:focus,
+html[data-ui-theme="sketch"] .search-input-wrapper:focus-within {
+  background-color: var(--bg-input-focus);
+  border-image: var(--sketch-border-primary) 8 round;
+  outline: none;
+  transform: none;
+}
+
+/* 下拉箭头换成手绘样式 */
+html[data-ui-theme="sketch"] .select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M4.5 8.5c2.5 2.6 5 5.2 7.5 7.5 2.5-2.3 5-4.9 7.5-7.5' stroke='%232b2a26' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
+html[data-ui-theme="sketch"] .select option,
+html[data-ui-theme="sketch"] select option {
+  background: #fdfbf5;
+  color: var(--text-primary);
+}
+
+/* ---------- 表格 ---------- */
+html[data-ui-theme="sketch"] .data-table th {
+  background: var(--bg-card);
+  border-bottom: 2px solid var(--border);
+  text-transform: none;
+  letter-spacing: 0.5px;
+}
+
+html[data-ui-theme="sketch"] .data-table td {
+  border-bottom: 1px solid var(--border-light);
+}
+
+html[data-ui-theme="sketch"] .data-table tbody tr.selected {
+  background: var(--color-primary-dim);
+  border-color: rgba(var(--color-primary-rgb), 0.2);
+}
+
+/* ---------- 标签 ---------- */
+html[data-ui-theme="sketch"] .tag {
+  border-radius: 7px;
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-ink) 8 round;
+}
+
+html[data-ui-theme="sketch"] .tag-success {
+  border-image: none;
+  border: 1px solid rgba(21, 128, 61, 0.35);
+}
+
+html[data-ui-theme="sketch"] .tag-danger {
+  border-image: none;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+}
+
+html[data-ui-theme="sketch"] .tag-warning {
+  border-image: none;
+  border: 1px solid rgba(180, 83, 9, 0.35);
+}
+
+html[data-ui-theme="sketch"] .tag-info {
+  border-image: none;
+  border: 1px solid rgba(13, 148, 136, 0.35);
+}
+
+/* ---------- 侧边栏 ---------- */
+/* .nav-item 字号 16px 已统一到基座样式，所有主题一致 */
+html[data-ui-theme="sketch"] .nav-item {
+  border-radius: 6px;
+}
+
+html[data-ui-theme="sketch"] .section-label {
+  font-size: 12px;
+}
+
+html[data-ui-theme="sketch"] .nav-item:hover {
+  background: rgba(43, 42, 38, 0.06);
+  border-color: transparent;
+}
+
+html[data-ui-theme="sketch"] .nav-item.active {
+  background: var(--color-primary-dim);
+  color: var(--color-primary);
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-primary) 8 round;
+  border-radius: 0;
+  font-weight: 600;
+}
+
+html[data-ui-theme="sketch"] .theme-btn,
+html[data-ui-theme="sketch"] .github-btn,
+html[data-ui-theme="sketch"] .logout-btn {
+  background: var(--bg-input);
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-ink) 8 round;
+  border-radius: 0;
+}
+
+html[data-ui-theme="sketch"] .theme-btn:hover,
+html[data-ui-theme="sketch"] .github-btn:hover,
+html[data-ui-theme="sketch"] .logout-btn:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  border-image: var(--sketch-border-primary) 8 round;
+  transform: none;
+}
+
+/* ---------- 登录页 ---------- */
+html[data-ui-theme="sketch"] .login-header h1 {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  -webkit-text-fill-color: var(--text-primary);
+  font-family: var(--font-marker);
+  letter-spacing: 0.5px;
+}
+
+html[data-ui-theme="sketch"] .login-btn {
+  background: var(--color-primary);
+  color: #fff;
+  border: 2px solid transparent;
+  border-image: var(--sketch-border-primary) 8 round;
+  border-radius: 0;
+  box-shadow: var(--shadow-glow-primary);
+}
+
+html[data-ui-theme="sketch"] .login-btn:hover {
+  transform: none;
+  filter: brightness(1.04);
+}

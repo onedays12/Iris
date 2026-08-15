@@ -1,11 +1,11 @@
-<script setup>
+<script setup lang="ts">
 /**
  * GlobalModalHost - 全局弹窗宿主组件
  *
  * 集中管理和渲染所有全局弹窗（确认框、输入框、插件操作、生成 Beacon、文件浏览器等），统一由 modalStore 控制。
  */
 
-import { useModalStore } from '../../stores/modal.js'
+import { useModalStore } from '../../stores/modal'
 import ConfirmModal from '../common/ConfirmModal.vue'
 import PromptModal from '../common/PromptModal.vue'
 import PluginActionModal from '../plugin/PluginActionModal.vue'
@@ -43,7 +43,7 @@ const modalStore = useModalStore()
   <MigrateInjectModal
     :visible="modalStore.migrateInjectVisible"
     :beaconid="modalStore.activeMigrateInject.beaconid || ''"
-    :process="modalStore.activeMigrateInject.process"
+    :process="(modalStore.activeMigrateInject.process as Record<string, any>) || undefined"
     @close="modalStore.closeMigrateInject()"
   />
 

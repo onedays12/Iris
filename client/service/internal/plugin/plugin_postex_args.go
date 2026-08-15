@@ -44,7 +44,7 @@ func buildPluginArgs(action PluginAction, payload map[string]any) ([]args.Beacon
 }
 
 func buildPostExPluginArgs(action PluginAction, payload map[string]any) ([]args.BeaconCommandArg, error) {
-	targetOS := normalizePluginOS(args.PickString(payload, "beacon_os", "beaconOS", "os", "OS"))
+	targetOS := normalizePluginOS(args.PickString(payload, "beacon_os"))
 	if targetOS == "" {
 		return nil, fmt.Errorf("beacon_os is required for postex plugin action %s", action.ID)
 	}
@@ -134,7 +134,7 @@ func resolvePostExSpawnPathFallback(action PluginAction, payload map[string]any)
 		return ""
 	}
 
-	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch", "beaconArch", "arch", "Arch"))
+	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch"))
 	if targetArch != "" && len(action.PostEx.SpawnPathByArch) > 0 {
 		if value := strings.TrimSpace(action.PostEx.SpawnPathByArch[targetArch]); value != "" {
 			return value
@@ -160,7 +160,7 @@ func resolvePostExDLLData(action PluginAction, payload map[string]any) (string, 
 	}
 	postex := action.PostEx
 	root := action.PluginRoot
-	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch", "beaconArch", "arch", "Arch"))
+	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch"))
 
 	// 1. 已 hydrate 的 arch 数据
 	if targetArch != "" && len(postex.DLLDataByArch) > 0 {
@@ -275,7 +275,7 @@ func resolvePostExNonNegativeMS(action PluginAction, payload map[string]any, val
 func resolvePostExDescription(action PluginAction, payload map[string]any, values map[string]any) string {
 	description := action.PostEx.Description
 	if description == "" {
-		description = action.Description
+		description = action.Description.Text()
 	}
 	if description == "" {
 		description = "postex"
@@ -313,7 +313,7 @@ func resolveFieldValue(field PluginActionField, values map[string]any, payload m
 			return value
 		}
 	}
-	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch", "beaconArch", "arch", "Arch"))
+	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch"))
 	if targetArch != "" && len(field.DefaultByArch) > 0 {
 		if value, ok := field.DefaultByArch[targetArch]; ok && !args.IsBlankValue(value) {
 			return value
@@ -337,7 +337,7 @@ func resolveActionArtifactData(action PluginAction, payload map[string]any) (str
 		return "", false, err
 	}
 
-	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch", "beaconArch", "arch", "Arch"))
+	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch"))
 	if targetArch != "" && len(action.ArtifactDataByArch) > 0 {
 		if data := strings.TrimSpace(action.ArtifactDataByArch[targetArch]); data != "" {
 			return data, true, nil
@@ -351,7 +351,7 @@ func resolveActionArtifactData(action PluginAction, payload map[string]any) (str
 		return data, true, nil
 	}
 
-	if explicit := args.PickString(payload, "artifact_data", "artifactData"); explicit != "" && !actionHasArtifact(action) {
+	if explicit := args.PickString(payload, "artifact_data"); explicit != "" && !actionHasArtifact(action) {
 		return explicit, true, nil
 	}
 
@@ -362,7 +362,7 @@ func resolveActionArtifactData(action PluginAction, payload map[string]any) (str
 }
 
 func validateActionTarget(action PluginAction, payload map[string]any) error {
-	targetOS := normalizePluginOS(args.PickString(payload, "beacon_os", "beaconOS", "os", "OS"))
+	targetOS := normalizePluginOS(args.PickString(payload, "beacon_os"))
 	if len(action.OS) > 0 {
 		if targetOS == "" {
 			return fmt.Errorf("beacon_os is required for plugin action %s", action.ID)
@@ -372,7 +372,7 @@ func validateActionTarget(action PluginAction, payload map[string]any) error {
 		}
 	}
 
-	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch", "beaconArch", "arch", "Arch"))
+	targetArch := normalizePluginArch(args.PickString(payload, "beacon_arch"))
 	if len(action.Arch) > 0 {
 		if targetArch == "" {
 			return fmt.Errorf("beacon_arch is required for plugin action %s", action.ID)

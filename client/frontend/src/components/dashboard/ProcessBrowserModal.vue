@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ProcessBrowserModal - 进程浏览器弹窗
  * 展示远程主机的进程列表，支持搜索、排序、
@@ -6,18 +6,21 @@
  */
 
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { useAgentStore } from '../../stores/agent.js'
-import { useModalStore } from '../../stores/modal.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import { useProcessBrowserStore } from '../../stores/processBrowser.js'
-import { sendKillProcessCommand } from '../../features/beacon/actions/beaconCommandActions.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../../stores/agent'
+import { useModalStore } from '../../stores/modal'
+import { useNotificationStore } from '../../stores/notification'
+import { useProcessBrowserStore } from '../../stores/processBrowser'
+import type { ProcessInfo } from '../../stores/processBrowser'
+import { sendKillProcessCommand } from '../../features/beacon/actions/beaconCommandActions'
 import {
   isWindowsBeacon,
   isX86ToX64Blocked,
   normalizeMigrateArch,
-} from '../../features/beacon/migrate/migrateOptions.js'
-import { useModalDragResize } from '../../composables/useModalDragResize.js'
+} from '../../features/beacon/migrate/migrateOptions'
+import { useModalDragResize } from '../../composables/useModalDragResize'
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
@@ -33,8 +36,8 @@ const emit = defineEmits(['close'])
 const searchQuery = ref('')
 const sortBy = ref('pid')
 const sortDesc = ref(false)
-const contextMenu = ref({ visible: false, x: 0, y: 0, process: null })
-const contextMenuRef = ref(null)
+const contextMenu = ref<{ visible: boolean; x: number; y: number; process: ProcessInfo | null }>({ visible: false, x: 0, y: 0, process: null })
+const contextMenuRef = ref<HTMLElement | null>(null)
 const adjustedMenuX = ref(0)
 const adjustedMenuY = ref(0)
 const columnWidths = ref({
@@ -46,7 +49,7 @@ const columnWidths = ref({
   name: 220,
   path: 360,
 })
-const resizingColumn = ref('')
+const resizingColumn = ref<keyof typeof columnWidths.value | ''>('')
 const resizeStart = ref({ x: 0, width: 0 })
 
 const MIN_COLUMN_WIDTH = {
@@ -70,7 +73,7 @@ const {
   onBeforeResize: () => closeContextMenu(),
 })
 
-function startColumnResize(column, event) {
+function startColumnResize(column: keyof typeof columnWidths.value, event: MouseEvent) {
   event.preventDefault()
   event.stopPropagation()
   closeContextMenu()
@@ -83,7 +86,7 @@ function startColumnResize(column, event) {
   document.addEventListener('mouseup', stopColumnResize)
 }
 
-function handleColumnResize(event) {
+function handleColumnResize(event: MouseEvent) {
   if (!resizingColumn.value) return
   const column = resizingColumn.value
   const delta = event.clientX - resizeStart.value.x
@@ -104,7 +107,7 @@ async function fetchProcesses() {
   await processStore.requestProcesses(props.beaconid)
 }
 
-function handleSort(key) {
+function handleSort(key: string) {
   if (sortBy.value === key) {
     sortDesc.value = !sortDesc.value
   } else {
@@ -113,14 +116,15 @@ function handleSort(key) {
   }
 }
 
-function compareValue(a, b) {
+function compareValue(a: ProcessInfo, b: ProcessInfo) {
+  const key = sortBy.value as keyof ProcessInfo
   if (sortBy.value === 'pid' || sortBy.value === 'ppid' || sortBy.value === 'session') {
-    const left = parseInt(a[sortBy.value], 10) || 0
-    const right = parseInt(b[sortBy.value], 10) || 0
+    const left = parseInt(a[key], 10) || 0
+    const right = parseInt(b[key], 10) || 0
     return left - right
   }
 
-  return String(a[sortBy.value] || '').localeCompare(String(b[sortBy.value] || ''))
+  return String(a[key] || '').localeCompare(String(b[key] || ''))
 }
 
 const loading = computed(() => processStore.isLoading(props.beaconid))
@@ -151,23 +155,23 @@ function closeContextMenu() {
   contextMenu.value.visible = false
 }
 
-function getMigrateDisabledReason(process) {
-  if (!process) return '未找到目标进程。'
-  if (!isWindowsBeacon(currentAgent.value)) return '仅 Windows Beacon 支持 Migrate Inject。'
+function getMigrateDisabledReason(process: ProcessInfo | null) {
+  if (!process) return t('processBrowser.targetProcessNotFound')
+  if (!isWindowsBeacon(currentAgent.value)) return t('processBrowser.windowsOnlyMigrate')
 
   const targetArch = normalizeMigrateArch(process.arch)
   if (!['x86', 'x64'].includes(targetArch)) {
-    return '目标进程架构不是 x86/x64，当前不能安全生成 migrate_inject。'
+    return t('processBrowser.unsupportedArchitecture')
   }
 
   if (isX86ToX64Blocked(currentAgent.value?.arch, targetArch)) {
-    return '当前 Beacon 不支持 x64 stage 注入。'
+    return t('processBrowser.x64StageUnsupported')
   }
 
   return ''
 }
 
-function handleProcessContextMenu(event, process) {
+function handleProcessContextMenu(event: MouseEvent, process: ProcessInfo) {
   event.preventDefault()
   event.stopPropagation()
 
@@ -222,27 +226,25 @@ async function handleKill() {
 
   // 2. 玻璃材质确认框
   const confirmed = await modalStore.showConfirm({
-    title: '结束进程',
-    message: `你确定要强制结束进程 [${process.name}] (PID: ${process.pid}) 吗？\n警告：这可能会导致目标机器系统不稳定或数据丢失。`,
+    title: t('processBrowser.killTitle'),
+    message: t('processBrowser.killConfirmation', { name: process.name, pid: process.pid }),
     type: 'danger'
   })
 
   if (!confirmed) return
 
   try {
-    notificationStore.info(`正在尝试强杀进程: ${process.name} [${process.pid}]`)
+    notificationStore.info(t('processBrowser.killingProcess', { name: process.name, pid: process.pid }))
     processStore.markRefreshAfterKill(props.beaconid)
-    await sendKillProcessCommand(props.beaconid, process.pid)
-    notificationStore.success(`强杀指令已发送: ${process.name}`)
+    await sendKillProcessCommand(props.beaconid, Number(process.pid))
+    notificationStore.success(t('processBrowser.killSent', { name: process.name }))
   } catch (err) {
     processStore.clearRefreshAfterKill(props.beaconid)
-    notificationStore.error(`强杀指令发送失败: ${err.message || err}`)
+    notificationStore.error(t('processBrowser.killFailed', { error: err instanceof Error ? err.message : String(err) }))
   }
 }
 
-function handlePlaceholderAction(action) {
-  const process = contextMenu.value.process
-  console.info(`[ProcessBrowser] 占位操作: ${action}`, process)
+function handlePlaceholderAction(action: string) {
   closeContextMenu()
 }
 
@@ -250,9 +252,9 @@ function handleDocumentClick() {
   closeContextMenu()
 }
 
-function formatTime(iso) {
-  if (!iso) return '尚未同步'
-  return new Date(iso).toLocaleTimeString('zh-CN', { hour12: false })
+function formatTime(iso: string | null) {
+  if (!iso) return t('processBrowser.notSynced')
+  return new Date(iso).toLocaleTimeString(locale.value, { hour12: false })
 }
 
 watch(() => props.visible, (val) => {
@@ -316,7 +318,7 @@ function close() {
           <div class="header-info">
             <span class="icon">🔍</span>
             <div class="titles">
-              <h3>进程浏览器</h3>
+              <h3>{{ t('processBrowser.title') }}</h3>
               <span class="subtitle">Agent: {{ agentStore.getAgentById(beaconid)?.beaconid.substring(0, 8) }}@{{ agentStore.getAgentById(beaconid)?.hostname || beaconid.substring(0, 8) }}</span>
             </div>
           </div>
@@ -329,7 +331,7 @@ function close() {
             :class="{ spinning: loading }"
             @click="fetchProcesses"
             :disabled="loading"
-            title="刷新进程列表"
+            :title="t('processBrowser.refreshTitle')"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
@@ -340,23 +342,23 @@ function close() {
             <input 
               v-model="searchQuery" 
               type="text" 
-              placeholder="搜索 PID 或进程名..." 
+              :placeholder="t('processBrowser.searchPlaceholder')" 
               spellcheck="false"
             />
           </div>
-          <span class="sync-time">同步: {{ formatTime(lastUpdated) }}</span>
+          <span class="sync-time">{{ t('networkBrowser.syncLabel', { time: formatTime(lastUpdated) }) }}</span>
         </div>
 
         <div class="content-area">
           <div v-if="loading" class="loading-state">
             <div class="spinner"></div>
-            <span>正在获取进程数据...</span>
+            <span>{{ t('processBrowser.loading') }}</span>
           </div>
 
           <div v-else-if="error" class="error-state">
             <span class="error-icon">⚠️</span>
             <span>{{ error }}</span>
-            <button @click="fetchProcesses" class="retry-btn">重试</button>
+            <button @click="fetchProcesses" class="retry-btn">{{ t('processBrowser.retry') }}</button>
           </div>
 
           <table v-else class="process-table">
@@ -430,7 +432,7 @@ function close() {
                 <td class="cell-path copyable-cell" :title="proc.path">{{ proc.path }}</td>
               </tr>
               <tr v-if="filteredProcesses.length === 0">
-                <td colspan="7" class="empty-state">没有找到匹配的进程</td>
+                <td colspan="7" class="empty-state">{{ t('processBrowser.noMatchingProcesses') }}</td>
               </tr>
             </tbody>
           </table>
@@ -438,7 +440,7 @@ function close() {
 
         <footer class="modal-footer">
           <span class="status-text">
-            {{ filteredProcesses.length }} 个进程 {{ searchQuery ? '(过滤后)' : '' }}
+            {{ t('processBrowser.processCount', { count: filteredProcesses.length }) }} {{ searchQuery ? t('processBrowser.filteredSuffix') : '' }}
           </span>
         </footer>
 
@@ -456,20 +458,20 @@ function close() {
             </div>
             <div class="divider"></div>
             <button class="process-menu-item danger" @click="handleKill">
-              <span>结束进程</span>
+              <span>{{ t('processBrowser.endProcess') }}</span>
               <small>kill</small>
             </button>
             <button
               class="process-menu-item"
               :class="{ disabled: Boolean(getMigrateDisabledReason(contextMenu.process)) }"
-              :title="getMigrateDisabledReason(contextMenu.process) || '注入新 Beacon 到此进程'"
+              :title="getMigrateDisabledReason(contextMenu.process) || t('migrateInject.subtitle')"
               @click="handleOpenMigrateInject"
             >
               <span>Migrate Inject</span>
-              <small>迁移到此进程</small>
+              <small>{{ t('processBrowser.migrateToProcess') }}</small>
             </button>
             <button class="process-menu-item" @click="handlePlaceholderAction('steal-token')">
-              <span>窃取令牌</span>
+              <span>{{ t('processBrowser.stealToken') }}</span>
               <small>token</small>
             </button>
           </div>

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * EventPanel - 全局事件面板
  * 展示 WebSocket 推送的实时事件（命令结果、连接/断开、Tunnel 等），
@@ -6,8 +6,11 @@
  */
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useEventPanelStore } from '../../stores/eventPanel.js'
+import { useI18n } from 'vue-i18n'
+import { useEventPanelStore } from '../../stores/eventPanel'
+import type { EventTone } from '../../stores/eventPanel'
 
+const { t, locale } = useI18n()
 const eventPanel = useEventPanelStore()
 
 const latest = computed(() => eventPanel.latest)
@@ -22,7 +25,7 @@ const PANEL_COLLAPSED_WIDTH = 48
 const panelWidth = ref(PANEL_DEFAULT_WIDTH)
 const resizing = ref(false)
 
-function clampWidth(value) {
+function clampWidth(value: number) {
   if (typeof window === 'undefined') return value
   const safeMax = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, window.innerWidth - 160))
   return Math.min(safeMax, Math.max(PANEL_MIN_WIDTH, value))
@@ -44,7 +47,7 @@ function syncWidthToViewport() {
   panelWidth.value = clampWidth(panelWidth.value)
 }
 
-function startResize(event) {
+function startResize(event: MouseEvent) {
   if (!eventPanel.visible) return
   resizing.value = true
   event.preventDefault()
@@ -52,7 +55,7 @@ function startResize(event) {
   document.body.style.userSelect = 'none'
 }
 
-function onMouseMove(event) {
+function onMouseMove(event: MouseEvent) {
   if (!resizing.value) return
   const nextWidth = window.innerWidth - PANEL_RIGHT_OFFSET - event.clientX
   panelWidth.value = clampWidth(nextWidth)
@@ -65,39 +68,39 @@ function stopResize() {
   persistWidth()
 }
 
-function formatTime(ts) {
+function formatTime(ts: number) {
   if (!ts) return '--:--:--'
-  return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false })
+  return new Date(ts).toLocaleTimeString(locale.value, { hour12: false })
 }
 
-function formatTypeLabel(type) {
+function formatTypeLabel(type: string) {
   const labels = {
-    USER_ONLINE: '用户上线',
-    BEACON_REGISTERED: 'Beacon 上线',
-    BEACON_REMOVED: 'Beacon 下线',
-    COMMAND_EVENT: '命令事件',
-    LISTENER_STATE_CHANGED: '监听器状态',
-    TUNNEL_STARTED: 'Tunnel 启动',
-    TUNNEL_PAUSED: 'Tunnel 暂停',
-    TUNNEL_RESUMED: 'Tunnel 恢复',
-    TUNNEL_UPDATED: 'Tunnel 更新',
-    TUNNEL_CLEARED: 'Tunnel 清除',
-    TUNNEL_STOPPED: 'Tunnel 停止',
-    TUNNEL_CHANNEL_OPEN: 'Tunnel 连接打开',
-    TUNNEL_CHANNEL_CLOSE: 'Tunnel 连接关闭',
-    TUNNEL_CHANNEL_RECYCLED: 'Tunnel 连接回收',
-    TUNNEL_STATS: 'Tunnel 指标',
-    TUNNEL_ACK: 'Tunnel 确认',
+    USER_ONLINE: t('eventPanel.userOnline'),
+    BEACON_REGISTERED: t('eventPanel.beaconOnline'),
+    BEACON_REMOVED: t('eventPanel.beaconOffline'),
+    COMMAND_EVENT: t('eventPanel.commandEvent'),
+    LISTENER_STATE_CHANGED: t('eventPanel.listenerState'),
+    TUNNEL_STARTED: t('eventPanel.tunnelStarted'),
+    TUNNEL_PAUSED: t('eventPanel.tunnelPaused'),
+    TUNNEL_RESUMED: t('eventPanel.tunnelResumed'),
+    TUNNEL_UPDATED: t('eventPanel.tunnelUpdated'),
+    TUNNEL_CLEARED: t('eventPanel.tunnelCleared'),
+    TUNNEL_STOPPED: t('eventPanel.tunnelStopped'),
+    TUNNEL_CHANNEL_OPEN: t('eventPanel.tunnelChannelOpened'),
+    TUNNEL_CHANNEL_CLOSE: t('eventPanel.tunnelChannelClosed'),
+    TUNNEL_CHANNEL_RECYCLED: t('eventPanel.tunnelChannelRecycled'),
+    TUNNEL_STATS: t('eventPanel.tunnelStats'),
+    TUNNEL_ACK: t('eventPanel.tunnelAck'),
   }
-  return labels[type] || type
+  return labels[type as keyof typeof labels] || type
 }
 
-function shortBeaconId(value) {
+function shortBeaconId(value: string) {
   if (!value) return ''
   return value.length > 12 ? `${value.slice(0, 12)}…` : value
 }
 
-function toneClass(tone) {
+function toneClass(tone: EventTone) {
   return tone || 'info'
 }
 
@@ -149,19 +152,19 @@ onUnmounted(() => {
           <header class="event-panel-header">
             <button class="panel-title" type="button" @click="togglePanel">
               <span class="panel-icon">🧾</span>
-              <span class="panel-name">事件面板</span>
+              <span class="panel-name">{{ t('eventPanel.title') }}</span>
               <span class="panel-count">{{ eventPanel.events.length }}</span>
             </button>
 
             <div class="panel-actions">
-              <button type="button" class="panel-action" @click="eventPanel.clear()">清空</button>
-              <button type="button" class="panel-action" @click="togglePanel">收起</button>
+              <button type="button" class="panel-action" @click="eventPanel.clear()">{{ t('eventPanel.clear') }}</button>
+              <button type="button" class="panel-action" @click="togglePanel">{{ t('eventPanel.collapse') }}</button>
             </div>
           </header>
 
           <div class="event-panel-body">
             <div v-if="eventPanel.events.length === 0" class="event-empty">
-              等待 TeamServer 事件...
+              {{ t('eventPanel.waitingTeamServerEvents') }}
             </div>
 
             <div v-else class="event-list">
@@ -177,8 +180,8 @@ onUnmounted(() => {
                 </div>
 
                 <div class="event-item-meta">
-                  <span v-if="entry.beaconId" class="event-tag">Beacon {{ shortBeaconId(entry.beaconId) }}</span>
-                  <span v-if="entry.commandName" class="event-tag">命令 {{ entry.commandName }}</span>
+                  <span v-if="entry.beaconId" class="event-tag">{{ t('eventPanel.beaconLabel', { id: shortBeaconId(entry.beaconId) }) }}</span>
+                  <span v-if="entry.commandName" class="event-tag">{{ t('eventPanel.commandLabel', { name: entry.commandName }) }}</span>
                   <span v-if="entry.rawType && entry.rawType !== entry.type" class="event-tag muted">{{ entry.rawType }}</span>
                 </div>
 
@@ -195,13 +198,13 @@ onUnmounted(() => {
           class="event-panel-collapsed-tab"
           type="button"
           @click="togglePanel"
-          :aria-label="latest?.summary || '展开事件面板'"
-          :title="latest?.summary || '等待 TeamServer 事件...'"
+          :aria-label="latest?.summary || t('eventPanel.expandEventPanel')"
+          :title="latest?.summary || t('eventPanel.waitingTeamServerEvents')"
         >
           <span class="collapsed-icon">🧾</span>
           <span class="collapsed-count">{{ eventPanel.events.length }}</span>
-          <span class="collapsed-label">事件面板</span>
-          <span class="collapsed-hint">展开</span>
+          <span class="collapsed-label">{{ t('eventPanel.title') }}</span>
+          <span class="collapsed-hint">{{ t('eventPanel.expand') }}</span>
         </button>
       </template>
     </div>

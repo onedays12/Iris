@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * FileContextMenu - 文件浏览器右键菜单
  *
@@ -6,6 +6,7 @@
  * 通过 Teleport 挂载到 body，全局定位。
  */
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   /** 菜单目标：{ type: 'blank'|'folder'|'file', file?, path? } */
@@ -21,9 +22,10 @@ const emit = defineEmits([
   'upload',   // (target: object) => void
 ])
 
+const { t } = useI18n()
 const menuRef = ref(null)
 
-function onAction(action) {
+function onAction(action: string) {
   emit('action', action, props.target)
 }
 
@@ -51,26 +53,26 @@ defineExpose({ menuRef })
           :class="{ disabled: isUploading }"
           @click="!isUploading && onUpload()"
         >
-          <span class="m-icon">📤</span> {{ isUploading ? '上传中...' : '上传' }}
+          <span class="m-icon">📤</span> {{ isUploading ? t('fileMenu.uploading') : t('fileMenu.upload') }}
         </div>
         <div
           v-if="target.type === 'blank'"
           class="menu-item"
           @click="onAction('mkdir')"
         >
-          <span class="m-icon">📁</span> 创建文件夹
+          <span class="m-icon">📁</span> {{ t('fileMenu.mkdir') }}
         </div>
         <div v-if="target.type === 'file'" class="menu-item" @click="onAction('download')">
-          <span class="m-icon">📥</span> 下载
+          <span class="m-icon">📥</span> {{ t('fileMenu.download') }}
         </div>
         <template v-if="target.type !== 'blank'">
-          <div class="menu-item" @click="onAction('zip')"><span class="m-icon">🗜️</span> 压缩为 ZIP</div>
-          <div class="menu-item" @click="onAction('move')"><span class="m-icon">✂️</span> 移动</div>
-          <div class="menu-item" @click="onAction('copy')"><span class="m-icon">📋</span> 复制</div>
-          <div class="menu-item" @click="onAction('setattr')"><span class="m-icon">🛠️</span> 修改属性</div>
+          <div class="menu-item" @click="onAction('zip')"><span class="m-icon">🗜️</span> {{ t('fileMenu.zip') }}</div>
+          <div class="menu-item" @click="onAction('move')"><span class="m-icon">✂️</span> {{ t('fileMenu.move') }}</div>
+          <div class="menu-item" @click="onAction('copy')"><span class="m-icon">📋</span> {{ t('fileMenu.copy') }}</div>
+          <div class="menu-item" @click="onAction('setattr')"><span class="m-icon">🛠️</span> {{ t('fileMenu.setattr') }}</div>
           <div class="menu-divider"></div>
           <div class="menu-item delete" @click="onAction('delete')">
-            <span class="m-icon">🗑️</span> 删除
+            <span class="m-icon">🗑️</span> {{ t('fileMenu.delete') }}
           </div>
         </template>
       </div>

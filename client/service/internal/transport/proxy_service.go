@@ -75,74 +75,27 @@ func SharedProxyService() *ProxyService {
 	return sharedProxyServiceInst
 }
 
-// Deprecated: 使用 DoRequestWithStatus 替代。
-// DoRequest 吞掉 HTTP 状态码,无法区分 401/5xx/网络失败,仅返回纯 body 字符串。
-// dispatch 路径已改用 DoRequestWithStatus;此方法保留仅为向后兼容,
-// 前端 httpClient.js 实际不再调用。新代码请勿使用,后续版本可能移除。
-/**
- * DoRequest 执行转发请求
- * @param method HTTP 方法 (GET, POST, etc.)
- * @param url 完整的请求地址
- * @param payload JSON 报文体
- * @param headersMap 头信息映射
- */
-func (p *ProxyService) DoRequest(ctx context.Context, method string, url string, payload string, headersMap map[string]string) (string, error) {
-	var bodyReader io.Reader
-	if payload != "" {
-		bodyReader = bytes.NewBufferString(payload)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %v", err)
-	}
-
-	// 注入头信息
-	for k, v := range headersMap {
-		req.Header.Set(k, v)
-	}
-
-	// 强制设置 JSON 类型，除非已有指定
-	if req.Header.Get("Content-Type") == "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request to server failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %v", err)
-	}
-
-	// 始终返回 Body，业务错误 (如 401) 由前端根据 OK 字段解析
-	return string(respBody), nil
-}
-
 func (p *ProxyService) UploadFileBase64(ctx context.Context, url string, fileName string, base64Data string, headersMap map[string]string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
 	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
-		return "", fmt.Errorf("failed to create form file: %v", err)
+		return "", fmt.Errorf("failed to create form file: %w", err)
 	}
 
 	decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(base64Data))
 	if _, err := io.Copy(part, decoder); err != nil {
-		return "", fmt.Errorf("failed to decode file data: %v", err)
+		return "", fmt.Errorf("failed to decode file data: %w", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("failed to close multipart writer: %v", err)
+		return "", fmt.Errorf("failed to close multipart writer: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
-		return "", fmt.Errorf("failed to create upload request: %v", err)
+		return "", fmt.Errorf("failed to create upload request: %w", err)
 	}
 
 	for k, v := range headersMap {
@@ -152,13 +105,16 @@ func (p *ProxyService) UploadFileBase64(ctx context.Context, url string, fileNam
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("upload request to server failed: %v", err)
+		return "", fmt.Errorf("upload request to server failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, tooLarge, err := readBodyLimited(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read upload response body: %v", err)
+		return "", fmt.Errorf("failed to read upload response body: %w", err)
+	}
+	if tooLarge {
+		return "", fmt.Errorf("upload response body exceeds %d bytes limit", maxProxyResponseBody)
 	}
 
 	return string(respBody), nil
@@ -167,7 +123,7 @@ func (p *ProxyService) UploadFileBase64(ctx context.Context, url string, fileNam
 func (p *ProxyService) DownloadFileBase64(ctx context.Context, url string, headersMap map[string]string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create download request: %v", err)
+		return "", fmt.Errorf("failed to create download request: %w", err)
 	}
 
 	for k, v := range headersMap {
@@ -176,13 +132,16 @@ func (p *ProxyService) DownloadFileBase64(ctx context.Context, url string, heade
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("download request to server failed: %v", err)
+		return "", fmt.Errorf("download request to server failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, tooLarge, err := readBodyLimited(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read download response body: %v", err)
+		return "", fmt.Errorf("failed to read download response body: %w", err)
+	}
+	if tooLarge {
+		return "", fmt.Errorf("download response body exceeds %d bytes limit", maxProxyResponseBody)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

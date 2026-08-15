@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 defineProps({
   name: { type: String, default: 'dashboard' },
   size: { type: [Number, String], default: 28 },

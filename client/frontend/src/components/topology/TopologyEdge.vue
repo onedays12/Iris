@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TopologyEdge - 拓扑图连线组件
  *

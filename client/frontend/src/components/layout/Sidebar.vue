@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * Sidebar - 全局侧边导航栏
  * 包含导航菜单、在线 Agent 计数、主题切换、
@@ -6,25 +6,30 @@
  */
 
 import { computed, ref } from 'vue'
-import { Dialogs } from '@wailsio/runtime'
-import * as FileService from '../../../bindings/irisclient/service/fileservice.js'
+import { useI18n } from 'vue-i18n'
+import { Browser, Dialogs } from '@wailsio/runtime'
+import * as FileService from '../../../bindings/irisclient/service/fileservice'
 import { useRoute, useRouter } from 'vue-router'
-import { logout } from '../../features/auth/api/authApi.js'
-import { useAuthStore } from '../../stores/auth.js'
-import { useModalStore } from '../../stores/modal.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import { useThemeStore } from '../../stores/theme.js'
-import { useWSStore } from '../../stores/ws.js'
+import { logout } from '../../features/auth/api/authApi'
+import { useAuthStore } from '../../stores/auth'
+import { useModalStore } from '../../stores/modal'
+import { useNotificationStore } from '../../stores/notification'
+import { useThemeStore } from '../../stores/theme'
+import { useLocaleStore } from '../../stores/locale'
+import { useWSStore } from '../../stores/ws'
 import defaultAvatar from '../../assets/default-avatar.jpg'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
 const themeStore = useThemeStore()
+const localeStore = useLocaleStore()
 const wsStore = useWSStore()
 const isLoggingOut = ref(false)
+const GITHUB_URL = 'https://github.com/onedays12/Iris'
 const AVATAR_STORAGE_KEY = 'iris-user-avatar'
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024
 const AVATAR_MIME_BY_EXT = {
@@ -39,25 +44,25 @@ const avatarSrc = ref(loadAvatar())
 
 const connectionStatus = computed(() => {
   switch (wsStore.status) {
-    case 'open': return { label: 'TeamServer 已连接', class: 'online' }
-    case 'connecting': return { label: '正在连接服务器...', class: 'connecting' }
-    case 'error': return { label: '连接失败 (证书错误?)', class: 'error' }
-    default: return { label: '后台服务未就绪', class: 'offline' }
+    case 'open': return { label: t('sidebar.connectionConnected'), class: 'online' }
+    case 'connecting': return { label: t('sidebar.connectionConnecting'), class: 'connecting' }
+    case 'error': return { label: t('sidebar.connectionError'), class: 'error' }
+    default: return { label: t('sidebar.connectionOffline'), class: 'offline' }
   }
 })
 
 const navItems = [
-  { path: '/dashboard', label: '仪表盘', icon: 'dashboard' },
-  { path: '/topology', label: '拓扑图', icon: 'topology' },
-  { path: '/listener', label: '生成监听器', icon: 'listener' },
-  { path: '/proxy', label: 'Proxy Pivot', icon: 'proxy' },
-  { path: '/screenshots', label: 'Screenshots', icon: 'screenshots' },
-  { path: '/downloads', label: '下载文件', icon: 'downloads' },
-  { path: '/plugins', label: '插件', icon: 'plugins' },
-  { path: '/help', label: '帮助', icon: 'help' },
+  { path: '/dashboard', labelKey: 'sidebar.dashboard', icon: 'dashboard' },
+  { path: '/topology', labelKey: 'sidebar.topology', icon: 'topology' },
+  { path: '/listener', labelKey: 'sidebar.listener', icon: 'listener' },
+  { path: '/proxy', labelKey: 'sidebar.proxy', icon: 'proxy' },
+  { path: '/screenshots', labelKey: 'sidebar.screenshots', icon: 'screenshots' },
+  { path: '/downloads', labelKey: 'sidebar.downloads', icon: 'downloads' },
+  { path: '/plugins', labelKey: 'sidebar.plugins', icon: 'plugins' },
+  { path: '/help', labelKey: 'sidebar.help', icon: 'help' },
 ]
 
-function navigateTo(path) {
+function navigateTo(path: string) {
   if (route.path === path) return
   router.push(path)
 }
@@ -70,20 +75,20 @@ function loadAvatar() {
   }
 }
 
-function getAvatarMimeType(path) {
+function getAvatarMimeType(path: string) {
   const ext = String(path || '').split('.').pop()?.toLowerCase()
-  return AVATAR_MIME_BY_EXT[ext] || ''
+  return AVATAR_MIME_BY_EXT[ext as keyof typeof AVATAR_MIME_BY_EXT] || ''
 }
 
 async function openAvatarPicker() {
   try {
     const picked = await Dialogs.OpenFile({
-      Title: '选择头像图片',
-      Message: '请选择 PNG、JPG、WebP 或 GIF 图片',
+      Title: t('sidebar.avatarPickerTitle'),
+      Message: t('sidebar.avatarPickerMessage'),
       CanChooseFiles: true,
       AllowsMultipleSelection: false,
       Filters: [
-        { DisplayName: '图片文件', Pattern: '*.png;*.jpg;*.jpeg;*.webp;*.gif' },
+        { DisplayName: t('sidebar.avatarPickerFilter'), Pattern: '*.png;*.jpg;*.jpeg;*.webp;*.gif' },
       ],
     })
     const sourcePath = Array.isArray(picked) ? picked[0] : picked
@@ -91,14 +96,14 @@ async function openAvatarPicker() {
 
     const mimeType = getAvatarMimeType(sourcePath)
     if (!mimeType) {
-      notificationStore.error('请选择图片文件')
+      notificationStore.error(t('sidebar.avatarNotImage'))
       return
     }
 
     const base64Data = await FileService.ReadBinaryFileBase64(sourcePath)
     const estimatedSize = Math.floor(String(base64Data || '').length * 3 / 4)
     if (estimatedSize > MAX_AVATAR_SIZE) {
-      notificationStore.error('头像图片不能超过 2MB')
+      notificationStore.error(t('sidebar.avatarTooLarge'))
       return
     }
 
@@ -107,13 +112,22 @@ async function openAvatarPicker() {
     try {
       localStorage.setItem(AVATAR_STORAGE_KEY, result)
     } catch {
-      notificationStore.error('头像保存失败，请选择更小的图片')
+      notificationStore.error(t('sidebar.avatarSaveFailed'))
       return
     }
-    notificationStore.success('头像已更新')
+    notificationStore.success(t('sidebar.avatarUpdated'))
   } catch (err) {
-    notificationStore.error(err.message || '头像选择失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('sidebar.avatarPickFailed'))
     console.error('[Sidebar] 头像选择失败:', err)
+  }
+}
+
+async function openGitHub() {
+  try {
+    await Browser.OpenURL(GITHUB_URL)
+  } catch (err) {
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('sidebar.githubOpenFailed'))
+    console.error('[Sidebar] 打开 GitHub 项目失败:', err)
   }
 }
 
@@ -121,10 +135,10 @@ async function handleLogout() {
   if (isLoggingOut.value) return
 
   const confirmed = await modalStore.showConfirm({
-    title: '确认登出',
-    message: '确定要退出当前登录会话吗？\n确认后会通知 TeamServer 注销当前 Token，并返回登录页。',
+    title: t('sidebar.logoutTitle'),
+    message: t('sidebar.logoutMessage'),
     type: 'warning',
-    confirmText: '确认登出'
+    confirmText: t('sidebar.logoutConfirm')
   })
   if (!confirmed) return
 
@@ -140,7 +154,7 @@ async function handleLogout() {
     authStore.logout()
     wsStore.disconnect()
     if (remoteLoggedOut) {
-      notificationStore.success('已登出')
+      notificationStore.success(t('sidebar.logoutDone'))
     }
     router.replace({ name: 'Login' })
     isLoggingOut.value = false
@@ -157,35 +171,55 @@ async function handleLogout() {
           <button
             type="button"
             class="avatar-button"
-            title="上传个人头像"
-            aria-label="上传个人头像"
+            :title="t('sidebar.avatarUploadTitle')"
+            :aria-label="t('sidebar.avatarUploadTitle')"
             @click="openAvatarPicker"
           >
             <img :src="avatarSrc" alt="Iris Client" @error="avatarSrc = defaultAvatar" />
-            <span class="avatar-overlay">更换</span>
+            <span class="avatar-overlay">{{ t('sidebar.avatarChange') }}</span>
           </button>
         </div>
         <div class="logo-text">
           <span class="logo-name">Iris Client</span>
-          <span class="logo-version">v0.1.5</span>
+          <span class="logo-version">v0.3.0</span>
         </div>
       </div>
       <div class="logo-actions">
         <button
           type="button"
           class="theme-btn"
-          :title="`切换到 ${themeStore.nextLabel} 主题`"
-          :aria-label="`切换到 ${themeStore.nextLabel} 主题`"
+          :title="t('theme.switchTo', { theme: themeStore.nextLabel })"
+          :aria-label="t('theme.switchTo', { theme: themeStore.nextLabel })"
           @click="themeStore.toggleTheme()"
         >
-          <span>{{ themeStore.isDark ? '☾' : themeStore.isPaper ? '◆' : '☼' }}</span>
+          <span>{{ themeStore.isDark ? '☾' : themeStore.isPaper ? '◆' : themeStore.isSketch ? '✎' : '☼' }}</span>
+        </button>
+        <button
+          type="button"
+          class="theme-btn"
+          :title="t('common.switchLanguage')"
+          :aria-label="t('common.switchLanguage')"
+          @click="localeStore.toggleLocale()"
+        >
+          <span>{{ localeStore.nextLabel }}</span>
+        </button>
+        <button
+          type="button"
+          class="github-btn"
+          :title="t('sidebar.githubProject')"
+          :aria-label="t('sidebar.githubProject')"
+          @click="openGitHub"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+          </svg>
         </button>
         <button
           type="button"
           class="logout-btn"
           :disabled="isLoggingOut"
-          title="登出"
-          aria-label="登出"
+          :title="t('sidebar.logoutButton')"
+          :aria-label="t('sidebar.logoutButton')"
           @click="handleLogout"
         >
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
@@ -199,7 +233,7 @@ async function handleLogout() {
 
     <!-- 导航 -->
     <nav class="nav">
-      <div class="section-label">导航</div>
+      <div class="section-label">{{ t('sidebar.nav') }}</div>
       <button
         v-for="item in navItems"
         :key="item.path"
@@ -236,18 +270,6 @@ async function handleLogout() {
           <line x1="8" y1="21" x2="16" y2="21"/>
           <line x1="12" y1="17" x2="12" y2="21"/>
         </svg>
-        <!-- 键盘记录图标 -->
-        <svg v-else-if="item.icon === 'keylogger'" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="4" width="20" height="16" rx="2" ry="2"/>
-          <line x1="6" y1="8" x2="6.01" y2="8"/>
-          <line x1="10" y1="8" x2="10.01" y2="8"/>
-          <line x1="14" y1="8" x2="14.01" y2="8"/>
-          <line x1="18" y1="8" x2="18.01" y2="8"/>
-          <line x1="8" y1="12" x2="8.01" y2="12"/>
-          <line x1="12" y1="12" x2="12.01" y2="12"/>
-          <line x1="16" y1="12" x2="16.01" y2="12"/>
-          <line x1="7" y1="16" x2="17" y2="16"/>
-        </svg>
         <!-- Proxy Pivot 图标 -->
         <svg v-else-if="item.icon === 'proxy'" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 20h9"/>
@@ -276,10 +298,6 @@ async function handleLogout() {
           <path d="M7.5 16.1l-2.9 2.9"/>
           <path d="M16.5 16.1l2.9 2.9"/>
         </svg>
-        <!-- 凭据图标 -->
-        <svg v-else-if="item.icon === 'credentials'" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
-        </svg>
         <!-- 帮助图标 -->
         <svg v-else-if="item.icon === 'help'" class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"/>
@@ -287,7 +305,7 @@ async function handleLogout() {
           <circle cx="12" cy="17" r="0.5" fill="currentColor"/>
         </svg>
 
-        <span>{{ item.label }}</span>
+        <span>{{ t(item.labelKey) }}</span>
 
         <!-- 活跃指示器 (由 CSS .active 类控制显隐) -->
         <span class="active-indicator"></span>
@@ -424,6 +442,7 @@ async function handleLogout() {
 }
 
 .theme-btn,
+.github-btn,
 .logout-btn {
   width: 100%;
   height: 36px;
@@ -444,7 +463,8 @@ async function handleLogout() {
   font-weight: 700;
 }
 
-.theme-btn:hover {
+.theme-btn:hover,
+.github-btn:hover {
   color: var(--color-primary);
   background: var(--color-primary-dim);
   border-color: rgba(var(--color-primary-rgb), 0.22);
@@ -486,7 +506,7 @@ async function handleLogout() {
   width: calc(100% - 20px);
   padding: 11px 18px;
   margin: 2px 10px;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 450;
   color: var(--text-secondary);
   border-radius: 10px;

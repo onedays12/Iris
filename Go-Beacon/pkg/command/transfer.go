@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"sort"
@@ -284,7 +285,7 @@ func (tm *TransferManager) getOrCreateDownloadState(req DownloadRequest, origina
 		return state, nil
 	}
 
-	fileID, size, err := sha256File(req.RemotePath)
+	fileID, size, err := fileIdentity(req.RemotePath)
 	if err != nil {
 		return nil, err
 	}
@@ -560,22 +561,16 @@ func packUploadAck(ack UploadAck) ([]byte, error) {
 	})
 }
 
-func sha256File(path string) (string, int64, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", 0, err
-	}
-	defer f.Close()
-
-	stat, err := f.Stat()
+// fileIdentity 基于文件元数据生成 fileID，O(1) 不读取文件内容。
+// 用于下载状态标识；size/mtime 变更时 ID 变化，内容替换但元数据未变时无法检测（可接受的权衡）。
+func fileIdentity(path string) (string, int64, error) {
+	stat, err := os.Stat(path)
 	if err != nil {
 		return "", 0, err
 	}
 
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", 0, err
-	}
+	fmt.Fprintf(h, "%s|%d|%d", path, stat.ModTime().UnixNano(), stat.Size())
 	return hex.EncodeToString(h.Sum(nil)), stat.Size(), nil
 }
 

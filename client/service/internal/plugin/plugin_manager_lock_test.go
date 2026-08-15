@@ -10,13 +10,14 @@ import (
 	"time"
 )
 
-// writeTestPluginManifest 在 root 目录下写一个最小可加载的 plugin.json。
+// writeTestPluginManifest 在 root 目录下写一个最小可加载的 schema v2 plugin.json:
+// 单动作(无工件, 不触发 hashes 引用) + capabilities 白名单。
 func writeTestPluginManifest(t *testing.T, root, name string) {
 	t.Helper()
 	if err := os.MkdirAll(root, 0755); err != nil {
 		t.Fatalf("MkdirAll %s: %v", root, err)
 	}
-	manifest := `{"name":"` + name + `","display_name":"` + name + `","version":"1.0.0","actions":[]}`
+	manifest := `{"schema_version":2,"name":"` + name + `","version":"1.0.0","capabilities":{"command_ids":[70]},"actions":[{"id":"noop"}]}`
 	if err := os.WriteFile(filepath.Join(root, "plugin.json"), []byte(manifest), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

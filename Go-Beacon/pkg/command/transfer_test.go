@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDownloadEmptyFileEmitsOneEmptyChunk(t *testing.T) {
@@ -81,6 +82,82 @@ func TestUploadDuplicateChunkDoesNotAdvanceReceivedCount(t *testing.T) {
 	}
 }
 
+func TestFileIdentityStableForSameMetadata(t *testing.T) {
+	path := tempFile(t, []byte("aaa"))
+
+	id1, size1, err := fileIdentity(path)
+	if err != nil {
+		t.Fatalf("fileIdentity: %v", err)
+	}
+	if size1 != 3 {
+		t.Fatalf("size = %d, want 3", size1)
+	}
+
+	// 覆盖写相同大小内容（mtime 变化），然后恢复原 mtime
+	origMTime := statMTime(t, path)
+	if err := os.WriteFile(path, []byte("bbb"), 0o644); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	if err := os.Chtimes(path, time.Now(), origMTime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	id2, size2, err := fileIdentity(path)
+	if err != nil {
+		t.Fatalf("fileIdentity: %v", err)
+	}
+	if size2 != 3 {
+		t.Fatalf("size = %d, want 3", size2)
+	}
+	// fileID 只依赖元数据（path+size+mtime），不读取内容
+	if id1 != id2 {
+		t.Fatalf("fileIdentity changed despite same metadata: %s -> %s", id1, id2)
+	}
+}
+
+func TestFileIdentityChangesWithSizeOrMtime(t *testing.T) {
+	path := tempFile(t, []byte("aaa"))
+	id1, _, err := fileIdentity(path)
+	if err != nil {
+		t.Fatalf("fileIdentity: %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte("aaaab"), 0o644); err != nil {
+		t.Fatalf("grow: %v", err)
+	}
+	id2, _, err := fileIdentity(path)
+	if err != nil {
+		t.Fatalf("fileIdentity: %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("fileIdentity unchanged after size change")
+	}
+
+	// 恢复 size，只改 mtime
+	if err := os.WriteFile(path, []byte("aaa"), 0o644); err != nil {
+		t.Fatalf("shrink: %v", err)
+	}
+	past := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, past, past); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	id3, _, err := fileIdentity(path)
+	if err != nil {
+		t.Fatalf("fileIdentity: %v", err)
+	}
+	if id1 == id3 {
+		t.Fatalf("fileIdentity unchanged after mtime change")
+	}
+}
+
+func statMTime(t *testing.T, path string) time.Time {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	return st.ModTime()
+}
 func newTransferManagerForTest() *TransferManager {
 	return NewTransferManager()
 }

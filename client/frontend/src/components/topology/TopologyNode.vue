@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TopologyNode - 拓扑图节点组件
  *
@@ -21,7 +21,7 @@ const NODE_H = 104
 const HALF_W = NODE_W / 2
 const HALF_H = NODE_H / 2
 
-function truncate(value, max) {
+function truncate(value: unknown, max: number) {
   const text = String(value || '')
   return text.length > max ? `${text.substring(0, max - 1)}...` : text
 }
@@ -66,7 +66,7 @@ const metaLine = computed(() => {
   return truncate(ip || props.agent.os || '-', 24)
 })
 
-function onMouseDown(e) {
+function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
   emit('dragStart', {
     beaconid: props.agent.beaconid,
@@ -81,7 +81,7 @@ function onClick() {
   emit('select', props.agent.beaconid)
 }
 
-function onContextMenu(e) {
+function onContextMenu(e: MouseEvent) {
   emit('contextMenu', {
     targetType: 'beacon',
     clientX: e.clientX,

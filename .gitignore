@@ -25,7 +25,9 @@ CLAUDE.md
 # Root-level directories
 # ============================================================
 # release-assets/ 全部忽略:Server 产物只在本地构建,不入库。
-# 发版时通过 workflow_dispatch 手动上传,或临时改规则 commit + push 后再删。
+# 发布流程:CI 只发布 client 产物;Server 包在发布后于本机执行
+#   gh release upload <tag> release-assets/<tag>/*
+# 直接补传到 GitHub Release,不经过 git 提交。
 release-assets/
 server/
 *.key

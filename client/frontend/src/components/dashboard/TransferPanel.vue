@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TransferPanel - 文件传输监控面板
  *
@@ -11,21 +11,29 @@
  */
 
 import { ref, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+import type { TransferItem } from '../../stores/fileTransfer'
 
-const props = defineProps({
-  activeTransfers: { type: Array, default: () => [] },
-  collapsed: { type: Boolean, default: false },
-})
+const props = defineProps<{
+  activeTransfers: TransferItem[]
+  collapsed?: boolean
+}>()
 
 const emit = defineEmits(['update:collapsed'])
+
+const { t } = useI18n()
 
 const TRANSFER_PANEL_DEFAULT_HEIGHT = 140
 const TRANSFER_PANEL_MIN_HEIGHT = 60
 const TRANSFER_PANEL_MAX_HEIGHT = 400
 const transferPanelHeight = ref(TRANSFER_PANEL_DEFAULT_HEIGHT)
-let transferResizeState = null // { startY, startHeight }
+let transferResizeState: { startY: number; startHeight: number } | null = null // { startY, startHeight }
 
-function startTransferResize(event) {
+function getTransferKey(transfer: TransferItem) {
+  return transfer.transferKey || `${transfer.beaconId}:${transfer.direction}:${transfer.fileName || transfer.remotePath}`
+}
+
+function startTransferResize(event: MouseEvent) {
   event.preventDefault()
   transferResizeState = {
     startY: event.clientY,
@@ -37,7 +45,7 @@ function startTransferResize(event) {
   window.addEventListener('mouseup', stopTransferResize)
 }
 
-function onTransferResizeMove(event) {
+function onTransferResizeMove(event: MouseEvent) {
   if (!transferResizeState) return
   const delta = transferResizeState.startY - event.clientY
   const next = transferResizeState.startHeight + delta
@@ -60,7 +68,7 @@ onUnmounted(() => {
 })
 
 // 格式化文件大小(从主组件迁移,供模板内使用)
-function formatSize(bytes) {
+function formatSize(bytes: number) {
   if (!bytes || bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -81,8 +89,8 @@ function formatSize(bytes) {
     <!-- 收起态：极简状态条 -->
     <div v-if="collapsed" class="transfer-panel-collapsed" @click="emit('update:collapsed', false)">
       <span class="collapsed-icon">📤📥</span>
-      <span class="collapsed-text">{{ activeTransfers.length }} 个传输任务</span>
-      <span class="collapsed-expand" title="展开">⤢</span>
+      <span class="collapsed-text">{{ t('transfer.taskCount', { n: activeTransfers.length }) }}</span>
+      <span class="collapsed-expand" :title="t('common.expand')">⤢</span>
     </div>
 
     <!-- 展开态：完整面板 -->
@@ -92,21 +100,21 @@ function formatSize(bytes) {
       :style="{ height: transferPanelHeight + 'px' }"
     >
       <div class="transfer-compact-header">
-        <span class="title">传输监控</span>
-        <span class="count">{{ activeTransfers.length }} 个传输记录</span>
-        <button class="collapse-btn" title="收起" @click="emit('update:collapsed', true)">⤓</button>
+        <span class="title">{{ t('transfer.monitor') }}</span>
+        <span class="count">{{ t('transfer.recordCount', { n: activeTransfers.length }) }}</span>
+        <button class="collapse-btn" :title="t('common.collapse')" @click="emit('update:collapsed', true)">⤓</button>
       </div>
       <div class="transfer-compact-list">
         <div
           v-for="transfer in activeTransfers"
-          :key="transfer.taskId"
+          :key="getTransferKey(transfer)"
           class="compact-item"
           :class="[transfer.status, transfer.direction]"
         >
           <div class="item-main">
             <span class="icon">{{ transfer.direction === 'upload' ? '📤' : '📥' }}</span>
             <span class="name" :title="transfer.remotePath">{{ transfer.fileName || transfer.remotePath }}</span>
-            <span class="status-text">{{ transfer.status === 'completed' ? '完成' : transfer.status === 'error' ? '失败' : transfer.progress + '%' }}</span>
+            <span class="status-text">{{ transfer.status === 'completed' ? t('transfer.statusCompleted') : transfer.status === 'cancelled' ? t('transfer.statusCancelled') : transfer.status === 'error' ? t('transfer.statusFailed') : transfer.progress + '%' }}</span>
           </div>
           <div class="item-progress">
             <div class="progress-fill" :style="{ width: transfer.progress + '%' }"></div>

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * AgentTable - Agent 列表表格
  * 展示所有 Beacon 的主机名、用户、IP、操作系统、状态等信息，
@@ -6,19 +6,23 @@
  */
 
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useAgentStore } from '../../stores/agent.js'
-import { useConsoleStore } from '../../stores/console.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../../stores/agent'
+import type { BeaconStatus } from '../../stores/agent'
+import { useConsoleStore } from '../../stores/console'
+import type { Beacon } from '../../features/beacon/model'
 import BeaconContextMenu from '../beacon/BeaconContextMenu.vue'
 
 const props = defineProps({
   searchQuery: { type: String, default: '' }
 })
 
+const { t } = useI18n()
 const agentStore = useAgentStore()
 const consoleStore = useConsoleStore()
-const selectedBeaconId = ref(null)
-const contextMenu = ref({ visible: false, x: 0, y: 0, beaconid: null })
-let timer = null
+const selectedBeaconId = ref<string | null>(null)
+const contextMenu = ref<{ visible: boolean; x: number; y: number; beaconid: string }>({ visible: false, x: 0, y: 0, beaconid: '' })
+let timer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   timer = setInterval(() => {
@@ -30,15 +34,15 @@ onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 
-function selectAgent(beaconid) {
+function selectAgent(beaconid: string) {
   selectedBeaconId.value = beaconid
 }
 
-function openConsole(beaconid) {
+function openConsole(beaconid: string) {
   consoleStore.openConsole(beaconid)
 }
 
-function onRowContextMenu(e, agent) {
+function onRowContextMenu(e: MouseEvent, agent: Beacon) {
   e.preventDefault()
   selectedBeaconId.value = agent.beaconid
   contextMenu.value = {
@@ -53,7 +57,7 @@ function closeContextMenu() {
   contextMenu.value.visible = false
 }
 
-function formatTime(iso) {
+function formatTime(iso: string) {
   if (!iso) return '-'
   const d = new Date(iso).getTime()
   // 修正：引用 agentStore.now 确保响应式更新
@@ -64,39 +68,40 @@ function formatTime(iso) {
   return `${Math.floor(diff / 3600)}h`
 }
 
-function getBeaconStatus(agent) {
+function getBeaconStatus(agent: Beacon) {
   return agentStore.beaconStatus(agent)
 }
 
-function getStatusClass(agent) {
+function getStatusClass(agent: Beacon) {
   return getBeaconStatus(agent).class
 }
 
-function getStatusLabel(agent) {
-  return getBeaconStatus(agent).label
+function getStatusLabel(agent: Beacon) {
+  const status = getBeaconStatus(agent)
+  return status.labelKey || (status as BeaconStatus & { label?: string }).label || 'agent.status.offline'
 }
 
-function getStatusDotClass(agent) {
+function getStatusDotClass(agent: Beacon) {
   return getBeaconStatus(agent).dotClass
 }
 
-function getCascadeDetail(agent) {
+function getCascadeDetail(agent: Beacon) {
   if (getBeaconStatus(agent).kind !== 'cascade') return ''
   const parentId = String(agent.parentId || '')
-  const parent = parentId ? `经由 ${parentId.substring(0, 8)}` : '经由父级'
+  const parent = parentId ? t('agentTable.via', { id: parentId.substring(0, 8) }) : t('agentTable.viaParent')
   const protocol = agent.linkProtocol ? String(agent.linkProtocol).toLowerCase() : 'unknown'
-  return `${parent} / ${protocol} / 最后观测 ${formatTime(agent.lastSeen)}`
+  return `${parent} / ${protocol} / ${t('agentTable.lastObserved', { time: formatTime(agent.lastSeen) })}`
 }
 
-function getStatusTitle(agent) {
+function getStatusTitle(agent: Beacon) {
   const cascadeDetail = getCascadeDetail(agent)
   if (cascadeDetail) return cascadeDetail
 
   const state = String(agent.linkState || '').toLowerCase()
   if ((String(agent.listenerType || '').toLowerCase() === 'internal' || Number(agent.depth || 0) > 0 || agent.parentId) && state) {
-    return `链路 ${state} / 最后观测 ${formatTime(agent.lastSeen)}`
+    return `${t('agentTable.linkState', { state })} / ${t('agentTable.lastObserved', { time: formatTime(agent.lastSeen) })}`
   }
-  return `最后心跳 ${formatTime(agent.lastSeen)}`
+  return t('agentTable.lastHeartbeat', { time: formatTime(agent.lastSeen) })
 }
 
 const filteredAgents = computed(() => {
@@ -130,9 +135,18 @@ const filteredAgents = computed(() => {
 /**
  * 格式化进程名：移除冗余的 .exe 后缀以便美观显示
  */
-function formatProcessName(name) {
-  if (!name) return '-'
-  return name.replace(/\.exe$/i, '')
+function formatProcessName(name: string) {
+  const text = String(name || '').trim()
+  if (!text) return '-'
+  return text.replace(/\.exe$/i, '')
+}
+
+function protocolClass(agent: Beacon) {
+  return `proto-${String(agent.protocol || 'http').toLowerCase()}`
+}
+
+function protocolText(agent: Beacon) {
+  return String(agent.protocol || 'http').toUpperCase()
 }
 </script>
 
@@ -143,17 +157,17 @@ function formatProcessName(name) {
         <tr>
           <th style="width: 40px"></th>
           <th>ID</th>
-          <th>主机名</th>
-          <th>用户</th>
-          <th>系统 / 架构</th>
-          <th>C2 协议</th>
-          <th>内网 IP</th>
-          <th>外网 IP</th>
-          <th>进程 (PID)</th>
-          <th>策略 (S/J)</th>
-          <th>拓扑</th>
-          <th>最后心跳</th>
-          <th>状态</th>
+          <th>{{ t('agentTable.colHostname') }}</th>
+          <th>{{ t('agentTable.colUser') }}</th>
+          <th>{{ t('agentTable.colOs') }}</th>
+          <th>{{ t('agentTable.colProtocol') }}</th>
+          <th>{{ t('agentTable.colLocalIp') }}</th>
+          <th>{{ t('agentTable.colExternalIp') }}</th>
+          <th>{{ t('agentTable.colProcess') }}</th>
+          <th>{{ t('agentTable.colPolicy') }}</th>
+          <th>{{ t('agentTable.colTopology') }}</th>
+          <th>{{ t('agentTable.colLastSeen') }}</th>
+          <th>{{ t('agentTable.colStatus') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -169,7 +183,7 @@ function formatProcessName(name) {
           <td>
             <span class="status-dot" :class="getStatusDotClass(agent)"></span>
           </td>
-          <td class="cell-id">{{ agent.beaconid.substring(0, 8) }}</td>
+          <td class="cell-id">{{ String(agent.beaconid).substring(0, 8) }}</td>
           <td>
             <span class="cell-hostname">{{ agent.hostname }}</span>
           </td>
@@ -185,8 +199,8 @@ function formatProcessName(name) {
             </div>
           </td>
           <td>
-            <span class="protocol-tag" :class="'proto-' + (agent.protocol || 'http').toLowerCase()">
-              {{ (agent.protocol || 'http').toUpperCase() }}
+            <span class="protocol-tag" :class="protocolClass(agent)">
+              {{ protocolText(agent) }}
             </span>
           </td>
           <td class="cell-ip">{{ agent.ip }}</td>
@@ -201,14 +215,14 @@ function formatProcessName(name) {
           <td class="cell-topology">
             <template v-if="agent.depth > 0">
               <span class="topo-depth" :style="{ paddingLeft: (agent.depth - 1) * 12 + 'px' }">
-                <span v-if="agent.linkProtocol" class="topo-tag" :class="'topo-' + agent.linkProtocol.toLowerCase()">
-                  {{ agent.linkProtocol.toUpperCase() }}
+                <span v-if="agent.linkProtocol" class="topo-tag" :class="'topo-' + String(agent.linkProtocol).toLowerCase()">
+                  {{ String(agent.linkProtocol).toUpperCase() }}
                 </span>
-                <span v-if="agent.linkState" class="topo-state" :class="'state-' + agent.linkState.toLowerCase()">
+                <span v-if="agent.linkState" class="topo-state" :class="'state-' + String(agent.linkState).toLowerCase()">
                   {{ agent.linkState }}
                 </span>
-                <span v-if="agent.parentId" class="topo-parent" :title="agent.parentId">
-                  {{ agent.parentId.substring(0, 8) }}
+                <span v-if="agent.parentId" class="topo-parent" :title="String(agent.parentId)">
+                  {{ String(agent.parentId).substring(0, 8) }}
                 </span>
               </span>
             </template>
@@ -217,7 +231,7 @@ function formatProcessName(name) {
           <td :title="getStatusTitle(agent)">
             <div class="status-cell">
               <span class="tag" :class="getStatusClass(agent)">
-                {{ getStatusLabel(agent) }}
+                {{ t(getStatusLabel(agent)) }}
               </span>
               <span v-if="getCascadeDetail(agent)" class="status-detail">
                 {{ getCascadeDetail(agent) }}
@@ -231,9 +245,9 @@ function formatProcessName(name) {
     <!-- 空状态 (基础) -->
     <div v-else-if="agentStore.agents.length === 0" class="empty-state">
       <div class="icon">📡</div>
-      <div class="title">等待 Agent 上线</div>
+      <div class="title">{{ t('agentTable.emptyTitle') }}</div>
       <div class="desc">
-        当 Agent 连接到服务器后，会自动显示在此表格中
+        {{ t('agentTable.emptyDesc') }}
       </div>
       <div class="pulse-ring"></div>
     </div>
@@ -241,12 +255,12 @@ function formatProcessName(name) {
     <!-- 搜索无结果 -->
     <div v-else class="empty-state">
       <div class="icon">🔍</div>
-      <div class="title">没有找到匹配的 Agent</div>
+      <div class="title">{{ t('agentTable.noMatchTitle') }}</div>
       <div class="desc">
-        试着搜索其他的关键词，如主机名或 IP
+        {{ t('agentTable.noMatchDesc') }}
       </div>
       <button class="btn btn-ghost btn-sm" style="margin-top:20px" @click="$emit('clearSearch')">
-        清除搜索
+        {{ t('agentTable.clearSearch') }}
       </button>
     </div>
 

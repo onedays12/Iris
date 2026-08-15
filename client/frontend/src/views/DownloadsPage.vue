@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * DownloadsPage - 文件下载管理页面
  *
@@ -6,20 +6,23 @@
  */
 
 import { onMounted, onUnmounted, ref } from 'vue'
-import { Dialogs } from '@wailsio/runtime'
-import * as FileService from '../../bindings/irisclient/service/fileservice.js'
-import { downloadFileBase64, listDownloads } from '../features/files/api/fileApi.js'
-import { useNotificationStore } from '../stores/notification.js'
+import { useI18n } from 'vue-i18n'
+import * as FileService from '../../bindings/irisclient/service/fileservice'
+import { downloadFileBase64, listDownloads } from '../features/files/api/fileApi'
+import type { StoredFile } from '../features/files/model'
+import { useNotificationStore } from '../stores/notification'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
+import { openSaveFileDialog } from '../utils/saveFileDialog'
 
+const { t, locale } = useI18n()
 const notificationStore = useNotificationStore()
 
-const downloads = ref([])
+const downloads = ref<StoredFile[]>([])
 const loading = ref(false)
 const savingFileId = ref('')
 const errorMessage = ref('')
 
-function formatSize(bytes) {
+function formatSize(bytes: number) {
   const value = Number(bytes || 0)
   if (value === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -27,13 +30,12 @@ function formatSize(bytes) {
   return `${(value / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`
 }
 
-function formatTime(iso) {
+function formatTime(iso: string) {
   if (!iso) return '-'
+  // 契约: 下载池时间字段为 unix 毫秒数字或 ISO 字符串（FILE_FIELDS.mod_time）
   const numeric = Number(iso)
-  const date = Number.isFinite(numeric)
-    ? new Date(numeric < 1e12 ? numeric * 1000 : numeric)
-    : new Date(iso)
-  return date.toLocaleString('zh-CN', {
+  const date = Number.isFinite(numeric) ? new Date(numeric) : new Date(iso)
+  return date.toLocaleString(locale.value, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -49,31 +51,31 @@ async function fetchDownloads() {
   try {
     downloads.value = await listDownloads()
   } catch (err) {
-    errorMessage.value = err.message || '获取下载列表失败'
+    errorMessage.value = (err instanceof Error ? err.message : String(err)) || t('downloads.fetchError')
   } finally {
     loading.value = false
   }
 }
 
-async function saveDownload(file) {
-  if (!file?.file_id && !file?.download_url) return
+async function saveDownload(file: StoredFile) {
+  if (!file?.fileId && !file?.downloadUrl) return
 
-  const savePath = await Dialogs.SaveFile({
-    Title: '保存下载文件',
-    Filename: file.file_name || 'download.bin',
+  const savePath = await openSaveFileDialog({
+    Title: t('downloads.saveDialogTitle'),
+    Filename: file.fileName || 'download.bin',
   })
   if (!savePath) return
 
-  savingFileId.value = file.file_id || file.download_url
+  savingFileId.value = file.fileId || file.downloadUrl
   try {
     const base64Data = await downloadFileBase64({
-      fileId: file.file_id,
-      downloadUrl: file.download_url,
+      fileId: file.fileId,
+      downloadUrl: file.downloadUrl,
     })
     await FileService.WriteBinaryFile(savePath, base64Data)
-    notificationStore.success(`已保存: ${file.file_name || 'download.bin'}`)
+    notificationStore.success(t('downloads.saveSuccess', { name: file.fileName || 'download.bin' }))
   } catch (err) {
-    notificationStore.error(`保存失败: ${err.message || err}`)
+    notificationStore.error(t('downloads.saveError', { error: err instanceof Error ? err.message : String(err) }))
   } finally {
     savingFileId.value = ''
   }
@@ -95,13 +97,13 @@ onUnmounted(() => {
       <div class="header-left">
         <h1 class="page-title">
           <PageTitleIcon name="downloads" />
-          下载文件
+          {{ t('downloads.title') }}
         </h1>
-        <p class="page-subtitle">查看 TeamServer 已接收完成、可保存到本地的文件</p>
+        <p class="page-subtitle">{{ t('downloads.subtitle') }}</p>
       </div>
       <button class="btn btn-primary" :disabled="loading" @click="fetchDownloads">
         <span class="icon">↻</span>
-        {{ loading ? '刷新中...' : '刷新列表' }}
+        {{ loading ? t('downloads.refreshing') : t('downloads.refresh') }}
       </button>
     </header>
 
@@ -111,43 +113,43 @@ onUnmounted(() => {
       </div>
 
       <div v-if="loading && downloads.length === 0" class="state-line">
-        正在读取下载列表...
+        {{ t('downloads.loadingList') }}
       </div>
 
       <div v-else class="table-scroll">
       <table class="data-table">
         <thead>
           <tr>
-            <th>文件名</th>
-            <th>大小</th>
-            <th>修改时间</th>
-            <th>SHA256</th>
-            <th class="actions-col">操作</th>
+            <th>{{ t('downloads.filename') }}</th>
+            <th>{{ t('downloads.size') }}</th>
+            <th>{{ t('downloads.modificationTime') }}</th>
+            <th>{{ t('downloads.sha256') }}</th>
+            <th class="actions-col">{{ t('downloads.actions') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="file in downloads" :key="file.file_id || file.download_url">
+          <tr v-for="file in downloads" :key="file.fileId || file.downloadUrl">
             <td class="cell-name">
               <span class="file-icon">📄</span>
-              {{ file.file_name || '-' }}
+              {{ file.fileName || '-' }}
             </td>
             <td class="cell-size">{{ formatSize(file.size) }}</td>
-            <td class="cell-time">{{ formatTime(file.mod_time) }}</td>
-            <td class="cell-hash" :title="file.sha256 || file.file_id">
-              {{ file.sha256 || file.file_id || '-' }}
+            <td class="cell-time">{{ formatTime(file.modTime) }}</td>
+            <td class="cell-hash" :title="file.sha256 || file.fileId">
+              {{ file.sha256 || file.fileId || '-' }}
             </td>
             <td class="actions-col">
               <button
                 class="action-btn"
-                :disabled="savingFileId === (file.file_id || file.download_url)"
+                :disabled="savingFileId === (file.fileId || file.downloadUrl)"
                 @click="saveDownload(file)"
               >
-                {{ savingFileId === (file.file_id || file.download_url) ? '保存中...' : '保存到本地' }}
+                {{ savingFileId === (file.fileId || file.downloadUrl) ? t('downloads.saving') : t('downloads.saveLocal') }}
               </button>
             </td>
           </tr>
           <tr v-if="downloads.length === 0 && !loading">
-            <td colspan="5" class="empty-cell">TeamServer 暂无可下载文件</td>
+            <td colspan="5" class="empty-cell">{{ t('downloads.empty') }}</td>
           </tr>
         </tbody>
       </table>

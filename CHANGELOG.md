@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.3.0
+
+### Client
+
+- 新增 — `vue-i18n` 基础设施与语言切换器，支持中文 / 英文切换（当前仅支持这两种语言）
+- 新增 — 基于 CDP（Chrome DevTools Protocol）的 e2e 冒烟脚本，可驱动 Wails3 WebView 进行页面加载断言与运行时状态检查，方便 AI 直接调试与修复 bug
+- 新增 — Sketch 手绘主题（第 4 套）
+- 变更 — 前端从 JavaScript 全量迁移到 TypeScript
+- 变更 — 插件 schema 升级到 v2，减少 `plugin.json` 的声明量
+- 修复 — Tunnel 创建对话框布局问题
+
+### Server
+
+- 新增 — 钉钉机器人 Beacon 上线通知
+- 新增 — 可观测性三件套：`healthz` 健康检查、运行指标采集、操作审计
+- 变更 — 命令结果分发注册表化
+- 修复 — 关闭任务下发一致性窗口，加固运行态竞态
+- 修复 — 忽略已删除 Beacon 的迟到传输分块与 ACK
+- 重构 — Listener 锁粒度细化、WS 写协程与 TTL 清理
+- 重构 — 心跳写库合并、tunnel 数据面免持久化、SQLite 基线加固
+
+### C-Beacon
+
+- 测试 — 新增 `BEACON_TEST` 测试框架，注入随机源与 Winsock 钩子，覆盖加解密、任务、启动、发件箱等场景，配套测试工程与构建脚本
+- 修复 — 随机数接口改为可报错，初始化失败即清理
+- 修复 — 任务关闭时不再无限等待 Worker 退出
+- 修复 — BOF 释放顺序
+- 修复 — exit 前同步关闭级联通道
+- 变更 — Release 改用 ClangCL 编译，产物统一加 external/internal 命名，同步批处理脚本与 README
+- 变更 — 默认 C2 地址与加密密钥更换
+
 ## v0.2.0
 
 ### Client

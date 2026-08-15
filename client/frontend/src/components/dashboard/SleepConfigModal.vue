@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * SleepConfigModal - Beacon 休眠间隔配置弹窗
  *
@@ -6,17 +6,19 @@
  */
 
 import { ref, watch } from 'vue'
-import { sendSleepCommand } from '../../features/beacon/actions/beaconCommandActions.js'
-import { useAgentStore } from '../../stores/agent.js'
-import { useConsoleStore } from '../../stores/console.js'
-import { useNotificationStore } from '../../stores/notification.js'
+import { useI18n } from 'vue-i18n'
+import { sendSleepCommand } from '../../features/beacon/actions/beaconCommandActions'
+import { useAgentStore } from '../../stores/agent'
+import { useConsoleStore } from '../../stores/console'
+import { useNotificationStore } from '../../stores/notification'
 
-const props = defineProps({
-  visible: Boolean,
-  beaconid: String
-})
+const props = defineProps<{
+  visible: boolean
+  beaconid: string
+}>()
 
 const emit = defineEmits(['close'])
+const { t } = useI18n()
 const agentStore = useAgentStore()
 const consoleStore = useConsoleStore()
 const notificationStore = useNotificationStore()
@@ -37,11 +39,11 @@ watch(() => props.visible, (newVal) => {
 async function handleSubmit() {
   // 严格上限校验 (按照需求强制限制)
   if (sleeptime.value > 60000) {
-    notificationStore.warning('SleepTime 已被修正至上限 60,000ms')
+    notificationStore.warning(t('sleepConfig.sleepTimeCorrected'))
     sleeptime.value = 60000
   }
   if (jitter.value > 200) {
-    notificationStore.warning('Jitter 已被修正至上限 200%')
+    notificationStore.warning(t('sleepConfig.jitterCorrected'))
     jitter.value = 200
   }
 
@@ -49,16 +51,16 @@ async function handleSubmit() {
   try {
     consoleStore.openConsole(props.beaconid)
     consoleStore.appendToConsole(props.beaconid, 'input', `sleep ${sleeptime.value} ${jitter.value}`.trim())
-    consoleStore.appendToConsole(props.beaconid, 'output', '正在下发 SleepTime 配置...')
+    consoleStore.appendToConsole(props.beaconid, 'output', t('sleepConfig.sendingSleepTime'))
 
     // 下发指令 [time, jitter]
     await sendSleepCommand(props.beaconid, sleeptime.value, jitter.value)
-    consoleStore.appendToConsole(props.beaconid, 'output', 'SleepTime 已下发。')
+    consoleStore.appendToConsole(props.beaconid, 'output', t('sleepConfig.sleepTimeSent'))
     agentStore.updateAgent(props.beaconid, { sleep: sleeptime.value / 1000, jitter: jitter.value })
-    notificationStore.success(`指令已下发: Sleep ${sleeptime.value}ms (Jitter: ${jitter.value}%)`)
+    notificationStore.success(t('sleepConfig.commandSent', { sleepTime: sleeptime.value, jitter: jitter.value }))
     emit('close')
   } catch (err) {
-    consoleStore.appendToConsole(props.beaconid, 'error', `下发 SleepTime 失败: ${err.message || err}`)
+    consoleStore.appendToConsole(props.beaconid, 'error', t('sleepConfig.sendFailed', { error: err instanceof Error ? err.message : String(err) }))
     console.error('[SleepModal] Failed to send command:', err)
   } finally {
     isSubmitting.value = false
@@ -73,17 +75,17 @@ async function handleSubmit() {
         <header class="modal-header">
           <div class="title-area">
             <span class="icon">⏰</span>
-            <h3>心跳频率配置</h3>
+            <h3>{{ t('sleepConfig.title') }}</h3>
           </div>
           <button class="close-btn" @click="emit('close')">×</button>
         </header>
 
         <form @submit.prevent="handleSubmit" class="modal-body">
-          <p class="description">调整 Beacon 与服务器通信的频率及波差。过于频繁的通信会增加被发现的风险。</p>
+          <p class="description">{{ t('sleepConfig.description') }}</p>
 
           <div class="input-group">
             <div class="label-row">
-              <label>睡眠时间 (Sleeptime)</label>
+              <label>{{ t('sleepConfig.sleepTimeLabel') }}</label>
               <span class="unit">{{ sleeptime }} ms</span>
             </div>
             <input 
@@ -98,7 +100,7 @@ async function handleSubmit() {
               <input 
                 type="number" 
                 v-model.number="sleeptime" 
-                placeholder="毫秒" 
+                :placeholder="t('sleepConfig.millisecondsPlaceholder')" 
                 max="60000"
               />
               <span class="limit-hint">MAX: 60,000</span>
@@ -107,7 +109,7 @@ async function handleSubmit() {
 
           <div class="input-group">
             <div class="label-row">
-              <label>波动比例 (Jitter)</label>
+              <label>{{ t('sleepConfig.jitterLabel') }}</label>
               <span class="unit">{{ jitter }} %</span>
             </div>
             <input 
@@ -122,7 +124,7 @@ async function handleSubmit() {
               <input 
                 type="number" 
                 v-model.number="jitter" 
-                placeholder="百分比" 
+                :placeholder="t('sleepConfig.percentPlaceholder')" 
                 max="200"
               />
               <span class="limit-hint">MAX: 200%</span>
@@ -130,9 +132,9 @@ async function handleSubmit() {
           </div>
 
           <footer class="modal-actions">
-            <button type="button" class="btn-cancel" @click="emit('close')">取消</button>
+            <button type="button" class="btn-cancel" @click="emit('close')">{{ t('common.cancel') }}</button>
             <button type="submit" class="btn-confirm" :disabled="isSubmitting">
-              <span v-if="!isSubmitting">下发配置</span>
+              <span v-if="!isSubmitting">{{ t('sleepConfig.sendConfig') }}</span>
               <div v-else class="loader sm"></div>
             </button>
           </footer>

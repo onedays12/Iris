@@ -1,21 +1,33 @@
-<script setup>
+<script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
-import { useModalStore } from '../../stores/modal.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import { useAgentStore } from '../../stores/agent.js'
-import { usePluginStore } from '../../stores/plugin.js'
-import { normalizeBeaconArch, normalizeBeaconPlatform } from '../../constants/commands.js'
+import { useI18n } from 'vue-i18n'
+import { useModalStore } from '../../stores/modal'
+import { useNotificationStore } from '../../stores/notification'
+import { useAgentStore } from '../../stores/agent'
+import { usePluginStore } from '../../stores/plugin'
+import { normalizeBeaconArch, normalizeBeaconPlatform } from '../../constants/commands'
+import { localizedText } from '../../features/plugin/model'
 
+const { locale, t } = useI18n()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
 const agentStore = useAgentStore()
 const pluginStore = usePluginStore()
 
-const formValues = reactive({})
+/** 按当前语言解析 schema v2 本地化文案(string 或 {zh,en})。 */
+function displayText(value: unknown, fallback = ''): string {
+  return localizedText(value, locale.value) || fallback
+}
+
+// 插件动作原始 JSON 无静态类型，此处以 Record 视图做鸭子类型访问
+type RawPluginAction = Record<string, any>
+type RawPluginField = Record<string, any>
+
+const formValues = reactive<Record<string, unknown>>({})
 const submitting = computed(() => pluginStore.invoking)
 
 const visible = computed(() => modalStore.pluginActionVisible)
-const activeAction = computed(() => modalStore.activePluginAction?.action || null)
+const activeAction = computed<RawPluginAction | null>(() => (modalStore.activePluginAction?.action ?? null) as RawPluginAction | null)
 const activePluginId = computed(() => modalStore.activePluginAction?.pluginId || '')
 const activePluginName = computed(() => modalStore.activePluginAction?.pluginName || '')
 const activeBeaconId = computed(() => modalStore.activePluginAction?.beaconid || '')
@@ -24,27 +36,27 @@ const activeAgent = computed(() => agentStore.getAgentById(activeBeaconId.value)
 const TEXT_FIELD_TYPES = new Set(['string', 'int8', 'int16', 'int32', 'int64', 'short', 'bytes', 'text', 'input'])
 const BOOL_FIELD_TYPES = new Set(['bool', 'boolean', 'checkbox'])
 
-function getFieldType(field) {
-  return String(field?.type || field?.Type || 'string').trim().toLowerCase()
+function getFieldType(field: RawPluginField) {
+  return String(field?.type || 'string').trim().toLowerCase()
 }
 
-function isTextField(field) {
+function isTextField(field: RawPluginField) {
   return TEXT_FIELD_TYPES.has(getFieldType(field))
 }
 
-function isBooleanField(field) {
+function isBooleanField(field: RawPluginField) {
   return BOOL_FIELD_TYPES.has(getFieldType(field))
 }
 
-function normalizeBooleanDefault(value) {
+function normalizeBooleanDefault(value: unknown) {
   if (value === true || value === false) return value
   const text = String(value ?? '').trim().toLowerCase()
   if (['1', 'true', 'yes', 'on'].includes(text)) return true
   return false
 }
 
-function resolveFieldDefaultByArch(field) {
-  const byArch = field?.defaultByArch || field?.default_by_arch || field?.DefaultByArch || {}
+function resolveFieldDefaultByArch(field: RawPluginField) {
+  const byArch = field?.defaultByArch || {}
   if (!byArch || typeof byArch !== 'object' || Array.isArray(byArch)) return undefined
 
   const arch = normalizeBeaconArch(activeAgent.value?.arch)
@@ -53,9 +65,9 @@ function resolveFieldDefaultByArch(field) {
   return undefined
 }
 
-function normalizeFieldDefault(field) {
+function normalizeFieldDefault(field: RawPluginField) {
   const archDefault = resolveFieldDefaultByArch(field)
-  const defaultValue = archDefault !== undefined ? archDefault : (field.defaultValue ?? field.default ?? '')
+  const defaultValue = archDefault !== undefined ? archDefault : (field.defaultValue ?? '')
   if (isBooleanField(field)) {
     return normalizeBooleanDefault(defaultValue)
   }
@@ -63,22 +75,25 @@ function normalizeFieldDefault(field) {
 }
 
 // normalizedAction 将当前激活的动作原始数据归一化
+// （modal 接收的是 normalizePlugin 产出的 camelCase 模型对象，canonical = camelCase）
 function normalizedAction() {
   const action = activeAction.value || {}
-  const postex = action.postex || action.PostEx || null
+  const postex = action.postex || null
+  const fields = Array.isArray(action.fields) ? action.fields : []
   return {
     id: String(action.id || '').trim(),
-    kind: String(action.kind || action.Kind || (postex ? 'postex' : 'bof')).trim().toLowerCase() || 'bof',
-    label: String(action.label || action.id || '插件动作').trim(),
-    description: String(action.description || ''),
+    kind: String(action.kind || (postex ? 'postex' : 'bof')).trim().toLowerCase() || 'bof',
+    label: displayText(action.label, String(action.id || t('pluginAction.pluginAction')).trim()),
+    description: displayText(action.description),
     os: Array.isArray(action.os) ? action.os : [],
     arch: Array.isArray(action.arch) ? action.arch : [],
     artifact: String(action.artifact || ''),
-    artifactByArch: action.artifactByArch || action.artifact_by_arch || {},
-    artifactData: String(action.artifactData || action.artifact_data || ''),
-    commandId: Number(action.commandId || action.command_id || 0) || 0,
-    requiresInput: Boolean(action.requiresInput || action.requires_input || false),
-    fields: Array.isArray(action.fields) ? action.fields : [],
+    artifactByArch: action.artifactByArch || {},
+    artifactData: String(action.artifactData || ''),
+    commandId: Number(action.commandId || 0) || 0,
+    // v2 约定: 未显式声明 requiresInput 时, 有字段即需要输入
+    requiresInput: Boolean(action.requiresInput || fields.length),
+    fields,
     postex,
   }
 }
@@ -126,26 +141,26 @@ function close() {
   modalStore.closePluginAction()
 }
 
-function updateField(fieldId, value) {
+function updateField(fieldId: string, value: unknown) {
   if (!fieldId) return
   formValues[fieldId] = value
 }
 
-function validateFields(action) {
+function validateFields(action: RawPluginAction) {
   for (const field of action.fields) {
     const fieldName = String(field.name || '').trim()
     if (!fieldName) continue
     if (isBooleanField(field)) continue
     if (field.required && String(formValues[fieldName] ?? '').trim() === '') {
-      notificationStore.warn(`请填写 ${field.label || fieldName}`)
+      notificationStore.warn(t('pluginAction.fillField', { name: displayText(field.label, fieldName) }))
       return false
     }
   }
   return true
 }
 
-function serializeValues(values) {
-  const result = {}
+function serializeValues(values: Record<string, unknown>) {
+  const result: Record<string, string> = {}
   Object.entries(values).forEach(([key, value]) => {
     if (typeof value === 'boolean') {
       result[key] = value ? 'true' : 'false'
@@ -160,24 +175,24 @@ function serializeValues(values) {
   return result
 }
 
-function makeStringArg(value) {
+function makeStringArg(value: unknown) {
   return { kind: 'string', value: String(value ?? '') }
 }
 
-function buildComFileopArgs(values) {
+function buildComFileopArgs(values: Record<string, unknown>) {
   const op = String(values.op || '').trim()
   const src = String(values.src || '').trim()
   const dst = String(values.dst || '').trim()
   const taskName = String(values.task_name || '').trim()
 
   if (!['cp', 'mv', 'taskcp', 'taskmv'].includes(op)) {
-    throw new Error('COM 文件操作只支持 cp、mv、taskcp、taskmv')
+    throw new Error(t('pluginAction.comOpsOnly'))
   }
   if (!src) {
-    throw new Error('请填写源路径')
+    throw new Error(t('pluginAction.fillSourcePath'))
   }
   if (!dst) {
-    throw new Error('请填写目标路径')
+    throw new Error(t('pluginAction.fillTargetPath'))
   }
 
   const args = [makeStringArg(op), makeStringArg(src), makeStringArg(dst)]
@@ -191,15 +206,15 @@ function buildComFileopArgs(values) {
 async function submit() {
   const action = normalizedAction()
   if (!activePluginId.value) {
-    notificationStore.warn('缺少插件标识')
+    notificationStore.warn(t('pluginAction.missingPlugin'))
     return
   }
   if (!action.id) {
-    notificationStore.warn('缺少动作标识')
+    notificationStore.warn(t('pluginAction.missingAction'))
     return
   }
   if (!activeBeaconId.value) {
-    notificationStore.warn('请先选择 Beacon')
+    notificationStore.warn(t('pluginAction.selectBeacon'))
     return
   }
   if (!validateFields(action)) return
@@ -213,7 +228,7 @@ async function submit() {
       plugin_name: activePluginName.value,
       action_id: action.id,
       kind: action.kind,
-      action_label: action.label,
+      action_label: displayText(action.label, action.id),
       command_id: action.commandId,
       artifact: action.artifact,
       artifact_data: action.artifactData || '',
@@ -225,7 +240,7 @@ async function submit() {
     })
     close()
   } catch (err) {
-    notificationStore.error(err.message || '插件动作执行失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('pluginAction.execFailed'))
     console.error('[PluginActionModal] 执行动作失败:', err)
   }
 }
@@ -241,7 +256,7 @@ async function submit() {
             <div class="titles">
               <h3>{{ normalizedAction().label }}</h3>
               <span class="subtitle">
-                {{ activePluginName || '插件' }} · {{ activeBeaconId || '未选择 Beacon' }}
+                {{ activePluginName || t('pluginAction.plugin') }} · {{ activeBeaconId || t('pluginAction.noBeacon') }}
               </span>
             </div>
           </div>
@@ -252,25 +267,25 @@ async function submit() {
           <div class="summary">
             <div class="summary-line" v-if="normalizedAction().description">{{ normalizedAction().description }}</div>
             <div class="summary-line dim" v-if="normalizedAction().artifact">
-              {{ normalizedAction().kind === 'postex' ? 'PostEx DLL' : 'BOF 文件' }}：{{ normalizedAction().artifact }}
+              {{ normalizedAction().kind === 'postex' ? 'PostEx DLL' : t('pluginAction.bofFile') }}: {{ normalizedAction().artifact }}
             </div>
-            <div class="summary-line dim" v-if="normalizedAction().kind === 'postex' && normalizedAction().postex?.mode">模式：{{ normalizedAction().postex.mode }}</div>
+            <div class="summary-line dim" v-if="normalizedAction().kind === 'postex' && normalizedAction().postex?.mode">{{ t('pluginAction.modeLabel') }}: {{ normalizedAction().postex.mode }}</div>
             <div class="summary-line dim" v-if="normalizedAction().kind === 'postex' && normalizedAction().postex?.backend">Backend：{{ normalizedAction().postex.backend }}</div>
-            <div class="summary-line dim" v-if="normalizedAction().kind !== 'postex' && activeAction?.artifactData">BOF 已由宿主预加载</div>
-            <div class="summary-line dim" v-if="normalizedAction().commandId">命令 ID：{{ normalizedAction().commandId }}</div>
+            <div class="summary-line dim" v-if="normalizedAction().kind !== 'postex' && activeAction?.artifactData">{{ t('pluginAction.bofPreloaded') }}</div>
+            <div class="summary-line dim" v-if="normalizedAction().commandId">{{ t('pluginAction.commandIdLabel') }}: {{ normalizedAction().commandId }}</div>
           </div>
 
           <!-- 动态渲染插件定义的输入字段 -->
           <template v-if="normalizedAction().fields.length">
             <div v-for="field in normalizedAction().fields" :key="field.name" class="form-group">
-              <label class="field-label">{{ field.label || field.name }}</label>
+              <label class="field-label">{{ displayText(field.label, field.name) }}</label>
 
               <input
                 v-if="isTextField(field)"
                 class="form-control"
                 :value="formValues[field.name] ?? field.defaultValue ?? ''"
                 :placeholder="field.placeholder || ''"
-                @input="updateField(field.name, $event.target.value)"
+                @input="updateField(field.name, ($event.target as HTMLInputElement).value)"
               />
 
               <textarea
@@ -278,16 +293,16 @@ async function submit() {
                 class="form-control textarea"
                 :value="formValues[field.name] ?? field.defaultValue ?? ''"
                 :placeholder="field.placeholder || ''"
-                @input="updateField(field.name, $event.target.value)"
+                @input="updateField(field.name, ($event.target as HTMLInputElement).value)"
               />
 
               <select
                 v-else-if="String(field.type).toLowerCase() === 'select'"
                 class="form-control"
                 :value="formValues[field.name] ?? field.defaultValue ?? ''"
-                @change="updateField(field.name, $event.target.value)"
+                @change="updateField(field.name, ($event.target as HTMLSelectElement).value)"
               >
-                <option value="">请选择</option>
+                <option value="">{{ t('pluginAction.selectPlaceholder') }}</option>
                 <option v-for="option in (field.options || [])" :key="option" :value="option">
                   {{ option }}
                 </option>
@@ -297,26 +312,26 @@ async function submit() {
                 <input
                   type="checkbox"
                   :checked="Boolean(formValues[field.name] ?? field.defaultValue)"
-                  @change="updateField(field.name, $event.target.checked)"
+                  @change="updateField(field.name, ($event.target as HTMLInputElement).checked)"
                 />
-                <span>{{ field.help || field.placeholder || '启用' }}</span>
+                <span>{{ displayText(field.help) || field.placeholder || t('pluginAction.enabled') }}</span>
               </label>
 
-              <p v-if="field.help" class="help-text">{{ field.help }}</p>
-              <p v-else-if="field.required" class="help-text required">必填</p>
-              <p v-if="field.type" class="help-text type">类型：{{ String(field.type) }}</p>
+              <p v-if="displayText(field.help)" class="help-text">{{ displayText(field.help) }}</p>
+              <p v-else-if="field.required" class="help-text required">{{ t('pluginAction.required') }}</p>
+              <p v-if="field.type" class="help-text type">{{ t('pluginAction.typeLabel') }}: {{ String(field.type) }}</p>
             </div>
           </template>
 
           <div v-else class="empty-hint">
-            该动作不需要额外参数，确认后将直接执行。
+            {{ t('pluginAction.noArgsHint') }}
           </div>
         </div>
 
         <footer class="modal-footer">
-          <button class="btn btn-secondary" type="button" @click="close">取消</button>
+          <button class="btn btn-secondary" type="button" @click="close">{{ t('common.cancel') }}</button>
           <button class="btn btn-primary" type="button" @click="submit" :disabled="submitting">
-            {{ submitting ? '执行中...' : '执行' }}
+            {{ submitting ? t('pluginAction.executing') : t('pluginAction.execute') }}
           </button>
         </footer>
       </div>

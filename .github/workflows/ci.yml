@@ -4,9 +4,13 @@ name: CI
 # 触发:
 #   - push 到 dev:  只跑 test job(前端 check:all + vitest),不构建产物
 #   - 创建 tag v*:  跑 test job → 通过后三端并行 build → 发布 GitHub Release
+#   - workflow_dispatch(手动): 填目标 tag 后跑完整流程(test → 三端 build → Release),
+#     适合 Server 产物已备好、想跳过打 tag 流程或需要重发版本时使用
 #
 # 注: 本 workflow 由 client 子项目迁移至仓库根,所有 client 相关操作都加
 #     `working-directory: client`。产物最终 zip 写回仓库根目录。
+#     Server 产物(release-assets/)只在本地构建、不入库;Release 创建后
+#     在本机用 `gh release upload` 手动补传,避免大文件进 git 历史。
 # └─────────────────────────────────────────────────────────────────────────────
 on:
   push:
@@ -18,20 +22,30 @@ on:
   create:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的版本 tag(如 v0.3.0)。Server 产物不进仓库,发布后在本机用 gh release upload 补传'
+        required: true
 
 permissions:
   contents: write   # release job 需要写 Release
 
+# 发布目标 tag:手动触发取输入的 tag,打 tag 触发取 ref 名。
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.event.inputs.tag) || github.ref }}
   cancel-in-progress: true
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
-  # test job: 前端契约测试 + 单元测试。push 和 tag 都会跑,是 build 的前置门槛。
+  # test job: Go vet/test + 前端契约测试 + 单元测试。push 和 tag 都会跑,
+  # 是 build 的前置门槛。
   # ─────────────────────────────────────────────────────────────────────────
   test:
-    name: Test (check:all + vitest)
+    name: Test (go vet/test + check:all + vitest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,9 +63,34 @@ jobs:
           cache: 'npm'
           cache-dependency-path: client/frontend/package-lock.json
 
+      # go vet/test ./... 会编译主包, 依赖 Wails 的 cgo 绑定
+      # (webkit2gtk/gtk3), 环境需与 build-linux job 对齐。
+      - name: Install Linux system deps (for wails cgo)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev build-essential pkg-config
+
       - name: Install frontend deps
         working-directory: client/frontend
         run: npm ci
+
+      # go vet/test 覆盖主包, 而主包 embed frontend/dist;
+      # dist 不入库, 必须先在 CI 产出, 否则 embed 模式报 no matching files。
+      - name: Build frontend (for go embed)
+        working-directory: client/frontend
+        run: npm run build
+
+      - name: Go vet
+        working-directory: client
+        run: go vet ./...
+
+      - name: Go tests (race detector)
+        working-directory: client
+        run: go test -race ./...
+
+      - name: Typecheck
+        working-directory: client/frontend
+        run: npm run typecheck
 
       - name: Run contract tests (check:all)
         working-directory: client/frontend
@@ -70,7 +109,7 @@ jobs:
   build-windows:
     name: Build Windows (amd64)
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +143,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${RELEASE_TAG}"
           OUT="client-${TAG}-windows-amd64.zip"
           mkdir -p staging
           mv bin/client.exe staging/
@@ -125,7 +164,7 @@ jobs:
   build-linux:
     name: Build Linux (amd64)
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -165,7 +204,7 @@ jobs:
         working-directory: client
         run: |
           set -e
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${RELEASE_TAG}"
           ROOT="${GITHUB_WORKSPACE}"
           echo "Tag: ${TAG}"
           echo "=== bin/ contents after package ==="
@@ -223,7 +262,7 @@ jobs:
   build-darwin:
     name: Build macOS (arm64)
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -258,7 +297,7 @@ jobs:
         working-directory: client
         run: |
           set -e
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${RELEASE_TAG}"
           ROOT="${GITHUB_WORKSPACE}"
           ZIP_NAME="client-${TAG}-darwin-arm64.zip"
           mkdir -p staging
@@ -284,18 +323,16 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   # release job: 三个 build job 都通过后,拉取三个 zip,创建 GitHub Release。
   # 直接发布(非 draft),使用者从 Release 页下载对应平台 zip。
+  # Server 产物不入库,由发布者在本机 `gh release upload` 手动补传。
   # ─────────────────────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
     needs: [build-windows, build-linux, build-darwin]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      # checkout 时拉 LFS,这样 release-assets/<tag>/ 下的 TeamServer 产物
-      # 能正确还原成实体文件(否则只会是 LFS pointer)
+      # checkout 用于读取 CHANGELOG.md 生成 Release body;无需 LFS(Server 产物不入库)。
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Download all client artifacts
         uses: actions/download-artifact@v4
@@ -303,30 +340,13 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Stage server release assets
-        # Server 产物按 tag 名放在 release-assets/<tag>/ 下,合并到 artifacts/
-        # 统一上传。若该 tag 目录不存在(只有 client 没有 server),跳过。
-        run: |
-          set -e
-          TAG="${GITHUB_REF#refs/tags/}"
-          SRC="release-assets/${TAG}"
-          echo "Looking for server assets in: ${SRC}"
-          if [ -d "${SRC}" ]; then
-            ls -la "${SRC}/"
-            cp -v "${SRC}"/* artifacts/ 2>/dev/null || true
-          else
-            echo "WARN: ${SRC} not found, skipping server assets"
-          fi
-          echo "=== Final artifacts to upload ==="
-          ls -la artifacts/
-
       - name: Extract changelog section for this tag
         # 从仓库自带 CHANGELOG.md 抽出当前 tag 对应段落(从 "## <tag>" 到下一个 "## " 之前)
         # 作为 Release body。比 GitHub 自动生成的 commit list 更可读。
         id: changelog
         run: |
           set -e
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${RELEASE_TAG}"
           echo "Extracting changelog for ${TAG}"
           # awk: 找到 "## <TAG>" 行开始打印,遇到下一个 "## " 开头行就退出
           BODY=$(awk -v tag="## ${TAG}" '
@@ -348,13 +368,21 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           body_path: release_body.md
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}   # v0.2.0-rc1 标记为 prerelease
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}   # v0.2.0-rc1 标记为 prerelease
           files: |
             artifacts/client-*.zip
             artifacts/client-*.deb
             artifacts/client-*.rpm
-            artifacts/TeamServer-*
+
+      - name: Print server asset upload hint
+        # Server 产物(release-assets/<tag>/)只在本地、不入 git。
+        # Release 创建后,发布者在本机执行下面的命令把 Server 包直接传进 Release:
+        #   gh release upload <tag> release-assets/<tag>/*
+        run: |
+          echo "Release ${RELEASE_TAG} published with client artifacts."
+          echo "Upload server binaries from your local machine:"
+          echo "  gh release upload ${RELEASE_TAG} release-assets/${RELEASE_TAG}/*"

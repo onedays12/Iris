@@ -41,7 +41,7 @@ func TestBuildPostExSpawnPluginArgs(t *testing.T) {
 	action := PluginAction{
 		ID:          "spawn",
 		Kind:        "postex",
-		Description: "spawn test",
+		Description: LocalizedText{Values: map[string]string{"default": "spawn test"}},
 		PostEx: &PluginPostExAction{
 			Mode:          "spawn-dll",
 			DLLData:       "dll-b64",
@@ -355,7 +355,7 @@ func TestValidatePostExManifestRejectsInjectWithoutTargetPID(t *testing.T) {
 }
 
 func TestLoadPostExTemplatePluginPackage(t *testing.T) {
-	root := filepath.Join("..", "plugins", "postex-template")
+	root := filepath.Join("..", "..", "..", "plugins", "postex-template")
 	if _, err := os.Stat(filepath.Join(root, "plugin.json")); err != nil {
 		t.Skipf("postex template plugin is not available: %v", err)
 	}

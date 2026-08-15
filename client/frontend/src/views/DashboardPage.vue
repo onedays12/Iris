@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * DashboardPage - 主控制面板页面
  *
@@ -6,10 +6,12 @@
  */
 
 import { ref } from 'vue'
-import { useAgentStore } from '../stores/agent.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../stores/agent'
 import AgentTable from '../components/dashboard/AgentTable.vue'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
+const { t } = useI18n()
 const agentStore = useAgentStore()
 const searchQuery = ref('')
 const isRefreshing = ref(false)
@@ -31,7 +33,7 @@ async function refreshDashboard() {
     <div class="page-header">
       <div class="page-title">
         <PageTitleIcon name="dashboard" />
-        <span>仪表盘</span>
+        <span>{{ t('dashboard.title') }}</span>
       </div>
       
       <!-- 全局搜索框 -->
@@ -41,7 +43,7 @@ async function refreshDashboard() {
           <input 
             v-model="searchQuery" 
             type="text" 
-            placeholder="搜索 ID、主机名、用户、IP..." 
+            :placeholder="t('dashboard.searchPlaceholder')" 
             spellcheck="false"
             class="global-search-input"
           />
@@ -53,17 +55,17 @@ async function refreshDashboard() {
         <div class="header-stats">
           <div class="stat-item">
             <span class="stat-value">{{ agentStore.agents.length }}</span>
-            <span class="stat-label">全部 Agent</span>
+            <span class="stat-label">{{ t('dashboard.allAgents') }}</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat-item">
             <span class="stat-value online">{{ agentStore.onlineCount }}</span>
-            <span class="stat-label">在线</span>
+            <span class="stat-label">{{ t('dashboard.online') }}</span>
           </div>
           <div class="stat-divider"></div>
           <div class="stat-item">
             <span class="stat-value cascade">{{ agentStore.cascadeCount }}</span>
-            <span class="stat-label">级联</span>
+            <span class="stat-label">{{ t('dashboard.cascade') }}</span>
           </div>
         </div>
 
@@ -72,7 +74,7 @@ async function refreshDashboard() {
             class="btn btn-ghost"
             :disabled="isRefreshing"
             @click="refreshDashboard"
-            title="刷新列表"
+            :title="t('dashboard.refreshList')"
           >
             <svg :class="{ spin: isRefreshing }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
@@ -94,6 +96,7 @@ async function refreshDashboard() {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 100%;
   overflow: hidden;
 }
 
@@ -166,8 +169,9 @@ async function refreshDashboard() {
 }
 
 .table-section {
-  flex: 1;
-  margin: 0 24px;
+  flex: 1 1 auto;
+  min-height: 240px;
+  margin: 0 24px 24px;
   overflow-y: auto;
   padding: 0;
 }

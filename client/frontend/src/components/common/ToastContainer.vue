@@ -1,35 +1,52 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ToastContainer - 全局通知提示容器
  *
  * 渲染并管理页面右上角的 Toast 通知列表，支持不同类型（成功、错误、警告、信息）的提示样式。
  */
 
-import { useNotificationStore } from '../../stores/notification.js'
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { useNotificationStore } from '../../stores/notification'
+import { useEventPanelStore } from '../../stores/eventPanel'
 
 const notificationStore = useNotificationStore()
+const eventPanel = useEventPanelStore()
+const route = useRoute()
+
+const GAP = 24
+
+const offsetRight = computed(() => {
+  if (route.name === 'Login') return GAP
+  const panelWidth = eventPanel.visible
+    ? eventPanel.width + eventPanel.rightOffset
+    : eventPanel.collapsedWidth + eventPanel.rightOffset
+  return panelWidth + GAP
+})
 </script>
 
 <template>
-  <div class="toast-container">
-    <TransitionGroup name="toast">
-      <div 
-        v-for="n in notificationStore.notifications" 
-        :key="n.id" 
-        class="toast-item glass-card"
-        :class="n.type"
-      >
-        <span class="toast-icon">
-          <template v-if="n.type === 'success'">✅</template>
-          <template v-else-if="n.type === 'error'">🚨</template>
-          <template v-else-if="n.type === 'warn'">⚠️</template>
-          <template v-else>ℹ️</template>
-        </span>
-        <span class="toast-message">{{ n.message }}</span>
-        <button class="toast-close" @click="notificationStore.remove(n.id)">×</button>
-      </div>
-    </TransitionGroup>
-  </div>
+  <Teleport to="body">
+    <div class="toast-container" :style="{ right: `${offsetRight}px` }">
+      <TransitionGroup name="toast" tag="div" class="toast-list">
+        <div
+          v-for="n in notificationStore.notifications"
+          :key="n.id"
+          class="toast-item glass-card"
+          :class="n.type"
+        >
+          <span class="toast-icon">
+            <template v-if="n.type === 'success'">✅</template>
+            <template v-else-if="n.type === 'error'">🚨</template>
+            <template v-else-if="n.type === 'warn'">⚠️</template>
+            <template v-else>ℹ️</template>
+          </span>
+          <span class="toast-message">{{ n.message }}</span>
+          <button class="toast-close" @click="notificationStore.remove(n.id)">×</button>
+        </div>
+      </TransitionGroup>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -38,10 +55,14 @@ const notificationStore = useNotificationStore()
   top: 24px;
   right: 24px;
   z-index: 9999;
+  pointer-events: none;
+}
+
+.toast-list {
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 12px;
-  pointer-events: none;
 }
 
 .toast-item {

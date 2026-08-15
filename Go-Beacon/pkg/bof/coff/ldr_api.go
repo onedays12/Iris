@@ -21,8 +21,8 @@ type listEntry struct {
 
 // unicodeString 对应 Windows UNICODE_STRING 结构体
 type unicodeString struct {
-	Length        uint16 // 字符串实际长度（字节）
-	MaximumLength uint16 // buffer 最大长度（字节）
+	Length        uint16  // 字符串实际长度（字节）
+	MaximumLength uint16  // buffer 最大长度（字节）
 	Buffer        uintptr // 宽字符 buffer 地址
 }
 
@@ -38,9 +38,9 @@ type pebLdrData struct {
 	Initialized             byte
 	Reserved1               [3]byte
 	SsHandle                uintptr
-	InLoadOrderModuleList   listEntry   // 按加载顺序排列的模块链表
-	InMemoryOrderModuleList listEntry   // 按内存地址排列的模块链表
-	InInitOrderModuleList   listEntry   // 按初始化顺序排列的模块链表
+	InLoadOrderModuleList   listEntry // 按加载顺序排列的模块链表
+	InMemoryOrderModuleList listEntry // 按内存地址排列的模块链表
+	InInitOrderModuleList   listEntry // 按初始化顺序排列的模块链表
 }
 
 // ldrDataTableEntry 对应 Windows LDR_DATA_TABLE_ENTRY 结构体
@@ -48,9 +48,9 @@ type ldrDataTableEntry struct {
 	InLoadOrderLinks           listEntry
 	InMemoryOrderLinks         listEntry
 	InInitializationOrderLinks listEntry
-	DllBase                    uintptr      // DLL 加载基地址
-	EntryPoint                 uintptr      // DLL 入口点
-	SizeOfImage                uint32       // 映像大小
+	DllBase                    uintptr       // DLL 加载基地址
+	EntryPoint                 uintptr       // DLL 入口点
+	SizeOfImage                uint32        // 映像大小
 	FullDllName                unicodeString // 完整路径
 	BaseDllName                unicodeString // 基本文件名
 }
@@ -63,10 +63,12 @@ type ldrAPITable struct {
 	HeapFree                          uintptr
 	MultiByteToWideChar               uintptr
 	RtlAddVectoredExceptionHandler    uintptr
-	RtlAddFunctionTable                uintptr
-	RtlDeleteFunctionTable             uintptr
+	RtlAddFunctionTable               uintptr
+	RtlDeleteFunctionTable            uintptr
 	RtlExitUserThread                 uintptr
 	RtlRemoveVectoredExceptionHandler uintptr
+	GetCurrentThreadId                uintptr
+	GetThreadId                       uintptr
 	VirtualAlloc                      uintptr
 	VirtualFree                       uintptr
 	VirtualProtect                    uintptr
@@ -79,7 +81,7 @@ type ldrAPITable struct {
 }
 
 var (
-	ldrLoadDLLAddr uintptr       // LdrLoadDll 地址（按需加载 DLL 用）
+	ldrLoadDLLAddr uintptr            // LdrLoadDll 地址（按需加载 DLL 用）
 	ldrAPI         = mustInitLdrAPI() // 初始化时填充所有 API 地址
 )
 
@@ -94,15 +96,15 @@ func mustInitLdrAPI() ldrAPITable {
 	ldrLoadDLLAddr = mustExport(ntdll, "LdrLoadDll")
 	api := ldrAPITable{
 		// kernel32.dll 导出
-		CloseHandle:                       mustExport(kernel32, "CloseHandle"),
-		GetProcessHeap:                    mustExport(kernel32, "GetProcessHeap"),
-		HeapAlloc:                         mustExport(kernel32, "HeapAlloc"),
-		HeapFree:                          mustExport(kernel32, "HeapFree"),
-		MultiByteToWideChar:               mustExport(kernel32, "MultiByteToWideChar"),
-		VirtualAlloc:                      mustExport(kernel32, "VirtualAlloc"),
-		VirtualFree:                       mustExport(kernel32, "VirtualFree"),
-		VirtualProtect:                    mustExport(kernel32, "VirtualProtect"),
-		LdrLoadDll:                        ldrLoadDLLAddr,
+		CloseHandle:         mustExport(kernel32, "CloseHandle"),
+		GetProcessHeap:      mustExport(kernel32, "GetProcessHeap"),
+		HeapAlloc:           mustExport(kernel32, "HeapAlloc"),
+		HeapFree:            mustExport(kernel32, "HeapFree"),
+		MultiByteToWideChar: mustExport(kernel32, "MultiByteToWideChar"),
+		VirtualAlloc:        mustExport(kernel32, "VirtualAlloc"),
+		VirtualFree:         mustExport(kernel32, "VirtualFree"),
+		VirtualProtect:      mustExport(kernel32, "VirtualProtect"),
+		LdrLoadDll:          ldrLoadDLLAddr,
 		// ntdll.dll 导出
 		NtCreateThreadEx:                  mustExport(ntdll, "NtCreateThreadEx"),
 		NtGetContextThread:                mustExport(ntdll, "NtGetContextThread"),
@@ -110,10 +112,12 @@ func mustInitLdrAPI() ldrAPITable {
 		NtSetContextThread:                mustExport(ntdll, "NtSetContextThread"),
 		NtWaitForSingleObject:             mustExport(ntdll, "NtWaitForSingleObject"),
 		RtlAddVectoredExceptionHandler:    mustExport(ntdll, "RtlAddVectoredExceptionHandler"),
-		RtlAddFunctionTable:                mustExport(ntdll, "RtlAddFunctionTable"),
-		RtlDeleteFunctionTable:             mustExport(ntdll, "RtlDeleteFunctionTable"),
+		RtlAddFunctionTable:               mustExport(ntdll, "RtlAddFunctionTable"),
+		RtlDeleteFunctionTable:            mustExport(ntdll, "RtlDeleteFunctionTable"),
 		RtlExitUserThread:                 mustExport(ntdll, "RtlExitUserThread"),
 		RtlRemoveVectoredExceptionHandler: mustExport(ntdll, "RtlRemoveVectoredExceptionHandler"),
+		GetCurrentThreadId:                mustExport(kernel32, "GetCurrentThreadId"),
+		GetThreadId:                       mustExport(kernel32, "GetThreadId"),
 	}
 	return api
 }

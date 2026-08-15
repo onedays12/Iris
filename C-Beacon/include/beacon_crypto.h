@@ -2,6 +2,10 @@
 
 #include "beacon_common.h"
 
+#ifdef BEACON_TEST
+#include <bcrypt.h>
+#endif
+
 /* 会话密钥种子长度（经 HKDF-like expand 派生为 32 字节后用于 AES-256-GCM） */
 #define BEACON_SESSION_KEY_SIZE 16u
 
@@ -9,7 +13,16 @@
 INT CryptoRandom(VOID* out, SIZE_T len);
 
 /* 生成密码学安全随机 uint32 */
-UINT32 CryptoRandomU32(VOID);
+BOOL CryptoRandomU32(UINT32* out);
+
+#ifdef BEACON_TEST
+VOID CryptoTestSetRandomProvider(NTSTATUS (WINAPI *provider)(BCRYPT_ALG_HANDLE, PUCHAR, ULONG, ULONG));
+VOID CryptoTestResetRandomProvider(VOID);
+INT CryptoTestEncryptTask(const BYTE8* session_key, SIZE_T session_key_len,
+                          const ByteBuf* plain, ByteBuf* out);
+INT CryptoTestDecryptResult(const BYTE8* session_key, SIZE_T session_key_len,
+                            const ByteBuf* env, ByteBuf* out);
+#endif
 
 /* 计算文件 SHA-256 摘要，可选输出文件大小 */
 INT CryptoSha256File(const WCHAR* path, ByteBuf* digest, UINT64* size_out);

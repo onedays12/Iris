@@ -1,40 +1,41 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build:dev": "vite build --minify false --mode development",
     "build": "vite build --mode production",
-    "check:command-args": "node scripts/check-command-args.mjs",
-    "check:command-results": "node scripts/check-command-results.mjs",
     "preview": "vite preview",
-    "check:event-payload": "node tests/check-event-payload.mjs",
-    "check:ws-event-router": "node tests/check-ws-event-router.mjs",
-    "check:agent-status": "node tests/check-agent-status.mjs",
-    "check:file-transfer": "node tests/check-file-transfer.mjs",
-    "check:all": "npm run check:command-args && npm run check:command-results && npm run check:event-payload && npm run check:ws-event-router && npm run check:agent-status && npm run check:file-transfer",
+    "check:i18n-keys": "node scripts/check-i18n-keys.mjs",
+    "check:all": "npm run check:i18n-keys",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.vitest.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "e2e:smoke": "node scripts/e2e-smoke.mjs"
   },
   "dependencies": {
     "@wailsio/runtime": "3.0.0-alpha.79",
     "pinia": "3.0.4",
     "vue": "3.5.32",
+    "vue-i18n": "^11.4.8",
     "vue-router": "4.6.4"
   },
   "devDependencies": {
+    "@types/node": "^26.2.0",
     "@vitejs/plugin-vue": "4.6.2",
     "@vue/test-utils": "~2.4.5",
     "jsdom": "~24.1.0",
+    "typescript": "~5.7.3",
     "vite": "5.4.21",
-    "vitest": "~1.6.1"
+    "vitest": "~1.6.1",
+    "vue-tsc": "~2.2.12"
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "0.21.5",
-    "@rollup/rollup-linux-x64-gnu": "4.60.1",
     "@rollup/rollup-darwin-arm64": "4.60.1",
+    "@rollup/rollup-linux-x64-gnu": "4.60.1",
     "@rollup/rollup-win32-x64-msvc": "4.60.1"
   }
 }

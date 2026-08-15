@@ -924,7 +924,8 @@ html[data-ui-theme="dark"] .btn-small,
 html[data-ui-theme="dark"] .modal-close-btn,
 html[data-ui-theme="dark"] .close-btn,
 html[data-ui-theme="dark"] .logout-btn,
-html[data-ui-theme="dark"] .theme-btn {
+html[data-ui-theme="dark"] .theme-btn,
+html[data-ui-theme="dark"] .github-btn {
   background: rgba(15, 23, 42, 0.62);
   border-color: var(--border-light);
   color: var(--text-secondary);

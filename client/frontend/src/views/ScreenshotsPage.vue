@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ScreenshotsPage - 截图管理页面
  * 展示所有 Beacon 的截图列表，支持按 Agent 过滤、
@@ -6,19 +6,22 @@
  */
 
 import { computed, onMounted, ref, watch } from 'vue'
-import { Dialogs } from '@wailsio/runtime'
-import * as FileService from '../../bindings/irisclient/service/fileservice.js'
+import { useI18n } from 'vue-i18n'
+import * as FileService from '../../bindings/irisclient/service/fileservice'
 import {
   deleteScreenshot as deleteScreenshotApi,
   downloadScreenshotBase64,
   requestScreenshot as requestScreenshotApi,
-} from '../features/screenshots/api/screenshotApi.js'
-import { useAgentStore } from '../stores/agent.js'
-import { useModalStore } from '../stores/modal.js'
-import { useNotificationStore } from '../stores/notification.js'
-import { useScreenshotStore } from '../stores/screenshot.js'
+} from '../features/screenshots/api/screenshotApi'
+import { useAgentStore } from '../stores/agent'
+import { useModalStore } from '../stores/modal'
+import { useNotificationStore } from '../stores/notification'
+import { useScreenshotStore } from '../stores/screenshot'
+import type { Screenshot } from '../features/screenshots/model'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
+import { openSaveFileDialog } from '../utils/saveFileDialog'
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const modalStore = useModalStore()
 const notificationStore = useNotificationStore()
@@ -31,7 +34,7 @@ const requestLoading = ref(false)
 const savingShotId = ref('')
 const deletingShotId = ref('')
 
-const preview = ref({
+const preview = ref<{ visible: boolean; loading: boolean; shot: Screenshot | null; src: string }>({
   visible: false,
   loading: false,
   shot: null,
@@ -61,12 +64,12 @@ watch(availableAgents, (agents) => {
   }
 }, { immediate: true })
 
-function shortId(value) {
+function shortId(value: string | undefined) {
   if (!value) return '-'
   return String(value).substring(0, 8)
 }
 
-function formatSize(bytes) {
+function formatSize(bytes: number) {
   const value = Number(bytes || 0)
   if (value === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -74,13 +77,11 @@ function formatSize(bytes) {
   return `${(value / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`
 }
 
-function formatTime(value) {
+function formatTime(value: number | undefined) {
   if (!value) return '-'
-  const numeric = Number(value)
-  const date = Number.isFinite(numeric)
-    ? new Date(numeric < 1e12 ? numeric * 1000 : numeric)
-    : new Date(value)
-  return date.toLocaleString('zh-CN', {
+  // 契约: captured_at 为 unix 秒
+  const date = new Date(Number(value) * 1000)
+  return date.toLocaleString(locale.value, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -100,25 +101,25 @@ async function refreshScreenshots() {
 
 async function requestScreenshot() {
   if (!selectedBeaconId.value) {
-    notificationStore.warn('请先选择 Beacon')
+    notificationStore.warn(t('screenshots.selectBeaconWarning'))
     return
   }
 
   const monitor = monitorId.value
   const shotQuality = quality.value
   if (!Number.isInteger(monitor) || monitor < 0) {
-    notificationStore.warn('monitor_id 必须是非负整数')
+    notificationStore.warn(t('screenshots.monitorIdError'))
     return
   }
   if (!Number.isInteger(shotQuality) || shotQuality < 1 || shotQuality > 100) {
-    notificationStore.warn('quality 需要在 1 到 100 之间')
+    notificationStore.warn(t('screenshots.qualityError'))
     return
   }
 
   requestLoading.value = true
   try {
     await requestScreenshotApi(selectedBeaconId.value, monitor, shotQuality)
-    notificationStore.success('截图任务已下发，等待任务回传')
+    notificationStore.success(t('screenshots.requestSuccess'))
   } catch (err) {
     console.error('[ScreenshotsPage] 下发截图任务失败:', err)
   } finally {
@@ -126,7 +127,7 @@ async function requestScreenshot() {
   }
 }
 
-async function openPreview(shot) {
+async function openPreview(shot: Screenshot) {
   preview.value = {
     visible: true,
     loading: true,
@@ -141,7 +142,7 @@ async function openPreview(shot) {
     })
     preview.value.src = `data:image/jpeg;base64,${base64}`
   } catch (err) {
-    notificationStore.error(err.message || '加载截图预览失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('screenshots.previewLoadError'))
     closePreview()
   } finally {
     preview.value.loading = false
@@ -157,11 +158,11 @@ function closePreview() {
   }
 }
 
-async function saveScreenshot(shot) {
+async function saveScreenshot(shot: Screenshot | null) {
   if (!shot?.screenshotId && !shot?.downloadUrl) return
 
-  const savePath = await Dialogs.SaveFile({
-    Title: '保存截图',
+  const savePath = await openSaveFileDialog({
+    Title: t('screenshots.saveDialogTitle'),
     Filename: shot.fileName || 'screenshot.jpg',
   })
   if (!savePath) return
@@ -174,20 +175,20 @@ async function saveScreenshot(shot) {
       downloadUrl: shot.downloadUrl,
     })
     await FileService.WriteBinaryFile(savePath, base64Data)
-    notificationStore.success(`已保存: ${shot.fileName || 'screenshot.jpg'}`)
+    notificationStore.success(t('screenshots.saveSuccess', { name: shot.fileName || 'screenshot.jpg' }))
   } catch (err) {
-    notificationStore.error(`保存截图失败: ${err.message || err}`)
+    notificationStore.error(t('screenshots.saveError', { error: err instanceof Error ? err.message : String(err) }))
   } finally {
     savingShotId.value = ''
   }
 }
 
-async function deleteScreenshot(shot) {
+async function deleteScreenshot(shot: Screenshot | null) {
   if (!shot?.screenshotId) return
 
   const confirmed = await modalStore.showConfirm({
-    title: '删除截图',
-    message: `确定要删除截图 ${shot.fileName || shot.screenshotId} 吗？`,
+    title: t('screenshots.deleteConfirmTitle'),
+    message: t('screenshots.deleteConfirmMessage', { name: shot.fileName || shot.screenshotId }),
     type: 'danger',
   })
   if (!confirmed) return
@@ -199,9 +200,9 @@ async function deleteScreenshot(shot) {
     if (preview.value.visible && preview.value.shot?.screenshotId === shot.screenshotId) {
       closePreview()
     }
-    notificationStore.success(`已删除: ${shot.fileName || shot.screenshotId}`)
+    notificationStore.success(t('screenshots.deleteSuccess', { name: shot.fileName || shot.screenshotId }))
   } catch (err) {
-    notificationStore.error(`删除截图失败: ${err.message || err}`)
+    notificationStore.error(t('screenshots.deleteError', { error: err instanceof Error ? err.message : String(err) }))
   } finally {
     deletingShotId.value = ''
   }
@@ -216,16 +217,16 @@ onMounted(refreshScreenshots)
       <div class="header-left">
         <h1 class="page-title">
           <PageTitleIcon name="screenshots" />
-          屏幕截图
+          {{ t('screenshots.title') }}
         </h1>
-        <p class="page-subtitle">查看已保存的截图，并向指定 Beacon 下发新的截图任务</p>
+        <p class="page-subtitle">{{ t('screenshots.subtitle') }}</p>
       </div>
 
       <div class="header-actions">
         <div class="control-group">
-          <label>Beacon</label>
+          <label>{{ t('screenshots.beaconLabel') }}</label>
           <select v-model="selectedBeaconId" class="form-control select-control">
-            <option value="" disabled>请选择 Beacon</option>
+            <option value="" disabled>{{ t('screenshots.selectBeacon') }}</option>
             <option v-for="agent in availableAgents" :key="agent.beaconid" :value="agent.beaconid">
               {{ agent.hostname || 'Unknown' }} · {{ shortId(agent.beaconid) }}
             </option>
@@ -233,23 +234,23 @@ onMounted(refreshScreenshots)
         </div>
 
         <div class="control-group small">
-          <label>Monitor</label>
+          <label>{{ t('screenshots.monitorLabel') }}</label>
           <input v-model.number="monitorId" type="number" min="0" step="1" class="form-control number-control" />
         </div>
 
         <div class="control-group small">
-          <label>Quality</label>
+          <label>{{ t('screenshots.qualityLabel') }}</label>
           <input v-model.number="quality" type="number" min="1" max="100" step="1" class="form-control number-control" />
         </div>
 
         <button class="btn btn-primary" :disabled="requestLoading || !selectedBeaconId" @click="requestScreenshot">
           <span class="icon">📸</span>
-          {{ requestLoading ? '下发中...' : '下发截图' }}
+          {{ requestLoading ? t('screenshots.requesting') : t('screenshots.request') }}
         </button>
 
         <button class="btn btn-secondary" :disabled="loading" @click="refreshScreenshots">
           <span class="icon">↻</span>
-          {{ loading ? '刷新中...' : '刷新列表' }}
+          {{ loading ? t('screenshots.refreshing') : t('screenshots.refresh') }}
         </button>
       </div>
     </header>
@@ -260,20 +261,20 @@ onMounted(refreshScreenshots)
       </div>
 
       <div v-if="loading && screenshots.length === 0" class="state-line">
-        正在读取截图列表...
+        {{ t('screenshots.loadingList') }}
       </div>
 
       <div v-else class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
-              <th>捕获时间</th>
+              <th>{{ t('screenshots.captureTime') }}</th>
               <th>Beacon</th>
-              <th>主机名</th>
-              <th>用户</th>
-              <th>分辨率</th>
-              <th>大小</th>
-              <th class="actions-col">操作</th>
+              <th>{{ t('screenshots.hostname') }}</th>
+              <th>{{ t('screenshots.user') }}</th>
+              <th>{{ t('screenshots.resolution') }}</th>
+              <th>{{ t('screenshots.size') }}</th>
+              <th class="actions-col">{{ t('screenshots.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -287,26 +288,26 @@ onMounted(refreshScreenshots)
               </td>
               <td class="cell-size">{{ formatSize(shot.imageSize) }}</td>
               <td class="actions-col">
-                <button class="action-btn" @click="openPreview(shot)">预览</button>
+                <button class="action-btn" @click="openPreview(shot)">{{ t('screenshots.preview') }}</button>
                 <button
                   class="action-btn"
                   :disabled="savingShotId === (shot.screenshotId || shot.downloadUrl)"
                   @click="saveScreenshot(shot)"
                 >
-                  {{ savingShotId === (shot.screenshotId || shot.downloadUrl) ? '保存中...' : '下载' }}
+                  {{ savingShotId === (shot.screenshotId || shot.downloadUrl) ? t('screenshots.saving') : t('screenshots.download') }}
                 </button>
                 <button
                   class="action-btn action-btn-danger"
                   :disabled="deletingShotId === shot.screenshotId"
                   @click="deleteScreenshot(shot)"
                 >
-                  {{ deletingShotId === shot.screenshotId ? '删除中...' : '删除' }}
+                  {{ deletingShotId === shot.screenshotId ? t('screenshots.deleting') : t('screenshots.delete') }}
                 </button>
               </td>
             </tr>
 
             <tr v-if="screenshots.length === 0 && !loading">
-              <td colspan="7" class="empty-cell">TeamServer 暂无截图记录</td>
+              <td colspan="7" class="empty-cell">{{ t('screenshots.empty') }}</td>
             </tr>
           </tbody>
         </table>
@@ -320,7 +321,7 @@ onMounted(refreshScreenshots)
             <div class="preview-title">
               <span class="icon">🖼️</span>
               <div class="preview-meta">
-                <h3>{{ preview.shot?.fileName || '截图预览' }}</h3>
+                <h3>{{ preview.shot?.fileName || t('screenshots.previewTitle') }}</h3>
                 <span>
                   {{ preview.shot?.hostname || '-' }} · {{ shortId(preview.shot?.beaconId) }} ·
                   {{ formatTime(preview.shot?.capturedAt) }}
@@ -331,22 +332,22 @@ onMounted(refreshScreenshots)
           </header>
 
           <div class="preview-body">
-            <div v-if="preview.loading" class="preview-state">正在加载截图预览...</div>
+            <div v-if="preview.loading" class="preview-state">{{ t('screenshots.loadingPreview') }}</div>
             <img v-else-if="preview.src" :src="preview.src" class="preview-image" :alt="preview.shot?.fileName || 'screenshot'" />
-            <div v-else class="preview-state">暂无预览内容</div>
+            <div v-else class="preview-state">{{ t('screenshots.noPreview') }}</div>
           </div>
 
           <footer class="preview-footer">
-            <button class="btn btn-secondary" @click="closePreview">关闭</button>
+            <button class="btn btn-secondary" @click="closePreview">{{ t('screenshots.close') }}</button>
             <button
               class="btn btn-danger"
               :disabled="!preview.shot || deletingShotId === preview.shot?.screenshotId"
               @click="deleteScreenshot(preview.shot)"
             >
-              {{ deletingShotId === preview.shot?.screenshotId ? '删除中...' : '删除截图' }}
+              {{ deletingShotId === preview.shot?.screenshotId ? t('screenshots.deleting') : t('screenshots.deleteScreenshot') }}
             </button>
             <button class="btn btn-primary" :disabled="!preview.shot" @click="saveScreenshot(preview.shot)">
-              下载到本地
+              {{ t('screenshots.downloadLocal') }}
             </button>
           </footer>
         </div>

@@ -45,8 +45,10 @@ DWORD SleepCalculateWithJitter(const Profile* profile)
     if (jitter > 100) jitter = 100;
 
     if (jitter > 0) {
-        UINT32 r = CryptoRandomU32() % (UINT32)(jitter + 1);
-        sleep_ms += (INT)(((INT64)r * sleep_ms) / 100);
+        UINT32 r;
+        if (CryptoRandomU32(&r)) {
+            sleep_ms += (INT)(((INT64)(r % (UINT32)(jitter + 1)) * sleep_ms) / 100);
+        }
     }
 
     return sleep_ms > 0 ? (DWORD)sleep_ms : 0;

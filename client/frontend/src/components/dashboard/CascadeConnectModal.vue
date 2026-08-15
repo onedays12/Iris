@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * CascadeConnectModal - 级联连接配置弹窗
  *
@@ -6,11 +6,13 @@
  */
 
 import { ref, watch, computed } from 'vue'
-import { sendCascadeConnectCommand } from '../../features/beacon/actions/beaconCommandActions.js'
-import { useConsoleStore } from '../../stores/console.js'
-import { useModalStore } from '../../stores/modal.js'
-import { useNotificationStore } from '../../stores/notification.js'
+import { useI18n } from 'vue-i18n'
+import { sendCascadeConnectCommand } from '../../features/beacon/actions/beaconCommandActions'
+import { useConsoleStore } from '../../stores/console'
+import { useModalStore } from '../../stores/modal'
+import { useNotificationStore } from '../../stores/notification'
 
+const { t } = useI18n()
 const modalStore = useModalStore()
 const consoleStore = useConsoleStore()
 const notificationStore = useNotificationStore()
@@ -26,7 +28,7 @@ const pipeName = ref('')
 
 const isSubmitting = ref(false)
 
-const title = computed(() => mode.value === 'tcp' ? 'Connect TCP Child' : 'Link SMB Child')
+const title = computed(() => mode.value === 'tcp' ? t('cascadeConnect.tcpTitle') : t('cascadeConnect.smbTitle'))
 
 watch(visible, (newVal) => {
   if (newVal) {
@@ -41,16 +43,16 @@ watch(visible, (newVal) => {
 async function handleSubmit() {
   if (mode.value === 'tcp') {
     if (!host.value.trim()) {
-      notificationStore.warn('请输入目标主机地址')
+      notificationStore.warn(t('cascadeConnect.targetHostRequired'))
       return
     }
     if (!port.value || port.value < 1 || port.value > 65535) {
-      notificationStore.warn('端口范围必须在 1-65535 之间')
+      notificationStore.warn(t('cascadeConnect.portRange'))
       return
     }
   } else {
     if (!pipeName.value.trim()) {
-      notificationStore.warn('请输入 Pipe 名称')
+      notificationStore.warn(t('cascadeConnect.pipeNameRequired'))
       return
     }
   }
@@ -68,16 +70,16 @@ async function handleSubmit() {
       : `link ${childId.value} ${pipeName.value}`
 
     consoleStore.appendToConsole(beaconid.value, 'input', displayCommand)
-    consoleStore.appendToConsole(beaconid.value, 'output', '正在下发级联连接指令...')
+    consoleStore.appendToConsole(beaconid.value, 'output', t('cascadeConnect.sendingCommand'))
 
     await sendCascadeConnectCommand(beaconid.value, mode.value, args)
 
-    consoleStore.appendToConsole(beaconid.value, 'output', '级联连接指令已下发。')
-    notificationStore.success(`指令已下发: ${displayCommand}`)
+    consoleStore.appendToConsole(beaconid.value, 'output', t('cascadeConnect.commandSentConsole'))
+    notificationStore.success(t('cascadeConnect.commandSent', { command: displayCommand }))
     modalStore.closeCascadeConnectModal()
   } catch (err) {
-    const message = err?.message || '下发级联连接指令失败'
-    consoleStore.appendToConsole(beaconid.value, 'error', `级联连接失败: ${message}`)
+    const message = (err instanceof Error ? err.message : String(err)) || t('cascadeConnect.commandFailed')
+    consoleStore.appendToConsole(beaconid.value, 'error', t('cascadeConnect.connectionFailed', { message }))
     notificationStore.error(message)
     console.error('[CascadeConnectModal] Failed:', err)
   } finally {
@@ -105,37 +107,37 @@ function close() {
         <form @submit.prevent="handleSubmit" class="modal-body">
           <p class="description">
             {{ mode === 'tcp'
-              ? '通过 TCP 连接到子 Beacon，建立级联拓扑。'
-              : '通过 SMB 管道连接到子 Beacon，建立级联拓扑。'
+              ? t('cascadeConnect.tcpDescription')
+              : t('cascadeConnect.smbDescription')
             }}
           </p>
 
           <div class="input-group">
-            <label>Child ID <span class="optional">(可选)</span></label>
+            <label>Child ID <span class="optional">({{ t('cascadeConnect.optional') }})</span></label>
             <input
               type="text"
               v-model="childId"
-              placeholder="留空则由服务端自动分配"
+              :placeholder="t('cascadeConnect.childIdPlaceholder')"
               class="form-input"
             />
           </div>
 
           <template v-if="mode === 'tcp'">
             <div class="input-group">
-              <label>目标主机 (Host)</label>
+              <label>{{ t('cascadeConnect.targetHostLabel') }}</label>
               <input
                 type="text"
                 v-model="host"
-                placeholder="例如: 192.168.1.100"
+                :placeholder="t('cascadeConnect.hostPlaceholder')"
                 class="form-input"
               />
             </div>
             <div class="input-group">
-              <label>端口 (Port)</label>
+              <label>{{ t('cascadeConnect.portLabel') }}</label>
               <input
                 type="number"
                 v-model.number="port"
-                placeholder="例如: 4444"
+                :placeholder="t('cascadeConnect.portPlaceholder')"
                 min="1"
                 max="65535"
                 class="form-input"
@@ -145,20 +147,20 @@ function close() {
 
           <template v-else>
             <div class="input-group">
-              <label>Pipe 名称</label>
+              <label>{{ t('cascadeConnect.pipeLabel') }}</label>
               <input
                 type="text"
                 v-model="pipeName"
-                placeholder="例如: \\.\pipe\beacon_internal"
+                :placeholder="t('cascadeConnect.pipePlaceholder')"
                 class="form-input"
               />
             </div>
           </template>
 
           <footer class="modal-actions">
-            <button type="button" class="btn-cancel" @click="close">取消</button>
+            <button type="button" class="btn-cancel" @click="close">{{ t('cascadeConnect.cancel') }}</button>
             <button type="submit" class="btn-confirm" :disabled="isSubmitting">
-              <span v-if="!isSubmitting">下发指令</span>
+              <span v-if="!isSubmitting">{{ t('cascadeConnect.sendCommand') }}</span>
               <div v-else class="loader sm"></div>
             </button>
           </footer>

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * BeaconContextMenu - Beacon 右键上下文菜单
  *
@@ -6,7 +6,9 @@
  */
 
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useBeaconActions } from '../../features/beacon/actions/useBeaconActions.js'
+import { useI18n } from 'vue-i18n'
+import { useBeaconActions } from '../../features/beacon/actions/useBeaconActions'
+import type { BeaconMenuItem } from '../../features/beacon/actions/beaconActionDefinitions'
 
 const props = defineProps({
   x: { type: Number, required: true },
@@ -15,14 +17,15 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
+const { t } = useI18n()
 const { getBeaconMenuItems, runBeaconAction } = useBeaconActions()
 
-const menuRef = ref(null)
+const menuRef = ref<HTMLElement | null>(null)
 const adjustedX = ref(props.x)
 const adjustedY = ref(props.y)
 const menuItems = computed(() => getBeaconMenuItems(props.beaconid))
 
-async function handleAction(item) {
+async function handleAction(item: BeaconMenuItem) {
   if (item?.disabled) return
   emit('close')
   await runBeaconAction(props.beaconid, item)
@@ -32,7 +35,7 @@ function handleClickOutside() {
   emit('close')
 }
 
-function handleContextMenuOutside(e) {
+function handleContextMenuOutside(e: MouseEvent) {
   e.preventDefault()
   emit('close')
 }
@@ -81,21 +84,21 @@ onUnmounted(() => {
         <div v-else-if="item.type === 'group'" class="menu-group">
           <div class="menu-item menu-parent">
             <span class="menu-icon">{{ item.icon }}</span>
-            <span class="menu-label">{{ item.label }}</span>
+            <span class="menu-label">{{ t(item.labelKey || item.label || '') }}</span>
             <span class="submenu-arrow">›</span>
           </div>
 
           <div class="submenu">
             <div
               v-for="(child, childIdx) in item.children"
-              :key="`${item.label}-${childIdx}`"
+              :key="`${item.labelKey || item.label}-${childIdx}`"
               class="menu-item submenu-item"
               :class="{ disabled: child.disabled }"
-              :title="child.disabledReason || child.label"
+              :title="child.disabledReasonKey ? t(child.disabledReasonKey) : child.disabledReason || child.label"
               @click="handleAction(child)"
             >
               <span class="menu-icon">{{ child.icon }}</span>
-              <span class="submenu-label">{{ child.label }}</span>
+              <span class="submenu-label">{{ t(child.labelKey || child.label || '') }}</span>
             </div>
           </div>
         </div>
@@ -104,11 +107,11 @@ onUnmounted(() => {
           v-else
           class="menu-item"
           :class="{ danger: item.danger, disabled: item.disabled }"
-          :title="item.disabledReason || item.label"
+          :title="item.disabledReasonKey ? t(item.disabledReasonKey) : item.disabledReason || item.label"
           @click="handleAction(item)"
         >
           <span class="menu-icon">{{ item.icon }}</span>
-          <span>{{ item.label }}</span>
+          <span>{{ t(item.labelKey || item.label || '') }}</span>
         </div>
       </template>
     </div>

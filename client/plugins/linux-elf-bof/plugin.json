@@ -1,53 +1,60 @@
 {
+  "schema_version": 2,
   "name": "linux-elf-bof",
-  "display_name": "Linux ELF BOF",
-  "version": "1.0.0",
-  "description": "Linux amd64 ELF BOF 插件",
+  "display_name": { "zh": "Linux ELF BOF", "en": "Linux ELF BOF" },
+  "version": "2.0.0",
+  "description": {
+    "zh": "Linux amd64 ELF BOF 插件",
+    "en": "Linux amd64 ELF BOF plugin"
+  },
+  "capabilities": { "command_ids": [70] },
+  "hashes": {
+    "bin/global_common_nocommon.o": "9c2a13d2d665d31dc0a4bceb63b72c9a849e17a976c11db1f08fc9e76f96e662",
+    "bin/global_common.o": "9c2a13d2d665d31dc0a4bceb63b72c9a849e17a976c11db1f08fc9e76f96e662",
+    "bin/hello.o": "2a81caf7e60334413619cb62b29f87b50febe31cd0e3f9b4a468d8505f870958",
+    "bin/loader_stress.o": "214af7ddce61f072b5915ef90b038db230bf647b6a1b0393b017efae17cd497f",
+    "bin/sleep_loop.o": "3307b343799e2774be3cc1fa29ef4d7393a5880ee91bf9a435a74567e2220b0a"
+  },
   "actions": [
     {
       "id": "hello",
-      "label": "Hello",
-      "description": "执行 hello.o，基础功能测试",
+      "label": { "zh": "Hello", "en": "Hello" },
+      "description": { "zh": "执行 hello.o，基础功能测试", "en": "Run hello.o for basic functionality testing" },
       "os": ["linux"],
       "arch": ["amd64"],
-      "artifact": "bin/hello.o",
-      "requires_input": false
+      "artifact": "bin/hello.o"
     },
     {
       "id": "global_common",
-      "label": "Global Common",
-      "description": "执行 global_common.o，全局符号测试",
+      "label": { "zh": "Global Common", "en": "Global Common" },
+      "description": { "zh": "执行 global_common.o，全局符号测试", "en": "Run global_common.o for global symbol testing" },
       "os": ["linux"],
       "arch": ["amd64"],
-      "artifact": "bin/global_common.o",
-      "requires_input": false
+      "artifact": "bin/global_common.o"
     },
     {
       "id": "global_common_nocommon",
-      "label": "Global Common (No Common)",
-      "description": "执行 global_common_nocommon.o，全局符号无 common 段测试",
+      "label": { "zh": "Global Common (No Common)", "en": "Global Common (No Common)" },
+      "description": { "zh": "执行 global_common_nocommon.o，全局符号无 common 段测试", "en": "Run global_common_nocommon.o for global symbols without common section" },
       "os": ["linux"],
       "arch": ["amd64"],
-      "artifact": "bin/global_common_nocommon.o",
-      "requires_input": false
+      "artifact": "bin/global_common_nocommon.o"
     },
     {
       "id": "sleep_loop",
-      "label": "Sleep Loop",
-      "description": "执行 sleep_loop.o，循环休眠测试",
+      "label": { "zh": "Sleep Loop", "en": "Sleep Loop" },
+      "description": { "zh": "执行 sleep_loop.o，循环休眠测试", "en": "Run sleep_loop.o for looped sleep testing" },
       "os": ["linux"],
       "arch": ["amd64"],
-      "artifact": "bin/sleep_loop.o",
-      "requires_input": false
+      "artifact": "bin/sleep_loop.o"
     },
     {
       "id": "loader_stress",
-      "label": "Loader Stress 参数解析",
-      "description": "执行 loader_stress.o，参数解析压测（int32/short/string）",
+      "label": { "zh": "Loader Stress 参数解析", "en": "Loader Stress Argument Parsing" },
+      "description": { "zh": "执行 loader_stress.o，参数解析压测（int32/short/string）", "en": "Run loader_stress.o for argument parsing stress (int32/short/string)" },
       "os": ["linux"],
       "arch": ["amd64"],
       "artifact": "bin/loader_stress.o",
-      "requires_input": false,
       "args": [
         { "kind": "int32", "value": 1234 },
         { "kind": "short", "value": 77 },

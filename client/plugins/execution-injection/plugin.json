@@ -1,21 +1,39 @@
 {
+  "schema_version": 2,
   "name": "execution-injection",
-  "display_name": "执行与注入 (Execution & Injection)",
-  "version": "1.0.0",
-  "description": "将常用 BOF / OBJ 工件按树状动作快速暴露给 Beacon 右键菜单",
+  "display_name": { "zh": "执行与注入", "en": "Execution & Injection" },
+  "version": "2.0.0",
+  "description": {
+    "zh": "将常用 BOF / OBJ 工件按树状动作快速暴露给 Beacon 右键菜单",
+    "en": "Expose common BOF/OBJ artifacts as tree actions in the beacon context menu"
+  },
+  "capabilities": { "command_ids": [70] },
+  "hashes": {
+    "bin/adduserbysamr.x64.o": "92c7d1d2febc7c63d18c1934c49fa6244c4bc5ff09e1599d39d9935c79ca0630",
+    "bin/Askcreds.x64.o": "60e99fd05fbe829e4390cbd06a75258a77b554f5e6c6bd3344e8b12ab1e72bcb",
+    "bin/com_fileop.v3.x64.o": "a3ad74b1a12a9de8b335317d3dc66da93c35fe5c9bcc6640500dfe160057cc6e",
+    "bin/com_fileop.v3.x86.o": "9c25f39be58eca5fdcdacbd2d0241c8bf81866c5f7217ca610d3cf9c955f268f",
+    "bin/com_fileop.x64.o": "a3ad74b1a12a9de8b335317d3dc66da93c35fe5c9bcc6640500dfe160057cc6e",
+    "bin/com_fileop.x86.o": "9c25f39be58eca5fdcdacbd2d0241c8bf81866c5f7217ca610d3cf9c955f268f",
+    "bin/com_task.v2.x64.o": "3a3ea009d4aae2ecc1c8c36ae22fbff0595a8b70a29f6848cc2fa4ae7b2fca4e",
+    "bin/com_task.v2.x86.o": "832854e08e0f29e1a8d4699474f0363ea0d95d7666212f9b6cb689088d5293be",
+    "bin/com_task.x64.o": "3a3ea009d4aae2ecc1c8c36ae22fbff0595a8b70a29f6848cc2fa4ae7b2fca4e",
+    "bin/com_task.x86.o": "832854e08e0f29e1a8d4699474f0363ea0d95d7666212f9b6cb689088d5293be",
+    "bin/whoami.x64.o": "4fc0f5ee6bcae10fcf6bbc2276976c5bbb67b553369549425c6ef0f0d1e7357f"
+  },
   "actions": [
     {
       "id": "adduserbysamr",
-      "label": "SAMR 添加用户",
-      "description": "通过 SAMR 创建指定用户名和密码的用户",
-      "os": ["windows"],
-      "arch": ["amd64"],
+      "label": { "zh": "SAMR 添加用户", "en": "Add User via SAMR" },
+      "description": {
+        "zh": "通过 SAMR 创建指定用户名和密码的用户",
+        "en": "Create a user with the given credentials via SAMR"
+      },
       "artifact": "bin/adduserbysamr.x64.o",
-      "requires_input": true,
       "fields": [
         {
           "name": "username",
-          "label": "用户名",
+          "label": { "zh": "用户名", "en": "Username" },
           "type": "string",
           "placeholder": "alice",
           "default": "",
@@ -23,7 +41,7 @@
         },
         {
           "name": "password",
-          "label": "密码",
+          "label": { "zh": "密码", "en": "Password" },
           "type": "string",
           "placeholder": "P@ssw0rd!",
           "default": "",
@@ -33,37 +51,40 @@
     },
     {
       "id": "askcreds",
-      "label": "Askcreds",
-      "description": "执行 Askcreds BOF，收集可用凭据",
-      "os": ["windows"],
-      "arch": ["amd64"],
-      "artifact": "bin/Askcreds.x64.o",
-      "requires_input": false
+      "label": { "zh": "Askcreds", "en": "Askcreds" },
+      "description": {
+        "zh": "执行 Askcreds BOF，收集可用凭据",
+        "en": "Run the Askcreds BOF to collect available credentials"
+      },
+      "artifact": "bin/Askcreds.x64.o"
     },
     {
       "id": "com_fileop",
-      "label": "COM 文件操作",
-      "description": "通过 COM 执行文件复制/移动，或先注册计划任务再执行文件操作",
-      "os": ["windows"],
-      "arch": ["amd64", "x86"],
+      "label": { "zh": "COM 文件操作", "en": "COM File Operations" },
+      "description": {
+        "zh": "通过 COM 执行文件复制/移动，或先注册计划任务再执行文件操作",
+        "en": "Copy/move files via COM, optionally registering a scheduled task first"
+      },
       "artifact_by_arch": {
         "amd64": "bin/com_fileop.v3.x64.o",
         "x86": "bin/com_fileop.v3.x86.o"
       },
-      "requires_input": true,
       "fields": [
         {
           "name": "op",
-          "label": "操作",
+          "label": { "zh": "操作", "en": "Operation" },
           "type": "select",
           "options": ["cp", "mv", "taskcp", "taskmv"],
           "default": "cp",
           "required": true,
-          "help": "cp=复制，mv=移动，taskcp/taskmv=先注册计划任务再执行复制/移动"
+          "help": {
+            "zh": "cp=复制，mv=移动，taskcp/taskmv=先注册计划任务再执行复制/移动",
+            "en": "cp=copy, mv=move, taskcp/taskmv=register a scheduled task first"
+          }
         },
         {
           "name": "src",
-          "label": "源路径",
+          "label": { "zh": "源路径", "en": "Source Path" },
           "type": "string",
           "placeholder": "C:\\Users\\Administrator\\Desktop\\a.txt",
           "default": "",
@@ -71,7 +92,7 @@
         },
         {
           "name": "dst",
-          "label": "目标路径",
+          "label": { "zh": "目标路径", "en": "Destination Path" },
           "type": "string",
           "placeholder": "C:\\Users\\Administrator\\Desktop\\b.txt",
           "default": "",
@@ -79,23 +100,26 @@
         },
         {
           "name": "task_name",
-          "label": "任务名",
+          "label": { "zh": "任务名", "en": "Task Name" },
           "type": "string",
           "placeholder": "ComFileOp_b.txt",
           "default": "",
           "required": false,
-          "help": "仅 taskcp/taskmv 使用；留空时 BOF 默认使用 ComFileOp_<dst文件名>"
+          "help": {
+            "zh": "仅 taskcp/taskmv 使用；留空时 BOF 默认使用 ComFileOp_<dst文件名>",
+            "en": "Used by taskcp/taskmv only; defaults to ComFileOp_<dst file name> when empty"
+          }
         }
       ]
     },
     {
       "id": "whoami",
-      "label": "Whoami",
-      "description": "获取当前 Beacon 会话的身份信息",
-      "os": ["windows"],
-      "arch": ["amd64"],
-      "artifact": "bin/whoami.x64.o",
-      "requires_input": false
+      "label": { "zh": "Whoami", "en": "Whoami" },
+      "description": {
+        "zh": "获取当前 Beacon 会话的身份信息",
+        "en": "Retrieve identity information for the current beacon session"
+      },
+      "artifact": "bin/whoami.x64.o"
     }
   ]
 }

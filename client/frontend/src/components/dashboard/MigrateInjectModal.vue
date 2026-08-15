@@ -1,11 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useAgentStore } from '../../stores/agent.js'
-import { useConsoleStore } from '../../stores/console.js'
-import { useListenerStore } from '../../stores/listener.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import { useProcessBrowserStore } from '../../stores/processBrowser.js'
-import { sendMigrateInjectCommand } from '../../features/beacon/actions/beaconCommandActions.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../../stores/agent'
+import { useConsoleStore } from '../../stores/console'
+import { useListenerStore } from '../../stores/listener'
+import { useNotificationStore } from '../../stores/notification'
+import { useProcessBrowserStore } from '../../stores/processBrowser'
+import { sendMigrateInjectCommand } from '../../features/beacon/actions/beaconCommandActions'
 import {
   getEligibleMigrateListeners,
   getMigrateBehavior,
@@ -13,7 +14,7 @@ import {
   isWindowsBeacon,
   isX86ToX64Blocked,
   normalizeMigrateArch,
-} from '../../features/beacon/migrate/migrateOptions.js'
+} from '../../features/beacon/migrate/migrateOptions'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -23,6 +24,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const consoleStore = useConsoleStore()
 const listenerStore = useListenerStore()
@@ -40,7 +42,7 @@ const eligibleListeners = computed(() => getEligibleMigrateListeners(listenerSto
 const selectedListener = computed(() => {
   return eligibleListeners.value.find(listener => listener.name === selectedListenerName.value) || null
 })
-const behaviorHint = computed(() => getMigrateBehavior(selectedListener.value))
+const behaviorHint = computed(() => getMigrateBehavior(selectedListener.value, t))
 const lastUpdated = computed(() => processStore.getLastUpdated(props.beaconid))
 const isCriticalProcess = computed(() => {
   const name = String(props.process?.name || '').trim().toLowerCase()
@@ -55,14 +57,14 @@ const isCriticalProcess = computed(() => {
 })
 
 const disabledReason = computed(() => {
-  if (!props.beaconid || !activeBeacon.value) return '未找到当前 Beacon，会话上下文不完整。'
-  if (!props.process) return '未选择目标进程。'
-  if (!isWindowsBeacon(activeBeacon.value)) return '仅 Windows Beacon 支持 Migrate Inject。'
-  if (targetPid.value <= 0) return '目标进程 PID 无效。'
-  if (!['x86', 'x64'].includes(targetArch.value)) return '目标进程架构不是 x86/x64，当前不能安全生成 migrate_inject。'
-  if (!eligibleListeners.value.length) return '没有可用的 started Windows DLL stage listener。'
-  if (!selectedListener.value) return '请选择一个可用的 listener。'
-  if (isX86ToX64Blocked(parentArch.value, targetArch.value)) return '当前 Beacon 不支持 x64 stage 注入。'
+  if (!props.beaconid || !activeBeacon.value) return t('migrateInject.errNoBeacon')
+  if (!props.process) return t('migrateInject.errNoProcess')
+  if (!isWindowsBeacon(activeBeacon.value)) return t('migrateInject.errNotWindows')
+  if (targetPid.value <= 0) return t('migrateInject.errInvalidPid')
+  if (!['x86', 'x64'].includes(targetArch.value)) return t('migrateInject.errUnsupportedArch')
+  if (!eligibleListeners.value.length) return t('migrateInject.errNoListener')
+  if (!selectedListener.value) return t('migrateInject.errSelectListener')
+  if (isX86ToX64Blocked(parentArch.value, targetArch.value)) return t('migrateInject.errX64Blocked')
   return ''
 })
 
@@ -80,12 +82,12 @@ const targetLabel = computed(() => {
   return `${beaconShort}@${host}`
 })
 
-function formatTime(value) {
-  if (!value) return '尚未同步'
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
+function formatTime(value: string | null) {
+  if (!value) return t('migrateInject.notSynced')
+  return new Date(value).toLocaleString(locale.value, { hour12: false })
 }
 
-function close(force = false) {
+function close(force: boolean | Event = false) {
   if (isSubmitting.value && !force) return
   emit('close')
 }
@@ -101,8 +103,6 @@ watch(
 
     await listenerStore.fetchListeners()
     selectedListenerName.value = eligibleListeners.value[0]?.name || ''
-    console.debug('[MigrateInject] all listeners:', listenerStore.listeners)
-    console.debug('[MigrateInject] eligible listeners:', eligibleListeners.value)
   }
 )
 
@@ -122,7 +122,7 @@ watch(
 
 async function handleSubmit() {
   if (!canSubmit.value) {
-    notificationStore.warn(disabledReason.value || '当前无法下发 Migrate Inject')
+    notificationStore.warn(disabledReason.value || t('migrateInject.cannotSubmit'))
     return
   }
 
@@ -130,21 +130,21 @@ async function handleSubmit() {
   try {
     consoleStore.openConsole(props.beaconid)
     consoleStore.appendToConsole(props.beaconid, 'input', commandPreview.value)
-    consoleStore.appendToConsole(props.beaconid, 'output', '正在下发 Migrate Inject 指令...')
+    consoleStore.appendToConsole(props.beaconid, 'output', t('migrateInject.sending'))
 
     await sendMigrateInjectCommand(
       props.beaconid,
-      selectedListener.value.name,
+      selectedListener.value!.name,
       targetArch.value,
       targetPid.value
     )
 
-    consoleStore.appendToConsole(props.beaconid, 'output', 'Migrate Inject 指令已下发。')
-    notificationStore.success(`已下发: ${commandPreview.value}`)
+    consoleStore.appendToConsole(props.beaconid, 'output', t('migrateInject.sent'))
+    notificationStore.success(t('migrateInject.sentPreview', { preview: commandPreview.value }))
     close(true)
   } catch (err) {
-    const message = err?.message || '下发 Migrate Inject 指令失败'
-    consoleStore.appendToConsole(props.beaconid, 'error', `Migrate Inject 失败: ${message}`)
+    const message = (err instanceof Error ? err.message : String(err)) || t('migrateInject.sendFailedGeneric')
+    consoleStore.appendToConsole(props.beaconid, 'error', t('migrateInject.sendFailedPreview', { message }))
     notificationStore.error(message)
   } finally {
     isSubmitting.value = false
@@ -162,7 +162,7 @@ async function handleSubmit() {
               <span class="title-icon">⇄</span>
               <div>
                 <h3>Migrate Inject</h3>
-                <p>注入新 Beacon 到此进程</p>
+                <p>{{ t('migrateInject.subtitle') }}</p>
               </div>
             </div>
             <button class="close-btn" @click="close">×</button>
@@ -172,7 +172,7 @@ async function handleSubmit() {
             <div class="section-title">Target</div>
             <div class="target-grid">
               <div class="meta-row">
-                <span class="meta-label">进程</span>
+                <span class="meta-label">{{ t('migrateInject.process') }}</span>
                 <strong>{{ process?.name || '-' }}</strong>
               </div>
               <div class="meta-row">
@@ -193,7 +193,7 @@ async function handleSubmit() {
           <section class="info-card">
             <div class="section-title">Listener</div>
             <select v-model="selectedListenerName" class="listener-select" :disabled="!eligibleListeners.length || isSubmitting">
-              <option value="" disabled>请选择可用 listener</option>
+              <option value="" disabled>{{ t('migrateInject.selectListenerPlaceholder') }}</option>
               <option v-for="listener in eligibleListeners" :key="listener.name" :value="listener.name">
                 {{ getMigrateListenerLabel(listener) }}
               </option>
@@ -211,19 +211,19 @@ async function handleSubmit() {
           </section>
 
           <section class="warning-card">
-            <div class="section-title">额外提醒</div>
-            <p>当前 Beacon：{{ targetLabel }} · {{ parentArch }}</p>
-            <p>进程列表同步时间：{{ formatTime(lastUpdated) }}，PID 可能已复用。</p>
-            <p>目标进程权限更高时，`OpenProcess` 可能失败。</p>
-            <p v-if="isCriticalProcess">目标是系统关键进程，失败风险更高。</p>
-            <p v-if="selectedListener?.listenerType === 'internal'">internal child 会挂在当前 Beacon 下，不是顶层 Beacon。</p>
+            <div class="section-title">{{ t('migrateInject.extraWarning') }}</div>
+            <p>{{ t('migrateInject.currentBeacon', { target: targetLabel, arch: parentArch }) }}</p>
+            <p>{{ t('migrateInject.syncTime', { time: formatTime(lastUpdated) }) }}</p>
+            <p>{{ t('migrateInject.openProcessRisk') }}</p>
+            <p v-if="isCriticalProcess">{{ t('migrateInject.criticalProcess') }}</p>
+            <p v-if="selectedListener?.listenerType === 'internal'">{{ t('migrateInject.internalChildHint') }}</p>
             <p v-if="disabledReason" class="danger-text">{{ disabledReason }}</p>
           </section>
 
           <footer class="modal-footer">
-            <button class="btn btn-ghost" :disabled="isSubmitting" @click="close">取消</button>
+            <button class="btn btn-ghost" :disabled="isSubmitting" @click="close">{{ t('common.cancel') }}</button>
             <button class="btn btn-primary" :disabled="!canSubmit" @click="handleSubmit">
-              {{ isSubmitting ? '下发中...' : '下发 Migrate Inject' }}
+              {{ isSubmitting ? t('migrateInject.submitting') : t('migrateInject.submit') }}
             </button>
           </footer>
         </div>

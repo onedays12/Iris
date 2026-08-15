@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TunnelDetailDialog - 隧道连接明细弹窗
  *
@@ -7,57 +7,63 @@
  */
 
 import { computed } from 'vue'
-import { formatTunnelReason } from '../../utils/tunnel.js'
+import { useI18n } from 'vue-i18n'
+import { formatTunnelReasonKey } from '../../utils/tunnel'
+import type { Tunnel, TunnelChannel } from '../../features/tunnel/model'
 import {
   formatBind,
   formatTunnelType,
   statusClass,
   statusLabel,
+  statusLabelKey,
   formatCount,
   displayCount,
   formatLatency,
   formatBytes,
-} from '../../utils/tunnelFormat.js'
+} from '../../utils/tunnelFormat'
 
-const props = defineProps({
-  visible: { type: Boolean, default: false },
-  tunnel: { type: Object, default: null },
-  channels: { type: Array, default: () => [] },
-  channelLoading: { type: Boolean, default: false },
-  channelError: { type: String, default: '' },
-  recyclableCount: { type: Number, default: 0 },
-})
+const props = defineProps<{
+  visible?: boolean
+  tunnel?: Tunnel | null
+  channels?: TunnelChannel[]
+  channelLoading?: boolean
+  channelError?: string
+  recyclableCount?: number
+}>()
 
 const emit = defineEmits(['close', 'recycle'])
 
+const { t } = useI18n()
+
 const liveChannels = computed(() =>
-  props.channels.filter(channel => ['pending', 'active'].includes(String(channel.status || '').toLowerCase()))
+  (props.channels ?? []).filter(channel => ['pending', 'active'].includes(String(channel.status || '').toLowerCase()))
 )
 
 const historyChannels = computed(() =>
-  props.channels.filter(channel => !['pending', 'active'].includes(String(channel.status || '').toLowerCase()))
+  (props.channels ?? []).filter(channel => !['pending', 'active'].includes(String(channel.status || '').toLowerCase()))
 )
 
 const channelSections = computed(() => [
   {
     key: 'live',
-    title: '活跃通道',
+    title: t('tunnelDetail.liveChannels'),
     items: liveChannels.value,
-    emptyText: '暂无活跃通道',
+    emptyText: t('tunnelDetail.noLiveChannels'),
   },
   {
     key: 'history',
-    title: '历史通道',
+    title: t('tunnelDetail.historyChannels'),
     items: historyChannels.value,
-    emptyText: '暂无历史通道',
+    emptyText: t('tunnelDetail.noHistoryChannels'),
   },
 ])
 
-function channelDisplayValue(channel) {
+function channelDisplayValue(channel: TunnelChannel) {
   const target = channel.targetAddress || [channel.remoteHost, channel.remotePort].filter(Boolean).join(':') || [channel.localHost, channel.localPort].filter(Boolean).join(':') || '-'
+  const reasonKey = formatTunnelReasonKey(channel.reason)
   return {
     target,
-    reason: formatTunnelReason(channel.reason) || '-',
+    reason: reasonKey ? t(reasonKey) : (String(channel.reason || '').trim() || '-'),
   }
 }
 </script>
@@ -69,8 +75,8 @@ function channelDisplayValue(channel) {
         <div class="modal-title">
           <span class="icon">🔗</span>
           <div>
-            <h3>Tunnel 连接</h3>
-            <span>{{ tunnel ? `${formatTunnelType(tunnel.mode || tunnel.type)} · ${formatBind(tunnel)}` : '连接明细' }}</span>
+            <h3>{{ t('tunnelDetail.title') }}</h3>
+            <span>{{ tunnel ? `${formatTunnelType(tunnel.mode || tunnel.type)} · ${formatBind(tunnel)}` : t('tunnelDetail.subtitle') }}</span>
           </div>
         </div>
         <button class="close-btn" @click="emit('close')">×</button>
@@ -79,28 +85,28 @@ function channelDisplayValue(channel) {
       <div class="detail-body">
         <div v-if="tunnel" class="metrics-grid">
           <div class="metric-card">
-            <span>活跃连接</span>
+            <span>{{ t('tunnelDetail.metricActive') }}</span>
             <strong>{{ displayCount(tunnel.activeChannels, tunnel.channelCount) }}</strong>
           </div>
           <div class="metric-card">
-            <span>队列深度</span>
+            <span>{{ t('tunnelDetail.metricQueue') }}</span>
             <strong>{{ formatCount(tunnel.queueDepth) }}</strong>
           </div>
           <div class="metric-card">
-            <span>丢弃次数</span>
+            <span>{{ t('tunnelDetail.metricDrops') }}</span>
             <strong>{{ formatCount(tunnel.dropCount) }}</strong>
           </div>
           <div class="metric-card">
-            <span>超时次数</span>
+            <span>{{ t('tunnelDetail.metricTimeouts') }}</span>
             <strong>{{ formatCount(tunnel.timeoutCount) }}</strong>
           </div>
           <div class="metric-card">
-            <span>首次响应</span>
+            <span>{{ t('tunnelDetail.metricFirstResponse') }}</span>
             <strong>{{ formatLatency(tunnel.openLatencyMs) }}</strong>
           </div>
         </div>
 
-        <div v-if="channelLoading" class="state-line">正在读取连接列表...</div>
+        <div v-if="channelLoading" class="state-line">{{ t('tunnelDetail.loading') }}</div>
         <div v-else-if="channelError" class="state-line error-state">{{ channelError }}</div>
         <div v-else class="channel-sections">
           <section v-for="section in channelSections" :key="section.key" class="channel-section">
@@ -111,12 +117,12 @@ function channelDisplayValue(channel) {
             <table class="detail-table">
               <thead>
                 <tr>
-                  <th>连接 ID</th>
-                  <th>目标</th>
-                  <th>流入</th>
-                  <th>流出</th>
-                  <th>状态</th>
-                  <th>原因</th>
+                  <th>{{ t('tunnelDetail.colChannelId') }}</th>
+                  <th>{{ t('tunnelDetail.colTarget') }}</th>
+                  <th>{{ t('tunnelDetail.colIn') }}</th>
+                  <th>{{ t('tunnelDetail.colOut') }}</th>
+                  <th>{{ t('tunnelDetail.colStatus') }}</th>
+                  <th>{{ t('tunnelDetail.colReason') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,7 +133,7 @@ function channelDisplayValue(channel) {
                   <td class="cell-size">{{ formatBytes(channel.bytesOut) }}</td>
                   <td>
                     <span class="status-tag" :class="statusClass(channel.status)">
-                      {{ statusLabel(channel.status) }}
+                      {{ statusLabelKey(channel.status) ? t(statusLabelKey(channel.status) ?? '') : statusLabel(channel.status) }}
                     </span>
                   </td>
                   <td class="cell-reason">{{ channelDisplayValue(channel).reason }}</td>
@@ -143,9 +149,9 @@ function channelDisplayValue(channel) {
 
       <footer class="modal-footer">
         <button class="btn btn-secondary" :disabled="!recyclableCount" @click="emit('recycle')">
-          回收终态 ({{ recyclableCount }})
+          {{ t('tunnelDetail.recycle', { count: recyclableCount }) }}
         </button>
-        <button class="btn btn-ghost" @click="emit('close')">关闭</button>
+        <button class="btn btn-ghost" @click="emit('close')">{{ t('common.close') }}</button>
       </footer>
     </div>
   </div>

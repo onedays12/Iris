@@ -184,6 +184,11 @@ func hydrateArtifactBase64ByArch(rootAbs string, byArch map[string]string) map[s
 	return out
 }
 
+// hydratePluginActions 为每个动作补全 PluginRoot 并预读 artifact 文件为 base64。
+//
+// 注意:本函数只负责 hydration(文件读取),不做任何字段归一化。
+// 归一化已由 normalizePluginActionFields 在 loadPlugin 中先行完成,
+// 这里再归一化一遍属于重复工作(见 loadPlugin 的 normalize → hydrate 流程)。
 func hydratePluginActions(root string, actions []PluginAction) []PluginAction {
 	if len(actions) == 0 {
 		return []PluginAction{}
@@ -198,20 +203,10 @@ func hydratePluginActions(root string, actions []PluginAction) []PluginAction {
 	for _, action := range actions {
 		cloned := action
 		cloned.PluginRoot = rootAbs
-		if strings.TrimSpace(cloned.Kind) == "" && cloned.PostEx != nil {
-			cloned.Kind = "postex"
-		} else {
-			cloned.Kind = normalizePluginActionKind(cloned.Kind)
-		}
-		cloned.ArtifactByArch = normalizeArtifactByArch(cloned.ArtifactByArch)
 		cloned.ArtifactData = hydrateArtifactBase64(rootAbs, cloned.Artifact)
 		cloned.ArtifactDataByArch = hydrateArtifactBase64ByArch(rootAbs, cloned.ArtifactByArch)
 		if cloned.PostEx != nil {
 			postex := *cloned.PostEx
-			postex.Mode = normalizePostExMode(postex.Mode)
-			postex.DLLByArch = normalizeArtifactByArch(postex.DLLByArch)
-			postex.SpawnPathByArch = normalizeStringByArch(postex.SpawnPathByArch)
-			postex.Manifest = strings.TrimSpace(postex.Manifest)
 			postex.DLLData = hydrateArtifactBase64(rootAbs, postex.DLL)
 			postex.DLLDataByArch = hydrateArtifactBase64ByArch(rootAbs, postex.DLLByArch)
 			cloned.PostEx = &postex

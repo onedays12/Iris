@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ExecuteTaskModal - BOF/Shellcode 执行弹窗
  * 配置并执行 Beacon Object File 或 Shellcode，
@@ -6,13 +6,17 @@
  */
 
 import { ref, computed, watch } from 'vue'
-import { sendExecutionBofCommand } from '../../features/beacon/actions/beaconCommandActions.js'
-import { generateShellcode } from '../../features/payload/api/payloadApi.js'
-import { useConsoleStore } from '../../stores/console.js'
-import { useNotificationStore } from '../../stores/notification.js'
-import * as FileService from '../../../bindings/irisclient/service/fileservice.js'
+import { useI18n } from 'vue-i18n'
 import { Dialogs } from '@wailsio/runtime'
+import { sendExecutionBofCommand } from '../../features/beacon/actions/beaconCommandActions'
+import { generateShellcode } from '../../features/payload/api/payloadApi'
+import type { ShellcodeGenerateRequest, ShellcodeGenerateResult } from '../../features/payload/api/types'
+import { useConsoleStore } from '../../stores/console'
+import { useNotificationStore } from '../../stores/notification'
+import * as FileService from '../../../bindings/irisclient/service/fileservice'
+import { openSaveFileDialog } from '../../utils/saveFileDialog'
 
+const { t } = useI18n()
 const consoleStore = useConsoleStore()
 const notificationStore = useNotificationStore()
 
@@ -25,29 +29,29 @@ const props = defineProps({
 const emit = defineEmits(['close'])
 
 const filePath = ref('')
-const selectedFile = ref(null)
+const selectedFile = ref<string | null>(null)
 const parameters = ref('')
 const isExecuting = ref(false)
 
 const titleMap = {
-  'assembly': '执行 .NET Assembly (execute-assembly)',
-  'bof': '执行 Beacon Object File (execute-bof)',
-  'shellcode': '生成 Shellcode (payload/shellcode)',
-  'pe': '执行 PE 文件 (execute-pe)'
+  'assembly': t('executeTask.assemblyTitle'),
+  'bof': t('executeTask.bofTitle'),
+  'shellcode': t('executeTask.shellcodeTitle'),
+  'pe': t('executeTask.peTitle'),
 }
 
 const fileFilterMap = {
   'assembly': '.exe, .dll',
   'bof': '.o, .obj',
   'shellcode': '.exe, .dll',
-  'pe': '.exe, .dll'
+  'pe': '.exe, .dll',
 }
 
-const displayTitle = computed(() => titleMap[props.executionType] || '执行任务')
-const acceptFilter = computed(() => fileFilterMap[props.executionType] || '*')
-const actionButtonLabel = computed(() => props.executionType === 'shellcode' ? '生成并保存' : '发起执行 🚀')
-const fileInputLabel = computed(() => props.executionType === 'shellcode' ? '待转换 PE 文件 (Host Local Path)' : '待执行文件载荷路径 (Host Local Path)')
-const fileInputPlaceholder = computed(() => props.executionType === 'shellcode' ? '请选择本地 PE 文件，发送给后端生成 shellcode...' : '请选择或输入本地 Payload 文件路径...')
+const displayTitle = computed(() => titleMap[props.executionType as keyof typeof titleMap] || t('executeTask.defaultTitle'))
+const acceptFilter = computed(() => fileFilterMap[props.executionType as keyof typeof fileFilterMap] || '*')
+const actionButtonLabel = computed(() => props.executionType === 'shellcode' ? t('executeTask.generateAndSave') : t('executeTask.startExecution'))
+const fileInputLabel = computed(() => props.executionType === 'shellcode' ? t('executeTask.shellcodeFileLabel') : t('executeTask.payloadFileLabel'))
+const fileInputPlaceholder = computed(() => props.executionType === 'shellcode' ? t('executeTask.shellcodeFilePlaceholder') : t('executeTask.payloadFilePlaceholder'))
 const showParametersInput = computed(() => props.executionType !== 'shellcode')
 const parsedBofArguments = computed(() => {
   if (props.executionType !== 'bof') return []
@@ -63,23 +67,23 @@ const bofArgumentParseError = computed(() => {
     parseTypedBofArguments(parameters.value)
     return ''
   } catch (err) {
-    return err?.message || '参数解析失败'
+    return (err instanceof Error ? err.message : String(err)) || t('executeTask.parseArgumentsFailed')
   }
 })
 
 const FILE_FILTERS = {
-  assembly: { DisplayName: 'Assembly 文件', Pattern: '*.exe;*.dll' },
-  bof: { DisplayName: 'BOF 文件', Pattern: '*.o;*.obj' },
-  shellcode: { DisplayName: 'PE 文件', Pattern: '*.exe;*.dll' },
-  pe: { DisplayName: 'PE 文件', Pattern: '*.exe;*.dll' },
+  assembly: { DisplayName: t('executeTask.assemblyFileFilter'), Pattern: '*.exe;*.dll' },
+  bof: { DisplayName: t('executeTask.bofFileFilter'), Pattern: '*.o;*.obj' },
+  shellcode: { DisplayName: t('executeTask.peFileFilter'), Pattern: '*.exe;*.dll' },
+  pe: { DisplayName: t('executeTask.peFileFilter'), Pattern: '*.exe;*.dll' },
 }
 
 async function browseFile() {
   try {
-    const filter = FILE_FILTERS[props.executionType] || { DisplayName: '所有文件', Pattern: '*' }
+    const filter = FILE_FILTERS[props.executionType as keyof typeof FILE_FILTERS] || { DisplayName: t('executeTask.allFilesFilter'), Pattern: '*' }
     const picked = await Dialogs.OpenFile({
-      Title: '选择文件',
-      Message: `请选择 ${filter.DisplayName}`,
+      Title: t('executeTask.selectFile'),
+      Message: t('executeTask.selectFileMessage', { fileType: filter.DisplayName }),
       CanChooseFiles: true,
       AllowsMultipleSelection: false,
       Filters: [filter],
@@ -89,17 +93,17 @@ async function browseFile() {
     filePath.value = sourcePath
     selectedFile.value = sourcePath
   } catch (err) {
-    notificationStore.error(err.message || '文件选择失败')
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('executeTask.fileSelectionFailed'))
   }
 }
 
-function buildShellcodeDefaultName(fileName) {
+function buildShellcodeDefaultName(fileName: string) {
   const sourceName = String(fileName || 'shellcode')
   const trimmed = sourceName.replace(/\.(exe|dll)$/i, '')
   return `${trimmed || 'shellcode'}.bin`
 }
 
-function parseBofArguments(input) {
+function parseBofArguments(input: string) {
   const text = String(input || '')
   const args = []
   let current = ''
@@ -143,7 +147,7 @@ function parseBofArguments(input) {
   }
 
   if (quote) {
-    throw new Error(`BOF 参数存在未闭合的 ${quote} 引号`)
+    throw new Error(t('executeTask.bofUnclosedQuote', { quote }))
   }
   if (tokenStarted) {
     args.push(current)
@@ -152,20 +156,20 @@ function parseBofArguments(input) {
   return args
 }
 
-function parseInteger(value, label, min, max) {
+function parseInteger(value: string, label: string, min: number, max: number) {
   const text = String(value ?? '').trim()
-  if (!text) throw new Error(`${label} 不能为空`)
+  if (!text) throw new Error(t('executeTask.parameterRequired', { label }))
   const numeric = Number(text)
   if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
-    throw new Error(`${label} 必须是整数`)
+    throw new Error(t('executeTask.parameterIntegerRequired', { label }))
   }
   if (numeric < min || numeric > max) {
-    throw new Error(`${label} 超出范围`)
+    throw new Error(t('executeTask.parameterOutOfRange', { label }))
   }
   return numeric
 }
 
-function parseBofArgumentToken(token) {
+function parseBofArgumentToken(token: string) {
   const text = String(token ?? '')
   const separator = text.indexOf(':')
   if (separator <= 0) {
@@ -177,10 +181,10 @@ function parseBofArgumentToken(token) {
 
   switch (kind) {
     case 'int32':
-      return { kind: 'int32', value: parseInteger(value, 'int32 参数', -2147483648, 2147483647) }
+      return { kind: 'int32', value: parseInteger(value, 'int32', -2147483648, 2147483647) }
     case 'short':
     case 'int16':
-      return { kind: 'short', value: parseInteger(value, 'short 参数', -32768, 32767) }
+      return { kind: 'short', value: parseInteger(value, 'short', -32768, 32767) }
     case 'bytes':
       return { kind: 'bytes', value: String(value || '').trim() }
     case 'string':
@@ -190,17 +194,17 @@ function parseBofArgumentToken(token) {
   }
 }
 
-function parseTypedBofArguments(input) {
+function parseTypedBofArguments(input: string) {
   return parseBofArguments(input).map(parseBofArgumentToken)
 }
 
-function formatBofPreviewArg(arg) {
+function formatBofPreviewArg(arg: { kind: string; value: string | number }) {
   return `${arg.kind}:${arg.value}`
 }
 
 async function executeTask() {
   if (!filePath.value) {
-    notificationStore.warn('请先选择待执行的文件路径')
+    notificationStore.warn(t('executeTask.filePathRequired'))
     return
   }
 
@@ -208,7 +212,7 @@ async function executeTask() {
 
   if (props.executionType === 'bof') {
     if (!selectedFile.value) {
-      notificationStore.warn('请先选择待执行的 BOF / OBJ 文件')
+      notificationStore.warn(t('executeTask.bofFileRequired'))
       isExecuting.value = false
       return
     }
@@ -219,19 +223,19 @@ async function executeTask() {
 
       const displayCommand = `bof "${filePath.value}" ${String(parameters.value || '').trim()}`.trim()
       consoleStore.appendToConsole(props.beaconid, 'input', displayCommand)
-      consoleStore.appendToConsole(props.beaconid, 'output', '正在推送 BOF 工件并准备执行...')
+      consoleStore.appendToConsole(props.beaconid, 'output', t('executeTask.bofPushing'))
 
       const artifactData = await FileService.ReadBinaryFileBase64(selectedFile.value)
       const extraArgs = parseTypedBofArguments(parameters.value)
       const args = [{ kind: 'bytes', value: artifactData }, ...extraArgs]
 
       await sendExecutionBofCommand(props.beaconid, args)
-      consoleStore.appendToConsole(props.beaconid, 'output', '注入成功 / 执行完成。')
-      consoleStore.appendToConsole(props.beaconid, 'output', '截获返回信息:')
+      consoleStore.appendToConsole(props.beaconid, 'output', t('executeTask.injectionCompleted'))
+      consoleStore.appendToConsole(props.beaconid, 'output', t('executeTask.interceptedOutput'))
       close()
     } catch (err) {
-      const message = err?.message || '执行 BOF 失败'
-      consoleStore.appendToConsole(props.beaconid, 'error', `BOF 执行失败: ${message}`)
+      const message = (err instanceof Error ? err.message : String(err)) || t('executeTask.bofExecutionFailed')
+      consoleStore.appendToConsole(props.beaconid, 'error', t('executeTask.bofExecutionFailedWithError', { message }))
       notificationStore.error(message)
       console.error('[ExecuteTaskModal] 执行 BOF 失败:', err)
     } finally {
@@ -242,7 +246,7 @@ async function executeTask() {
 
   if (props.executionType === 'shellcode') {
     if (!selectedFile.value) {
-      notificationStore.warn('请先选择待转换的 PE 文件')
+      notificationStore.warn(t('executeTask.peFileRequired'))
       isExecuting.value = false
       return
     }
@@ -253,31 +257,31 @@ async function executeTask() {
         mode: 'front',
         pe_base64: peBase64,
         loader_name: 'ReflectiveLoader',
-      })
+      } as unknown as ShellcodeGenerateRequest) as ShellcodeGenerateResult & { message?: string; error?: string }
 
-      const shellcode = result?.shellcode ?? result?.data?.shellcode
+      const shellcode = result?.shellcode
       if (!shellcode) {
-        throw new Error(result?.message || result?.error || 'shellcode 生成失败')
+        throw new Error(result?.message || result?.error || t('executeTask.shellcodeGenerationFailed'))
       }
 
-      const savePath = await Dialogs.SaveFile({
-        Title: '保存生成的 Shellcode',
-        Filename: buildShellcodeDefaultName(selectedFile.value?.name),
+      const savePath = await openSaveFileDialog({
+        Title: t('executeTask.saveGeneratedShellcode'),
+        Filename: buildShellcodeDefaultName((selectedFile.value as unknown as { name?: string } | null)?.name ?? ''),
         Filters: [
-          { Name: 'Shellcode Files', Pattern: '*.bin' }
+          { DisplayName: 'Shellcode Files', Pattern: '*.bin' }
         ]
       })
 
       if (!savePath) {
-        notificationStore.info('已取消保存')
+        notificationStore.info(t('executeTask.saveCancelled'))
         return
       }
 
       await FileService.WriteBinaryFile(savePath, shellcode)
-      notificationStore.success('Shellcode 生成成功并已保存到本地')
+      notificationStore.success(t('executeTask.shellcodeGeneratedSaved'))
       close()
     } catch (err) {
-      const message = err?.message || '生成 Shellcode 失败'
+      const message = (err instanceof Error ? err.message : String(err)) || t('executeTask.shellcodeGenerationError')
       notificationStore.error(message)
       console.error('[ExecuteTaskModal] 生成 Shellcode 失败:', err)
     } finally {
@@ -331,7 +335,7 @@ function close() {
             <span class="icon">⚡</span>
             <div class="titles">
               <h3>{{ displayTitle }}</h3>
-              <span class="subtitle">目标 Agent: {{ beaconid.substring(0,8) }}</span>
+              <span class="subtitle">{{ t('executeTask.targetAgent', { beaconId: beaconid.substring(0,8) }) }}</span>
             </div>
           </div>
           <button class="close-btn" @click="close">×</button>
@@ -347,26 +351,26 @@ function close() {
                 class="form-control" 
                 :placeholder="fileInputPlaceholder"
               >
-              <button class="browse-btn" @click="browseFile">选择文件</button>
+              <button class="browse-btn" @click="browseFile">{{ t('executeTask.selectFileButton') }}</button>
             </div>
-            <p class="help-text">支持的后缀类型: {{ acceptFilter }}</p>
+            <p class="help-text">{{ t('executeTask.supportedExtensions', { extensions: acceptFilter }) }}</p>
           </div>
 
           <div v-if="showParametersInput" class="form-group">
-            <label>执行参数 (Arguments / Optional)</label>
+            <label>{{ t('executeTask.argumentsLabel') }}</label>
             <textarea
               v-model="parameters"
               class="form-control" 
               :class="{ invalid: bofArgumentParseError }"
               rows="3"
-              placeholder='BOF 参数按空格分隔；类型用 kind:value。例如：int32:1234 short:77 "hello-elf-bof"'
+              :placeholder="t('executeTask.argumentsPlaceholder')"
             ></textarea>
             <p v-if="executionType === 'bof'" class="help-text">
-              BOF 参数会按 shell-like 规则拆分；支持 int32、short/int16、string、bytes 前缀，未带前缀时按 string 发送。
+              {{ t('executeTask.argumentParsingHelp') }}
             </p>
             <p v-if="bofArgumentParseError" class="help-text error">{{ bofArgumentParseError }}</p>
             <div v-if="executionType === 'bof' && parsedBofArguments.length" class="arg-preview">
-              <div class="arg-preview-title">解析预览：{{ parsedBofArguments.length }} 个参数</div>
+              <div class="arg-preview-title">{{ t('executeTask.argumentPreview', { count: parsedBofArguments.length }) }}</div>
               <div class="arg-chip-list">
                 <span v-for="(arg, index) in parsedBofArguments" :key="index" class="arg-chip">
                   #{{ index + 1 }} {{ formatBofPreviewArg(arg) }}
@@ -377,9 +381,9 @@ function close() {
         </div>
 
         <footer class="modal-footer">
-          <button class="btn btn-secondary" @click="close" :disabled="isExecuting">取消</button>
+          <button class="btn btn-secondary" @click="close" :disabled="isExecuting">{{ t('executeTask.cancel') }}</button>
           <button class="btn btn-danger" @click="executeTask" :disabled="isExecuting || Boolean(bofArgumentParseError)">
-            {{ isExecuting ? '执行中...' : actionButtonLabel }}
+            {{ isExecuting ? t('executeTask.executing') : actionButtonLabel }}
           </button>
         </footer>
       </div>

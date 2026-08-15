@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * FileAttributeDialog - 文件属性编辑对话框
  * 支持 Windows 属性位修改、Linux 权限位编辑、
@@ -6,6 +6,7 @@
  */
 
 import { ref, computed, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 // ─── Props / Emits ───
 
@@ -16,6 +17,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'submit'])
+
+const { t } = useI18n()
 
 // ─── 状态 ───
 
@@ -37,7 +40,7 @@ const LINUX_PERMISSION_ROWS = [
   { label: 'Other', read: 'otherRead', write: 'otherWrite', execute: 'otherExecute' },
 ]
 
-function createTimeParts(date) {
+function createTimeParts(date: Date): Record<string, number> {
   return {
     year: date.getFullYear(),
     month: date.getMonth() + 1,
@@ -48,13 +51,14 @@ function createTimeParts(date) {
   }
 }
 
-function toDateFromMaybeTimestamp(value) {
+function toDateFromMaybeTimestamp(value: unknown) {
+  // 契约: file.mod_time 为 Unix 毫秒
   const numeric = Number(value)
   if (!Number.isFinite(numeric) || numeric <= 0) return new Date()
-  return numeric < 1e12 ? new Date(numeric * 1000) : new Date(numeric)
+  return new Date(numeric)
 }
 
-function createEmptyAttributeForm(target = null) {
+function createEmptyAttributeForm(target: Record<string, any> | null | undefined = null) {
   const file = target?.file || null
   const now = new Date()
   return {
@@ -69,15 +73,15 @@ function createEmptyAttributeForm(target = null) {
     ctimeEnabled: false,
     ctime: createTimeParts(now),
     winAttrEnabled: false,
-    winAttr: { readonly: false, hidden: Boolean(file?.is_hidden), system: false, archive: false },
+    winAttr: { readonly: false, hidden: Boolean(file?.is_hidden), system: false, archive: false } as Record<string, boolean>,
     linuxModeEnabled: false,
     linuxMode: parseLinuxModeSelection(String(file?.permission || '')),
   }
 }
 
-function parseLinuxModeSelection(permission) {
+function parseLinuxModeSelection(permission: string): Record<string, boolean> {
   const text = String(permission || '')
-  const selected = {
+  const selected: Record<string, boolean> = {
     ownerRead: false, ownerWrite: false, ownerExecute: false,
     groupRead: false, groupWrite: false, groupExecute: false,
     otherRead: false, otherWrite: false, otherExecute: false,
@@ -95,7 +99,7 @@ function parseLinuxModeSelection(permission) {
   return selected
 }
 
-function isValidTimeParts(parts) {
+function isValidTimeParts(parts: Record<string, any>) {
   const year = Number(parts.year)
   const month = Number(parts.month)
   const day = Number(parts.day)
@@ -111,7 +115,7 @@ function isValidTimeParts(parts) {
   )
 }
 
-function toUnixTimestampString(parts) {
+function toUnixTimestampString(parts: Record<string, any>) {
   if (!isValidTimeParts(parts)) return null
   const date = new Date(
     Number(parts.year), Number(parts.month) - 1, Number(parts.day),
@@ -120,7 +124,7 @@ function toUnixTimestampString(parts) {
   return String(Math.floor(date.getTime() / 1000))
 }
 
-function buildWindowsAttributeValue(selection) {
+function buildWindowsAttributeValue(selection: Record<string, boolean>) {
   let value = 0
   if (selection.readonly) value |= 0x1
   if (selection.hidden) value |= 0x2
@@ -129,7 +133,7 @@ function buildWindowsAttributeValue(selection) {
   return String(value)
 }
 
-function buildLinuxModeValue(selection) {
+function buildLinuxModeValue(selection: Record<string, boolean>) {
   const digits = [
     (selection.ownerRead ? 4 : 0) + (selection.ownerWrite ? 2 : 0) + (selection.ownerExecute ? 1 : 0),
     (selection.groupRead ? 4 : 0) + (selection.groupWrite ? 2 : 0) + (selection.groupExecute ? 1 : 0),
@@ -139,16 +143,16 @@ function buildLinuxModeValue(selection) {
   return digits.join('')
 }
 
-function formatWindowsAttributes(selection) {
+function formatWindowsAttributes(selection: Record<string, boolean>) {
   const labels = []
   if (selection.readonly) labels.push('Read-Only')
   if (selection.hidden) labels.push('Hidden')
   if (selection.system) labels.push('System')
   if (selection.archive) labels.push('Archive')
-  return labels.length > 0 ? labels.join(' / ') : '未选择'
+  return labels.length > 0 ? labels.join(' / ') : t('attrDialog.noneSelected')
 }
 
-function formatLinuxMode(selection) {
+function formatLinuxMode(selection: Record<string, boolean>) {
   const parts = [
     `${selection.ownerRead ? 'r' : '-'}${selection.ownerWrite ? 'w' : '-'}${selection.ownerExecute ? 'x' : '-'}`,
     `${selection.groupRead ? 'r' : '-'}${selection.groupWrite ? 'w' : '-'}${selection.groupExecute ? 'x' : '-'}`,
@@ -157,46 +161,46 @@ function formatLinuxMode(selection) {
   return parts.join(' ')
 }
 
-function buildSetAttrArgs(data) {
+function buildSetAttrArgs(data: Record<string, any>) {
   const args = [String(data.targetPath || '')]
   let modifyFlag = 0
   if (data.newNameEnabled) {
     const value = String(data.newName || '').trim()
-    if (!value) throw new Error('已启用的新文件名不能为空')
+    if (!value) throw new Error(t('attrDialog.errNewNameEmpty'))
     modifyFlag |= 1
     args.push(value)
   }
   if (data.mtimeEnabled) {
     const timestamp = toUnixTimestampString(data.mtime)
-    if (!timestamp) throw new Error('修改时间填写无效，请检查年月日时分秒')
+    if (!timestamp) throw new Error(t('attrDialog.errMtimeInvalid'))
     modifyFlag |= 2
     args.push(timestamp)
   }
   if (data.atimeEnabled) {
     const timestamp = toUnixTimestampString(data.atime)
-    if (!timestamp) throw new Error('访问时间填写无效，请检查年月日时分秒')
+    if (!timestamp) throw new Error(t('attrDialog.errAtimeInvalid'))
     modifyFlag |= 4
     args.push(timestamp)
   }
   if (data.ctimeEnabled) {
     const timestamp = toUnixTimestampString(data.ctime)
-    if (!timestamp) throw new Error('创建时间填写无效，请检查年月日时分秒')
+    if (!timestamp) throw new Error(t('attrDialog.errCtimeInvalid'))
     modifyFlag |= 8
     args.push(timestamp)
   }
   if (data.winAttrEnabled) {
     const winAttrValue = buildWindowsAttributeValue(data.winAttr)
-    if (winAttrValue === '0') throw new Error('Windows 属性已启用时，请至少勾选一个属性')
+    if (winAttrValue === '0') throw new Error(t('attrDialog.errWinAttr'))
     modifyFlag |= 16
     args.push(winAttrValue)
   }
   if (data.linuxModeEnabled) {
     const linuxModeValue = buildLinuxModeValue(data.linuxMode)
-    if (!linuxModeValue) throw new Error('Linux 权限已启用时，请至少勾选一个权限位')
+    if (!linuxModeValue) throw new Error(t('attrDialog.errLinuxPerm'))
     modifyFlag |= 32
     args.push(linuxModeValue)
   }
-  if (modifyFlag === 0) throw new Error('请至少选择一个要修改的属性')
+  if (modifyFlag === 0) throw new Error(t('attrDialog.errNoTarget'))
   args.splice(1, 0, String(modifyFlag))
   return args
 }
@@ -253,9 +257,9 @@ defineExpose({ form, submitting })
         <div class="attribute-dialog" @click.stop>
           <div class="attribute-dialog-header">
             <div>
-              <div class="attribute-dialog-title">修改属性</div>
+              <div class="attribute-dialog-title">{{ t('attrDialog.title') }}</div>
               <div class="attribute-dialog-subtitle" :title="form.targetPath">
-                {{ target?.file?.name || form.sourceName || '目标对象' }}
+                {{ target?.file?.name || form.sourceName || t('attrDialog.targetObject') }}
               </div>
             </div>
             <button class="attribute-dialog-close" @click="close">&times;</button>
@@ -263,76 +267,76 @@ defineExpose({ form, submitting })
 
           <div class="attribute-dialog-body">
             <div class="attribute-field">
-              <label class="attribute-label">目标路径</label>
+              <label class="attribute-label">{{ t('attrDialog.targetPath') }}</label>
               <input class="attribute-input readonly" :value="form.targetPath" readonly />
             </div>
 
             <div class="attribute-field">
               <label class="attribute-toggle">
                 <input type="checkbox" v-model="form.newNameEnabled" />
-                <span>修改文件名 / 文件夹名</span>
+                <span>{{ t('attrDialog.rename') }}</span>
               </label>
-              <input class="attribute-input" v-model="form.newName" :disabled="!form.newNameEnabled" placeholder="请输入新名称" />
+              <input class="attribute-input" v-model="form.newName" :disabled="!form.newNameEnabled" :placeholder="t('attrDialog.newNamePlaceholder')" />
             </div>
 
             <div class="attribute-field">
               <label class="attribute-toggle">
                 <input type="checkbox" v-model="form.mtimeEnabled" />
-                <span>修改修改时间 (MTime)</span>
+                <span>{{ t('attrDialog.mtime') }}</span>
               </label>
               <div class="attribute-time-grid">
                 <label v-for="field in ['year','month','day','hour','minute','second']" :key="'mtime-'+field">
-                  <span>{{ {year:'年',month:'月',day:'日',hour:'时',minute:'分',second:'秒'}[field] }}</span>
+                  <span>{{ t('attrDialog.field' + field.charAt(0).toUpperCase() + field.slice(1)) }}</span>
                   <input type="number" v-model.number="form.mtime[field]" :disabled="!form.mtimeEnabled" />
                 </label>
               </div>
               <div class="attribute-time-preview">
-                Unix: {{ form.mtimeEnabled ? (toUnixTimestampString(form.mtime) || '无效时间') : '未启用' }}
+                Unix: {{ form.mtimeEnabled ? (toUnixTimestampString(form.mtime) || t('attrDialog.invalidTime')) : t('attrDialog.notEnabled') }}
               </div>
             </div>
 
             <div class="attribute-field">
               <label class="attribute-toggle">
                 <input type="checkbox" v-model="form.atimeEnabled" />
-                <span>修改访问时间 (ATime)</span>
+                <span>{{ t('attrDialog.atime') }}</span>
               </label>
               <div class="attribute-time-grid">
                 <label v-for="field in ['year','month','day','hour','minute','second']" :key="'atime-'+field">
-                  <span>{{ {year:'年',month:'月',day:'日',hour:'时',minute:'分',second:'秒'}[field] }}</span>
+                  <span>{{ t('attrDialog.field' + field.charAt(0).toUpperCase() + field.slice(1)) }}</span>
                   <input type="number" v-model.number="form.atime[field]" :disabled="!form.atimeEnabled" />
                 </label>
               </div>
               <div class="attribute-time-preview">
-                Unix: {{ form.atimeEnabled ? (toUnixTimestampString(form.atime) || '无效时间') : '未启用' }}
+                Unix: {{ form.atimeEnabled ? (toUnixTimestampString(form.atime) || t('attrDialog.invalidTime')) : t('attrDialog.notEnabled') }}
               </div>
             </div>
 
             <div v-if="isWindowsTarget" class="attribute-field">
               <label class="attribute-toggle">
                 <input type="checkbox" v-model="form.ctimeEnabled" />
-                <span>修改创建时间 (CTime)</span>
+                <span>{{ t('attrDialog.ctime') }}</span>
               </label>
               <div class="attribute-time-grid">
                 <label v-for="field in ['year','month','day','hour','minute','second']" :key="'ctime-'+field">
-                  <span>{{ {year:'年',month:'月',day:'日',hour:'时',minute:'分',second:'秒'}[field] }}</span>
+                  <span>{{ t('attrDialog.field' + field.charAt(0).toUpperCase() + field.slice(1)) }}</span>
                   <input type="number" v-model.number="form.ctime[field]" :disabled="!form.ctimeEnabled" />
                 </label>
               </div>
               <div class="attribute-time-preview">
-                Unix: {{ form.ctimeEnabled ? (toUnixTimestampString(form.ctime) || '无效时间') : '未启用' }}
+                Unix: {{ form.ctimeEnabled ? (toUnixTimestampString(form.ctime) || t('attrDialog.invalidTime')) : t('attrDialog.notEnabled') }}
               </div>
             </div>
 
             <div v-else class="attribute-field">
               <label class="attribute-label">创建时间 (CTime)</label>
-              <div class="attribute-unsupported-note">Linux 当前不支持修改创建时间</div>
+              <div class="attribute-unsupported-note">{{ t('attrDialog.ctimeUnsupported') }}</div>
             </div>
 
             <div class="attribute-field split">
               <div v-if="isWindowsTarget" class="attribute-section">
                 <label class="attribute-toggle">
                   <input type="checkbox" v-model="form.winAttrEnabled" />
-                  <span>修改 Windows 属性</span>
+                  <span>{{ t('attrDialog.winAttr') }}</span>
                 </label>
                 <div class="checkbox-grid">
                   <label v-for="option in WINDOWS_ATTRIBUTE_OPTIONS" :key="option.key" class="check-option">
@@ -341,13 +345,13 @@ defineExpose({ form, submitting })
                   </label>
                 </div>
                 <div class="attribute-time-preview">
-                  已选择: {{ formatWindowsAttributes(form.winAttr) }}
+                  {{ t('attrDialog.selected', { value: formatWindowsAttributes(form.winAttr) }) }}
                 </div>
               </div>
               <div v-else class="attribute-section">
                 <label class="attribute-toggle">
                   <input type="checkbox" v-model="form.linuxModeEnabled" />
-                  <span>修改 Linux 权限</span>
+                  <span>{{ t('attrDialog.linuxPerm') }}</span>
                 </label>
                 <div class="linux-perm-grid">
                   <div class="linux-perm-head"></div>
@@ -362,7 +366,7 @@ defineExpose({ form, submitting })
                   </template>
                 </div>
                 <div class="attribute-time-preview">
-                  结果: {{ buildLinuxModeValue(form.linuxMode) || '未选择' }}
+                  {{ t('attrDialog.result', { value: buildLinuxModeValue(form.linuxMode) || t('attrDialog.noneSelected') }) }}
                   <span class="attribute-preview-hint">({{ formatLinuxMode(form.linuxMode) }})</span>
                 </div>
               </div>
@@ -370,9 +374,9 @@ defineExpose({ form, submitting })
           </div>
 
           <div class="attribute-dialog-footer">
-            <button class="attribute-btn secondary" @click="close">取消</button>
+            <button class="attribute-btn secondary" @click="close">{{ t('common.cancel') }}</button>
             <button class="attribute-btn primary" :disabled="submitting || !hasChanges" @click="handleSubmit">
-              {{ submitting ? '提交中...' : '提交任务' }}
+              {{ submitting ? t('attrDialog.submitting') : t('attrDialog.submit') }}
             </button>
           </div>
         </div>

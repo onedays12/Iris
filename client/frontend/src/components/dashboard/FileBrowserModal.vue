@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * FileBrowserModal - 文件浏览器主组件
  * 提供远程文件系统的目录导航、文件列表展示、右键菜单操作
@@ -10,17 +10,20 @@
  */
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
-import { useAgentStore } from '../../stores/agent.js'
-import { useExplorerStore, normalizePathKey, joinPaths } from '../../stores/explorer.js'
-import { useModalDragResize } from '../../composables/useModalDragResize.js'
-import { useFileBrowserMenu } from '../../composables/useFileBrowserMenu.js'
-import { useFileTransferStore } from '../../stores/fileTransfer.js'
-import { useFileBrowserActions } from '../../composables/useFileBrowserActions.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../../stores/agent'
+import { useExplorerStore, normalizePathKey, joinPaths } from '../../stores/explorer'
+import type { ExplorerFileInfo } from '../../stores/explorer'
+import { useModalDragResize } from '../../composables/useModalDragResize'
+import { useFileBrowserMenu } from '../../composables/useFileBrowserMenu'
+import { useFileTransferStore } from '../../stores/fileTransfer'
+import { useFileBrowserActions } from '../../composables/useFileBrowserActions'
 import FileAttributeDialog from './FileAttributeDialog.vue'
 import FileZipDialog from './FileZipDialog.vue'
 import FileContextMenu from './FileContextMenu.vue'
 import TransferPanel from './TransferPanel.vue'
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const explorerStore = useExplorerStore()
 const fileTransferStore = useFileTransferStore()
@@ -94,7 +97,6 @@ const {
 } = useFileBrowserActions({
   beaconid: beaconidRef,
   currentPath,
-  loadDirectory,
   activeMenuTarget,
   closeMenu,
   getMenuTarget: () => getMenuTarget(null),
@@ -128,12 +130,12 @@ const transferPanelCollapsed = ref(false)
 
 const targetAgent = computed(() => agentStore.getAgentById(props.beaconid))
 const isWindowsTarget = computed(() => String(targetAgent.value?.os || '').toLowerCase().includes('windows'))
-const rootShortcutLabel = computed(() => isWindowsTarget.value ? '我的电脑' : '当前目录')
-const pathPlaceholder = computed(() => isWindowsTarget.value ? '输入路径回车...' : '输入绝对路径回车，例如 /etc')
+const rootShortcutLabel = computed(() => isWindowsTarget.value ? t('fileBrowser.myComputer') : t('fileBrowser.currentDir'))
+const pathPlaceholder = computed(() => isWindowsTarget.value ? t('fileBrowser.pathPlaceholderWin') : t('fileBrowser.pathPlaceholderUnix'))
 const emptyStateText = computed(() => (
   isWindowsTarget.value
-    ? '请在上方输入路径或选择盘符开始预览'
-    : '请在上方输入绝对路径，或点击当前目录开始预览'
+    ? t('fileBrowser.emptyStateWin')
+    : t('fileBrowser.emptyStateUnix')
 ))
 const workingDirectory = computed(() => explorerStore.workingDirectories[props.beaconid] || '')
 const rootShortcutActive = computed(() => {
@@ -159,7 +161,7 @@ const hasCache = computed(() => {
 })
 
 // 格式化文件大小
-function formatSize(bytes) {
+function formatSize(bytes: number) {
   if (!bytes || bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -167,13 +169,13 @@ function formatSize(bytes) {
   return parseFloat((Number(bytes) / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 格式化日期 (Unix 毫秒级时间戳)
-function formatDate(timestamp) {
+// 格式化日期（契约: mod_time 为 Unix 毫秒级时间戳）
+function formatDate(timestamp: number) {
   if (!timestamp || timestamp === 0) return '-'
   const numeric = Number(timestamp)
   if (!Number.isFinite(numeric)) return '-'
-  const d = new Date(numeric < 1e12 ? numeric * 1000 : numeric)
-  return d.toLocaleString('zh-CN', {
+  const d = new Date(numeric)
+  return d.toLocaleString(locale.value, {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   })
@@ -182,7 +184,7 @@ function formatDate(timestamp) {
 /**
  * 加载目录核心逻辑 (现在委托给 explorerStore 实现归一化调用)
  */
-async function loadDirectory(path, force = false) {
+async function loadDirectory(path: string, force = false) {
   // 仅作为本地代理，同步当前 UI 路径并透传给 Store
   currentPath.value = normalizePathKey(path)
   errorMsg.value = ''
@@ -202,7 +204,7 @@ function handleRefresh() {
 }
 
 // 处理行点击/双击
-function handleDoubleClick(file) {
+function handleDoubleClick(file: ExplorerFileInfo) {
   if (file.is_dir) {
     const nextPath = file.path
       ? normalizePathKey(file.path)
@@ -303,7 +305,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
       <div class="modal-title" @mousedown="startDrag">
         <div class="title-left">
           <span class="icon">📁</span>
-          <span>文件浏览器 - {{ agentStore.getAgentById(beaconid)?.beaconid.substring(0, 8) }}@{{ agentStore.getAgentById(beaconid)?.hostname || beaconid.substring(0, 8) }}</span>
+          <span>{{ t('fileBrowser.title') }} - {{ agentStore.getAgentById(beaconid)?.beaconid.substring(0, 8) }}@{{ agentStore.getAgentById(beaconid)?.hostname || beaconid.substring(0, 8) }}</span>
         </div>
         <button class="close-btn" @click="emit('close')">×</button>
       </div>
@@ -317,7 +319,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
       />
 
       <div class="nav-bar">
-        <button class="nav-action-btn" @click="goUp" title="返回上一级" :disabled="isGlobalLoading">
+        <button class="nav-action-btn" @click="goUp" :title="t('fileBrowser.goUp')" :disabled="isGlobalLoading">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 12H5M12 19l-7-7 7-7"/>
           </svg>
@@ -331,7 +333,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
             :disabled="isGlobalLoading"
           />
         </div>
-        <button class="nav-action-btn primary" @click="navigateToPath" :disabled="isGlobalLoading" title="跳转">
+        <button class="nav-action-btn primary" @click="navigateToPath" :disabled="isGlobalLoading" :title="t('fileBrowser.jump')">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 12h18M21 12l-6-6M21 12l-6 6"/>
           </svg>
@@ -340,7 +342,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
           class="nav-action-btn refresh" 
           :class="{ spinning: isGlobalLoading }" 
           @click="handleRefresh" 
-          title="强制刷新 (绕过缓存)"
+          :title="t('fileBrowser.forceRefresh')"
           :disabled="isGlobalLoading"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -352,12 +354,12 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
       <!-- 全局操作栏 -->
       <div class="toolbar">
         <div class="toolbar-left">
-          <button class="toolbar-btn" @click="handleMkdir()" :disabled="isGlobalLoading || !currentPath" title="新建文件夹">
-            <span class="toolbar-icon">📁+</span> 新建文件夹
+          <button class="toolbar-btn" @click="handleMkdir()" :disabled="isGlobalLoading || !currentPath" :title="t('fileBrowser.newFolderShort')">
+            <span class="toolbar-icon">📁+</span> {{ t('fileBrowser.newFolderShort') }}
           </button>
         </div>
         <div class="toolbar-right" v-if="files.length">
-          <span class="info-tag">{{ files.length }} 个项目</span>
+          <span class="info-tag">{{ t('fileBrowser.itemCount', { n: files.length }) }}</span>
         </div>
       </div>
 
@@ -365,13 +367,13 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
         <!-- 侧边栏：快速访问 -->
         <div class="side-nav">
           <div class="nav-group">
-            <div class="group-title">快捷入口</div>
+            <div class="group-title">{{ t('fileBrowser.quickAccess') }}</div>
             <div @click="loadDirectory('')" class="nav-item" :class="{ active: rootShortcutActive }">
               <span class="icon">💻</span> {{ rootShortcutLabel }}
             </div>
           </div>
           <div class="nav-group" v-if="isWindowsTarget && drives.length">
-            <div class="group-title">磁盘驱动器</div>
+            <div class="group-title">{{ t('fileBrowser.drives') }}</div>
             <div 
               v-for="drive in drives" 
               :key="drive" 
@@ -379,7 +381,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
               class="nav-item"
               :class="{ active: normalizePathKey(currentPath) === normalizePathKey(drive) }"
             >
-              <span class="icon">💽</span> 本地磁盘 ({{ drive }})
+              <span class="icon">💽</span> {{ t('fileBrowser.localDisk', { drive }) }}
             </div>
           </div>
         </div>
@@ -388,14 +390,14 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
         <div class="file-list-container" @contextmenu="onContainerContextMenu">
           <div v-if="isGlobalLoading && !files.length" class="loading-state">
             <div class="spinner"></div>
-            <span>正在检索文件系统...</span>
+            <span>{{ t('fileBrowser.loadingFs') }}</span>
           </div>
           <div v-else-if="errorMsg || storeErrorMsg" class="error-state">
             <span>❌ {{ errorMsg || storeErrorMsg }}</span>
           </div>
           <div v-else-if="hasCache && files.length === 0" class="empty-state">
             <span class="icon">📭</span>
-            <span>该目录为空</span>
+            <span>{{ t('fileBrowser.emptyDir') }}</span>
           </div>
           <div v-else-if="!hasCache && !isGlobalLoading" class="empty-state">
             <span>{{ emptyStateText }}</span>
@@ -404,10 +406,10 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
           <thead>
             <tr>
               <th width="40"></th>
-              <th>名称</th>
-              <th width="100">大小</th>
-              <th width="180">修改日期</th>
-              <th width="50" style="text-align: center;">操作</th>
+              <th>{{ t('fileBrowser.colName') }}</th>
+              <th width="100">{{ t('fileBrowser.colSize') }}</th>
+              <th width="180">{{ t('fileBrowser.colModified') }}</th>
+              <th width="50" style="text-align: center;">{{ t('fileBrowser.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -437,7 +439,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
               <td class="date-cell">{{ formatDate(file.mod_time) }}</td>
               <td class="action-cell">
                 <div class="action-wrapper">
-                  <button class="row-action-btn" @click.stop="toggleMenu(file, $event)" title="更多操作">
+                  <button class="row-action-btn" @click.stop="toggleMenu(file, $event)" :title="t('fileBrowser.moreActions')">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                       <circle cx="12" cy="5" r="1"/>
                       <circle cx="12" cy="12" r="1"/>
@@ -462,7 +464,7 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
       <!-- 右键菜单（委托给子组件） -->
       <FileContextMenu
         ref="menuRef"
-        :target="activeMenuTarget"
+        :target="activeMenuTarget || undefined"
         :pos="menuPos"
         :is-uploading="isUploading"
         @action="handleMenuAction"
@@ -471,14 +473,14 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
 
       <FileZipDialog
         :visible="zipDialogVisible"
-        :target="zipDialogTarget"
+        :target="zipDialogTarget || undefined"
         @close="closeZipDialog"
         @submit="handleZipSubmit"
       />
 
       <FileAttributeDialog
         :visible="attributeDialogVisible"
-        :target="attributeDialogTarget"
+        :target="attributeDialogTarget || undefined"
         :is-windows-target="isWindowsTarget"
         @close="closeAttributeDialog"
         @submit="handleAttributeSubmit"

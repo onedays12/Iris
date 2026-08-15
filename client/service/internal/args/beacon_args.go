@@ -38,6 +38,9 @@ func ContainsString(items []string, value string) bool {
 }
 
 // NormalizeBeaconCommandArgs 把原始 JSON 数组归一化为 BeaconCommandArg 列表。
+//
+// canonical 形状: []{kind, value} 对象数组(kind 为 snake_case 单键)。
+// 不再接受历史遗留的位置参数数组、裸数字、无 kind 的旧格式。
 func NormalizeBeaconCommandArgs(raw any) ([]BeaconCommandArg, error) {
 	items, ok := raw.([]any)
 	if !ok {
@@ -69,41 +72,19 @@ func NormalizeManifestCommandArgs(items []BeaconCommandArg) ([]BeaconCommandArg,
 }
 
 // NormalizeBeaconCommandArg 把单个原始值归一化为 BeaconCommandArg。
+//
+// 只接受 canonical 形状 {kind, value}(kind 为 snake_case 单键);
+// 不支持历史遗留的位置参数/裸数字/无 kind 推断形状。
 func NormalizeBeaconCommandArg(raw any) (BeaconCommandArg, error) {
 	switch typed := raw.(type) {
 	case BeaconCommandArg:
 		return BuildBeaconCommandArg(typed.Kind, typed.Value)
 	case map[string]any:
-		kind := strings.ToLower(strings.TrimSpace(PickString(typed, "kind", "Kind")))
+		kind := strings.ToLower(strings.TrimSpace(PickString(typed, "kind")))
 		value := typed["value"]
-		if kind == "" {
-			return InferBeaconCommandArg(value)
-		}
 		return BuildBeaconCommandArg(kind, value)
-	case string, bool, float64, float32, int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64, json.Number:
-		return InferBeaconCommandArg(typed)
 	default:
 		return BeaconCommandArg{}, fmt.Errorf("unsupported arg type %T", raw)
-	}
-}
-
-// InferBeaconCommandArg 按值的 Go 类型推断 BeaconCommandArg(无显式 kind 时)。
-func InferBeaconCommandArg(value any) (BeaconCommandArg, error) {
-	switch typed := value.(type) {
-	case nil:
-		return BeaconCommandArg{Kind: "string", Value: ""}, nil
-	case bool:
-		return BeaconCommandArg{Kind: "bool", Value: typed}, nil
-	case float64, float32, int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64, json.Number:
-		n, err := ParseInt32Value(typed)
-		if err != nil {
-			return BeaconCommandArg{}, err
-		}
-		return BeaconCommandArg{Kind: "int32", Value: n}, nil
-	default:
-		return BeaconCommandArg{Kind: "string", Value: StringifyValue(value)}, nil
 	}
 }
 

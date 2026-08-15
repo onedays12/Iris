@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TopologyToolbar - 拓扑图工具栏
  *

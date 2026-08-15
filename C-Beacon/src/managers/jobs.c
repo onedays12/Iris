@@ -2,8 +2,11 @@
 #include "beacon_jobs.h"
 #include "beacon_packet.h"
 
+#ifdef BEACON_TEST
+#include "beacon_test_hooks.h"
+#endif
+
 #define JOB_WAIT_BATCH_COUNT 64
-#define JOB_FREE_WAIT_TIMEOUT_MS 5000
 
 /*
  * Job 管理器统一跟踪后台 process/BOF 任务。
@@ -84,6 +87,7 @@ VOID JobFree(JobManager* jm)
 
     InterlockedExchange(&jm->shutting_down, 1);
 
+    /* 通知所有 Worker 取消并终止关联的 Shell 子进程 */
     EnterCriticalSection(&jm->lock);
     for (cur = jm->jobs; cur; cur = cur->next) {
         InterlockedExchange(&cur->cancel_requested, 1);
@@ -93,6 +97,12 @@ VOID JobFree(JobManager* jm)
     }
     LeaveCriticalSection(&jm->lock);
 
+    /*
+     * 分批等待所有 Worker 线程退出。
+     * 只收集仍在运行的线程；已退出但未调用 JobComplete 的线程会被跳过，
+     * 每批最多 JOB_WAIT_BATCH_COUNT 个，无限等待直到整批确实退出。
+     * 所有 Worker 退出后，链表中的剩余 Job 才能安全释放。
+     */
     for (;;) {
         wait_count = 0;
 
@@ -102,6 +112,7 @@ VOID JobFree(JobManager* jm)
              cur = cur->next) {
             HANDLE dup = NULL;
             if (cur->thread_handle &&
+                WaitForSingleObject(cur->thread_handle, 0) == WAIT_TIMEOUT &&
                 DuplicateHandle(GetCurrentProcess(), cur->thread_handle,
                                 GetCurrentProcess(), &dup, SYNCHRONIZE,
                                 FALSE, 0)) {
@@ -114,15 +125,14 @@ VOID JobFree(JobManager* jm)
             break;
         }
 
-        WaitForMultipleObjects((DWORD)wait_count, wait_handles, TRUE, JOB_FREE_WAIT_TIMEOUT_MS);
+        WaitForMultipleObjects((DWORD)wait_count, wait_handles, TRUE, INFINITE);
         for (i = 0; i < wait_count; ++i) {
             CloseHandle(wait_handles[i]);
             wait_handles[i] = NULL;
         }
-
-        break;
     }
 
+    /* 所有 Worker 已退出：摘链并释放残留 Job */
     EnterCriticalSection(&jm->lock);
     list = jm->jobs;
     jm->jobs = NULL;
@@ -179,6 +189,9 @@ BeaconJob* JobCreate(struct BeaconContext* ctx, UINT32 task_id, UINT32 command_i
     }
     job->next = ctx->jobs.jobs;
     ctx->jobs.jobs = job;
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_JOB_CREATED, task_id, 0);
+#endif
     LeaveCriticalSection(&ctx->jobs.lock);
 
     return job;
@@ -198,7 +211,14 @@ BOOL JobStartThread(BeaconJob* job, LPTHREAD_START_ROUTINE start, PVOID arg)
         return FALSE;
     }
 
+    /* 关闭流程已开始则拒绝登记，清理挂起线程句柄并返回失败 */
     EnterCriticalSection(&job->owner->lock);
+    if (InterlockedCompareExchange(&job->owner->shutting_down, 0, 0) != 0) {
+        LeaveCriticalSection(&job->owner->lock);
+        CloseHandle(hThread);
+        return FALSE;
+    }
+
     job->thread_handle = hThread;
     resumed = ResumeThread(hThread) != (DWORD)-1;
     if (!resumed) {
@@ -212,6 +232,10 @@ BOOL JobStartThread(BeaconJob* job, LPTHREAD_START_ROUTINE start, PVOID arg)
         CloseHandle(hThread);
         return FALSE;
     }
+
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_JOB_THREAD_STARTED, job->task_id, 0);
+#endif
 
     return TRUE;
 }
@@ -231,6 +255,9 @@ VOID JobComplete(BeaconJob* job)
     LeaveCriticalSection(&jm->lock);
 
     JobFreeObject(job);
+#ifdef BEACON_TEST
+    BeaconTestRecord(BEACON_TEST_EVENT_JOB_COMPLETE, 0, 0);
+#endif
 }
 
 /* 查询 Job 是否已收到取消请求 */

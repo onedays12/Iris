@@ -24,24 +24,37 @@ var (
 	ErrDispatchUnexpectedHTML = errors.New("unexpected html response")
 )
 
-// dispatchAction 执行插件指定的动作，根据 kind 分流到 BOF 或 PostEx 派发路径
-func (m *PluginManager) dispatchAction(ctx context.Context, action PluginAction, payload map[string]any) error {
-	beaconID := args.PickString(payload, "beacon_id", "beaconId", "beaconID")
+// dispatchAction 执行插件指定的动作，根据 kind 分流到 BOF 或 PostEx 派发路径。
+// capabilities 白名单强制: 最终 command_id 必须落在插件声明的 capabilities.command_ids 内。
+func (m *PluginManager) dispatchAction(ctx context.Context, plugin *PluginInstance, action PluginAction, payload map[string]any) error {
+	beaconID := args.PickString(payload, "beacon_id")
 	if beaconID == "" {
 		return fmt.Errorf("beacon_id is required")
 	}
 
-	apiBase := args.PickString(payload, "api_base", "apiBase", "api_base_url", "apiBaseUrl")
+	apiBase := args.PickString(payload, "api_base")
 	if apiBase == "" {
 		apiBase = "https://127.0.0.1:8080"
 	}
-	token := args.PickString(payload, "token", "access_token", "accessToken")
+	token := args.PickString(payload, "token")
 	if token == "" {
 		return fmt.Errorf("token is required")
 	}
 
+	checkCapability := func(commandID int) error {
+		if plugin == nil || plugin.Manifest.Capabilities == nil {
+			return nil
+		}
+		for _, allowed := range plugin.Manifest.Capabilities.CommandIDs {
+			if allowed == commandID {
+				return nil
+			}
+		}
+		return fmt.Errorf("plugin %s is not allowed to dispatch command %d (capabilities.command_ids)", plugin.ID, commandID)
+	}
+
 	if normalizePluginActionKind(action.Kind) == "postex" {
-		commandID := args.PickInt(payload, "command_id", "commandId", "commandID")
+		commandID := args.PickInt(payload, "command_id")
 		if commandID <= 0 {
 			commandID = action.CommandID
 		}
@@ -51,6 +64,9 @@ func (m *PluginManager) dispatchAction(ctx context.Context, action PluginAction,
 		if commandID != defaultPostExCommandID {
 			return fmt.Errorf("postex plugin action %s must use command_id %d", action.ID, defaultPostExCommandID)
 		}
+		if err := checkCapability(commandID); err != nil {
+			return err
+		}
 
 		cmdArgs, err := buildPostExPluginArgs(action, payload)
 		if err != nil {
@@ -59,7 +75,7 @@ func (m *PluginManager) dispatchAction(ctx context.Context, action PluginAction,
 		return dispatchBeaconCommand(ctx, apiBase, token, beaconID, commandID, cmdArgs)
 	}
 
-	commandID := args.PickInt(payload, "command_id", "commandId", "commandID")
+	commandID := args.PickInt(payload, "command_id")
 	if commandID <= 0 {
 		commandID = action.CommandID
 	}
@@ -68,6 +84,9 @@ func (m *PluginManager) dispatchAction(ctx context.Context, action PluginAction,
 	}
 	if commandID <= 0 {
 		return fmt.Errorf("command_id is required for plugin action %s", action.ID)
+	}
+	if err := checkCapability(commandID); err != nil {
+		return err
 	}
 
 	cmdArgs, err := buildPluginArgs(action, payload)
@@ -161,12 +180,12 @@ func classifyDispatchResult(result transport.ProxyResult) error {
 
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(trimmed), &payload); err == nil {
-			if errMsg := args.PickString(payload, "error", "Error"); errMsg != "" {
+			if errMsg := args.PickString(payload, "error"); errMsg != "" {
 				return errors.New(errMsg)
 			}
 			if okVal, exists := payload["ok"]; exists {
 				if ok, isBool := okVal.(bool); isBool && !ok {
-					msg := args.PickString(payload, "message", "Message")
+					msg := args.PickString(payload, "message")
 					if msg == "" {
 						msg = "command dispatch failed"
 					}

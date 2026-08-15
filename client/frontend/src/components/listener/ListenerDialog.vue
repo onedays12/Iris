@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * ListenerDialog - 监听器创建/编辑对话框
  * 支持 HTTP/HTTPS/DNS/External/SMB 等协议的监听器配置，
@@ -6,8 +6,10 @@
  */
 
 import { ref, computed, watch } from 'vue'
-import { useNotificationStore } from '../../stores/notification.js'
-import { useListenerStore } from '../../stores/listener.js'
+import { useI18n } from 'vue-i18n'
+import { useNotificationStore } from '../../stores/notification'
+import { useListenerStore } from '../../stores/listener'
+import type { ListenerCreateRequest } from '../../features/listener/api/types'
 import {
   parseListenerConfig,
   splitHostPort,
@@ -15,12 +17,13 @@ import {
   parsePort,
   inferProfile,
   generateEncryptKey as genKey,
-} from '../../utils/listenerForm.js'
+} from '../../utils/listenerForm'
 
 const props = defineProps({
   editData: { type: Object, default: null }
 })
 
+const { t } = useI18n()
 const notificationStore = useNotificationStore()
 const listenerStore = useListenerStore()
 const emit = defineEmits(['confirm', 'cancel'])
@@ -30,12 +33,12 @@ const isEdit = computed(() => !!props.editData)
 const protocols = ['HTTP', 'HTTPS', 'TCP']
 const internalProtocols = ['TCP', 'SMB']
 const listenerTypes = [
-  { value: 'external', label: '外部 (TeamServer)', desc: 'TeamServer 直接监听' },
-  { value: 'internal', label: '内部 (P2P/Beacon)', desc: '由 Beacon 承载' }
+  { value: 'external', labelKey: 'listenerDialog.typeExternal', descKey: 'listenerDialog.typeExternalDesc' },
+  { value: 'internal', labelKey: 'listenerDialog.typeInternal', descKey: 'listenerDialog.typeInternalDesc' }
 ]
 const profileOptions = [
-  { value: 'http-default', label: 'http-default', desc: '普通 HTTP/HTTPS C2，不启用 Stager。', stager: false },
-  { value: 'http-stager', label: 'http-stager', desc: '启用 HTTP Stager，需要填写 stage 下载端点。', stager: true },
+  { value: 'http-default', label: 'http-default', descKey: 'listenerDialog.profileDefaultDesc', stager: false },
+  { value: 'http-stager', label: 'http-stager', descKey: 'listenerDialog.profileStagerDesc', stager: true },
 ]
 
 function defaultForm() {
@@ -66,38 +69,38 @@ const form = ref(defaultForm())
 
 const selectedProfile = computed(() => profileOptions.find(item => item.value === form.value.profile))
 const profileRequiresStager = computed(() => Boolean(selectedProfile.value?.stager))
-const profileDescription = computed(() => selectedProfile.value?.desc || '自定义 c2profile；仅提交实例端点。')
+const profileDescription = computed(() => (selectedProfile.value?.descKey ? t(selectedProfile.value.descKey) : t('listenerDialog.profileCustomFallback')))
 const isInternal = computed(() => form.value.listener_type === 'internal')
 const isExternalTcp = computed(() => form.value.listener_type === 'external' && form.value.protocol === 'tcp')
 const availableProtocols = computed(() => isInternal.value ? internalProtocols : protocols)
 
 // onError 回调:统一用 notificationStore.error
-const onError = (msg) => notificationStore.error(msg)
+const onError = (msg: string) => notificationStore.error(msg)
 
 // 监听编辑数据并还原表单
 watch(() => props.editData, (newVal) => {
   if (newVal) {
     const config = parseListenerConfig(newVal.config)
-    const callback = splitHostPort(config.callback_host || '', Number(config.callback_port ?? config.port ?? newVal.bind_port ?? 4444))
-    const stager = config.stager && typeof config.stager === 'object' ? config.stager : {}
+    const callback = splitHostPort(config.callback_host || '', Number(config.callback_port ?? config.port ?? newVal.bindPort ?? 4444))
+    const stager = (config.stager && typeof config.stager === 'object' ? config.stager : {}) as Record<string, unknown>
 
     form.value.name = newVal.name
     form.value.protocol = (newVal.protocol || config.protocol || 'http').toLowerCase()
-    form.value.listener_type = newVal.listener_type || 'external'
+    form.value.listener_type = newVal.listenerType || 'external'
     form.value.profile = inferProfile(config)
-    form.value.host = config.bind_host || config.host || newVal.bind_addr || '0.0.0.0'
-    form.value.port = Number(config.bind_port ?? config.port ?? newVal.bind_port ?? 4444)
+    form.value.host = config.bind_host || config.host || newVal.bindAddr || '0.0.0.0'
+    form.value.port = Number(config.bind_port ?? config.port ?? newVal.bindPort ?? 4444)
     form.value.callback_host = callback.host
     form.value.callback_port = callback.port
     form.value.ssl_enabled = Boolean(config.ssl)
-    form.value.ssl_cert = config.ssl_cert || ''
-    form.value.ssl_key = config.ssl_key || ''
-    form.value.encrypt_key = config.encrypt_key || ''
-    form.value.pipe_name = config.pipe_name || ''
+    form.value.ssl_cert = String(config.ssl_cert || '')
+    form.value.ssl_key = String(config.ssl_key || '')
+    form.value.encrypt_key = String(config.encrypt_key || '')
+    form.value.pipe_name = String(config.pipe_name || '')
     form.value.stager = {
-      bind_host: stager.bind_host || stager.host || '0.0.0.0',
+      bind_host: String(stager.bind_host || stager.host || '0.0.0.0'),
       bind_port: Number(stager.bind_port ?? stager.port ?? 8081),
-      callback_host: stager.callback_host || callback.host || '',
+      callback_host: String(stager.callback_host || callback.host || ''),
       callback_port: Number(stager.callback_port ?? 8081),
     }
   } else {
@@ -131,28 +134,28 @@ async function handleConfirm() {
     const profile = String(form.value.profile || '').trim()
 
     if (!name) {
-      notificationStore.error('监听器名称不能为空')
+      notificationStore.error(t('listenerDialog.errNameEmpty'))
       return
     }
 
     const encryptKey = String(form.value.encrypt_key || '').trim()
     if (!encryptKey) {
-      notificationStore.error('通信加密密钥不能为空')
+      notificationStore.error(t('listenerDialog.errEncryptKey'))
       return
     }
 
     // Internal TCP/SMB 模式
     if (isInternal.value) {
       if (!['tcp', 'smb'].includes(protocol)) {
-        notificationStore.error('Internal 监听器只支持 TCP / SMB')
+        notificationStore.error(t('listenerDialog.errInternalOnlyTcpSmb'))
         return
       }
 
-      let payload
+      let payload: ListenerCreateRequest
       if (protocol === 'tcp') {
-        const host = validateHostOnly(form.value.host, '绑定地址 (Host)', onError)
+        const host = validateHostOnly(form.value.host, t('listenerDialog.labelBindHost'), onError)
         if (!host) return
-        const port = parsePort(form.value.port, '监听端口', onError)
+        const port = parsePort(form.value.port, t('listenerDialog.labelListenPort'), onError)
         if (port === null) return
         payload = {
           name,
@@ -167,7 +170,7 @@ async function handleConfirm() {
       } else {
         const pipeName = String(form.value.pipe_name || '').trim()
         if (!pipeName) {
-          notificationStore.error('SMB Pipe 名称不能为空')
+          notificationStore.error(t('listenerDialog.errPipeNameEmpty'))
           return
         }
         payload = {
@@ -183,14 +186,14 @@ async function handleConfirm() {
 
       if (isEdit.value) {
         await listenerStore.updateListener(payload)
-        notificationStore.success(`监听器 ${name} 配置已成功热更新`)
+        notificationStore.success(t('listenerDialog.hotUpdated', { name }))
       } else {
         const newListener = await listenerStore.createListener(payload)
         if (newListener && newListener.status === 'error') {
-          notificationStore.error(`部署失败：配置错误`)
+          notificationStore.error(t('listenerDialog.deployFailedConfig'))
           return
         }
-        notificationStore.success(`监听器 ${name} 部署成功并已启动`)
+        notificationStore.success(t('listenerDialog.deploySuccess', { name }))
       }
       emit('confirm')
       resetForm()
@@ -199,16 +202,16 @@ async function handleConfirm() {
 
     // External TCP 模式
     if (isExternalTcp.value) {
-      const host = validateHostOnly(form.value.host, '绑定地址 (Host)', onError)
+      const host = validateHostOnly(form.value.host, t('listenerDialog.labelBindHost'), onError)
       if (!host) return
-      const port = parsePort(form.value.port, '监听端口', onError)
+      const port = parsePort(form.value.port, t('listenerDialog.labelListenPort'), onError)
       if (port === null) return
-      const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', onError, { allowUnspecified: false })
+      const callbackHost = validateHostOnly(form.value.callback_host, t('listenerDialog.labelCallbackHost'), onError, { allowUnspecified: false })
       if (!callbackHost) return
-      const callbackPort = parsePort(form.value.callback_port, '回连端口', onError)
+      const callbackPort = parsePort(form.value.callback_port, t('listenerDialog.labelCallbackPort'), onError)
       if (callbackPort === null) return
 
-      const payload = {
+      const payload: ListenerCreateRequest = {
         name,
         protocol: 'tcp',
         listener_type: 'external',
@@ -225,14 +228,14 @@ async function handleConfirm() {
 
       if (isEdit.value) {
         await listenerStore.updateListener(payload)
-        notificationStore.success(`监听器 ${name} 配置已成功热更新`)
+        notificationStore.success(t('listenerDialog.hotUpdated', { name }))
       } else {
         const newListener = await listenerStore.createListener(payload)
         if (newListener && newListener.status === 'error') {
-          notificationStore.error(`部署失败：端口可能已被占用或配置错误`)
+          notificationStore.error(t('listenerDialog.deployFailedPort'))
           return
         }
-        notificationStore.success(`监听器 ${name} 部署成功并已启动`)
+        notificationStore.success(t('listenerDialog.deploySuccess', { name }))
       }
       emit('confirm')
       resetForm()
@@ -241,32 +244,32 @@ async function handleConfirm() {
 
     // External HTTP/HTTPS 模式
     if (!['http', 'https'].includes(protocol)) {
-      notificationStore.error('当前 c2profile listener 只支持 HTTP / HTTPS')
+      notificationStore.error(t('listenerDialog.errHttpHttpsOnly'))
       return
     }
     if (!profile) {
-      notificationStore.error('请选择 C2 Profile')
+      notificationStore.error(t('listenerDialog.errSelectProfile'))
       return
     }
-    const host = validateHostOnly(form.value.host, '绑定地址 (Host)', onError)
+    const host = validateHostOnly(form.value.host, t('listenerDialog.labelBindHost'), onError)
     if (!host) return
-    const port = parsePort(form.value.port, '监听端口', onError)
+    const port = parsePort(form.value.port, t('listenerDialog.labelListenPort'), onError)
     if (port === null) return
-    const callbackHost = validateHostOnly(form.value.callback_host, '回连地址 (Callback Host)', onError, { allowUnspecified: false })
+    const callbackHost = validateHostOnly(form.value.callback_host, t('listenerDialog.labelCallbackHost'), onError, { allowUnspecified: false })
     if (!callbackHost) return
-    const callbackPort = parsePort(form.value.callback_port, '回连端口', onError)
+    const callbackPort = parsePort(form.value.callback_port, t('listenerDialog.labelCallbackPort'), onError)
     if (callbackPort === null) return
 
     let stagerConfig = undefined
     if (profileRequiresStager.value) {
       const stager = form.value.stager || {}
-      const stagerBindHost = validateHostOnly(stager.bind_host, 'Stager 监听地址 (Bind Host)', onError)
+      const stagerBindHost = validateHostOnly(stager.bind_host, t('listenerDialog.labelStagerBindHost'), onError)
       if (!stagerBindHost) return
-      const stagerBindPort = parsePort(stager.bind_port, 'Stager 监听端口', onError)
+      const stagerBindPort = parsePort(stager.bind_port, t('listenerDialog.labelStagerBindPort'), onError)
       if (stagerBindPort === null) return
-      const stagerCallbackHost = validateHostOnly(stager.callback_host, 'Stager 下载地址 (Callback Host)', onError, { allowUnspecified: false })
+      const stagerCallbackHost = validateHostOnly(stager.callback_host, t('listenerDialog.labelStagerCallbackHost'), onError, { allowUnspecified: false })
       if (!stagerCallbackHost) return
-      const stagerCallbackPort = parsePort(stager.callback_port, 'Stager 下载端口', onError)
+      const stagerCallbackPort = parsePort(stager.callback_port, t('listenerDialog.labelStagerCallbackPort'), onError)
       if (stagerCallbackPort === null) return
 
       stagerConfig = {
@@ -278,10 +281,10 @@ async function handleConfirm() {
     }
 
     // 基础元数据 (对齐新契约字段)
-    const payload = {
+    const payload: ListenerCreateRequest = {
       name: name,
-      protocol,
-      listener_type: form.value.listener_type,
+      protocol: protocol as 'http' | 'https',
+      listener_type: form.value.listener_type as 'external',
       profile,
       host,
       port,
@@ -295,22 +298,22 @@ async function handleConfirm() {
 
     if (isEdit.value) {
       await listenerStore.updateListener(payload)
-      notificationStore.success(`监听器 ${name} 配置已成功热更新`)
+      notificationStore.success(t('listenerDialog.hotUpdated', { name }))
     } else {
       const newListener = await listenerStore.createListener(payload)
       
       // 3. 二次质检：检查监听器是否真的“跑起来了”
       if (newListener && newListener.status === 'error') {
-        notificationStore.error(`部署失败：端口可能已被占用或配置错误`)
+        notificationStore.error(t('listenerDialog.deployFailedPort'))
         return 
       }
-      notificationStore.success(`监听器 ${name} 部署成功并已启动`)
+      notificationStore.success(t('listenerDialog.deploySuccess', { name }))
     }
     emit('confirm') 
     resetForm()
   } catch (err) {
     // 双重保障提示
-    const msg = err.message || '操作失败，请检查 TeamServer 状态'
+    const msg = (err instanceof Error ? err.message : String(err)) || t('listenerDialog.checkTeamServer')
     if (!msg.includes('TeamServer')) { // 避免与请求层错误提示重复弹出
        notificationStore.error(msg)
     }
@@ -344,17 +347,17 @@ function resetForm() {
             <span class="title-icon">{{ isEdit ? '📝' : '📡' }}</span>
             <div>
               <div class="header-tag">LISTENER CONFIG</div>
-              <h2>{{ isEdit ? '编辑监听器' : '部署新监听器' }}</h2>
+              <h2>{{ isEdit ? t('listenerDialog.editTitle') : t('listenerDialog.createTitle') }}</h2>
             </div>
           </div>
-          <p class="modal-desc">{{ isEdit ? '更新实例端点并重新解析 C2 Profile' : '选择 C2 Profile，填写实例端点和通信密钥' }}</p>
+          <p class="modal-desc">{{ isEdit ? t('listenerDialog.editDesc') : t('listenerDialog.createDesc') }}</p>
         </div>
         <button
           type="button"
           class="modal-close-btn"
           @click="handleCancel"
-          aria-label="取消"
-          title="取消"
+          :aria-label="t('common.cancel')"
+          :title="t('common.cancel')"
         >
           ×
         </button>
@@ -364,34 +367,34 @@ function resetForm() {
         <!-- 基础配置组 -->
         <section class="form-section">
           <div class="section-heading">
-            <h3 class="section-title">基础信息</h3>
+            <h3 class="section-title">{{ t('listenerDialog.sectionBasic') }}</h3>
             <span class="profile-badge" :class="{ stager: profileRequiresStager }">{{ form.profile }}</span>
           </div>
           <div class="form-grid">
             <div class="form-group">
-              <label>监听器名称 {{ isEdit ? '(不可更改)' : '' }}</label>
+              <label>{{ t('listenerDialog.fieldName') }} {{ isEdit ? t('listenerDialog.notModifiable') : '' }}</label>
               <input 
                 v-model="form.name" 
                 type="text" 
-                placeholder="例如: LST-01" 
+                :placeholder="t('listenerDialog.placeholderName')" 
                 class="glass-input"
                 :disabled="isEdit"
               >
             </div>
             <div class="form-group">
-              <label>传输协议 {{ isEdit ? '(不可更改)' : '' }}</label>
+              <label>{{ t('listenerDialog.fieldProtocol') }} {{ isEdit ? t('listenerDialog.notModifiable') : '' }}</label>
               <select v-model="form.protocol" class="glass-input" :disabled="isEdit">
                 <option v-for="p in availableProtocols" :key="p" :value="p.toLowerCase()">{{ p }}</option>
               </select>
             </div>
             <div class="form-group">
-              <label>监听器类型 {{ isEdit ? '(不可更改)' : '' }}</label>
+              <label>{{ t('listenerDialog.fieldType') }} {{ isEdit ? t('listenerDialog.notModifiable') : '' }}</label>
               <select v-model="form.listener_type" class="glass-input ltype-select" :disabled="isEdit">
                 <option v-for="lt in listenerTypes" :key="lt.value" :value="lt.value">
-                  {{ lt.label }}
+                  {{ t(lt.labelKey) }}
                 </option>
               </select>
-              <p class="field-hint">{{ listenerTypes.find(lt => lt.value === form.listener_type)?.desc }}</p>
+              <p class="field-hint">{{ t(listenerTypes.find(lt => lt.value === form.listener_type)?.descKey ?? '') }}</p>
             </div>
             <div v-if="!isExternalTcp" class="form-group">
               <label>C2 Profile</label>
@@ -405,43 +408,43 @@ function resetForm() {
             <div v-else class="form-group">
               <label>C2 Profile</label>
               <input type="text" class="glass-input mono" value="tcp-default" disabled>
-              <p class="field-hint">TCP 外部监听器固定使用 tcp-default profile。</p>
+              <p class="field-hint">{{ t('listenerDialog.tcpProfileFixed') }}</p>
             </div>
 
           </div>
           <div v-if="form.listener_type === 'internal'" class="internal-info">
             <span class="info-icon">💡</span>
-            <p>Internal 类型监听器由 Beacon 承载，不占用 TeamServer 端口，仅作为 P2P 元数据存在。</p>
+            <p>{{ t('listenerDialog.internalInfo') }}</p>
           </div>
           <div class="profile-note">
             <span class="note-icon">📄</span>
-            <span>URI、User-Agent、响应头、sleep/jitter、Stager Base URI 等由 c2profile YAML 管理。</span>
+            <span>{{ t('listenerDialog.profileNote') }}</span>
           </div>
         </section>
 
         <!-- 网络配置组 -->
         <section class="form-section">
           <div class="section-heading">
-            <h3 class="section-title">主 Listener 端点</h3>
+            <h3 class="section-title">{{ t('listenerDialog.sectionMainEndpoint') }}</h3>
           </div>
           <div v-if="isInternal && form.protocol === 'smb'" class="endpoint-grid">
             <div class="endpoint-card">
               <div class="endpoint-head">
                 <span>SMB Pipe</span>
-                <small>Beacon 承载的命名管道</small>
+                <small>{{ t('listenerDialog.smbBeaconPipe') }}</small>
               </div>
               <div class="form-group">
-                <label>Pipe 名称</label>
+                <label>{{ t('listenerDialog.fieldPipeName') }}</label>
                 <input v-model="form.pipe_name" type="text" class="glass-input mono" placeholder="\\.\pipe\beacon_internal">
               </div>
-              <p class="field-hint">SMB 管道路径，由 Beacon 创建并监听。</p>
+              <p class="field-hint">{{ t('listenerDialog.smbPipeHint') }}</p>
             </div>
           </div>
           <div v-else class="endpoint-grid">
             <div class="endpoint-card">
               <div class="endpoint-head">
                 <span>Bind</span>
-                <small>{{ isInternal ? 'Beacon 本地监听' : 'TeamServer 本地监听' }}</small>
+                <small>{{ isInternal ? t('listenerDialog.bindBeaconLocal') : t('listenerDialog.bindTsLocal') }}</small>
               </div>
               <div class="endpoint-row">
                 <div class="field host-field">
@@ -453,12 +456,12 @@ function resetForm() {
                   <input v-model="form.port" type="number" class="glass-input mono" placeholder="4444">
                 </div>
               </div>
-              <p class="field-hint">只填 host/IP，不要包含协议或端口。</p>
+              <p class="field-hint">{{ t('listenerDialog.hostOnly') }}</p>
             </div>
             <div v-if="!isInternal" class="endpoint-card callback">
               <div class="endpoint-head">
                 <span>Callback</span>
-                <small>Beacon 实际访问</small>
+                <small>{{ t('listenerDialog.beaconActualVisit') }}</small>
               </div>
               <div class="endpoint-row">
                 <div class="field host-field">
@@ -470,20 +473,20 @@ function resetForm() {
                   <input v-model="form.callback_port" type="number" class="glass-input mono" placeholder="4444">
                 </div>
               </div>
-              <p class="field-hint">不能使用 0.0.0.0 或 ::。</p>
+              <p class="field-hint">{{ t('listenerDialog.noWildcard') }}</p>
             </div>
           </div>
         </section>
 
         <section class="form-section" v-if="!isInternal && profileRequiresStager">
           <div class="section-header">
-            <h3 class="section-title">HTTP Stager 端点</h3>
+            <h3 class="section-title">{{ t('listenerDialog.sectionHttpStager') }}</h3>
           </div>
           <div class="endpoint-grid compact">
             <div class="endpoint-card">
               <div class="endpoint-head">
                 <span>Stage Bind</span>
-                <small>下载服务监听</small>
+                <small>{{ t('listenerDialog.stageDownloadListen') }}</small>
               </div>
               <div class="endpoint-row">
                 <div class="field host-field">
@@ -499,7 +502,7 @@ function resetForm() {
             <div class="endpoint-card callback">
               <div class="endpoint-head">
                 <span>Stage Callback</span>
-                <small>Beacon 下载 stage</small>
+                <small>{{ t('listenerDialog.beaconDownloadStage') }}</small>
               </div>
               <div class="endpoint-row">
                 <div class="field host-field">
@@ -513,22 +516,22 @@ function resetForm() {
               </div>
             </div>
           </div>
-          <p class="field-hint inline-hint">base_uri、HTTPS、chunk size 等来自 c2profile。</p>
+          <p class="field-hint inline-hint">{{ t('listenerDialog.stagerConfigFromProfile') }}</p>
         </section>
 
         <!-- 安全配置 -->
         <section v-if="!isInternal" class="form-section">
           <div class="section-heading">
-            <h3 class="section-title">安全加密</h3>
+            <h3 class="section-title">{{ t('listenerDialog.sectionSecurity') }}</h3>
           </div>
           <div class="form-grid security-row">
             <div class="form-group span-4">
-              <label>通信加密密钥 (AES Key)</label>
+              <label>{{ t('listenerDialog.fieldEncryptKey') }}</label>
               <div class="input-with-action">
                 <input v-model="form.encrypt_key" type="text" class="glass-input mono" placeholder="00112233445566778899aabbccddeeff">
-                <button type="button" @click="generateEncryptKey" class="btn-small glass-btn" title="重新生成密钥">重新生成</button>
+                <button type="button" @click="generateEncryptKey" class="btn-small glass-btn" :title="t('listenerDialog.regenerateKey')">{{ t('listenerDialog.regenerate') }}</button>
               </div>
-              <p class="field-hint">实例级密钥，不来自 c2profile。</p>
+              <p class="field-hint">{{ t('listenerDialog.encryptKeyHint') }}</p>
             </div>
           </div>
         </section>
@@ -540,27 +543,27 @@ function resetForm() {
           </div>
           <label class="toggle-row">
             <input type="checkbox" v-model="form.ssl_enabled" class="toggle-checkbox">
-            <span class="toggle-label">启用 TLS 加密</span>
+            <span class="toggle-label">{{ t('listenerDialog.enableTls') }}</span>
           </label>
-          <p class="field-hint">开启后 Beacon 与 TeamServer 之间使用 TLS 加密通信，需提供证书和私钥。</p>
+          <p class="field-hint">{{ t('listenerDialog.tlsHint') }}</p>
         </section>
 
         <div v-if="!isInternal && (!isExternalTcp || form.ssl_enabled)" class="advanced-toggle" @click="showAdvanced = !showAdvanced">
-          <span>{{ showAdvanced ? '收起' : '展开' }} TLS 证书</span>
+          <span>{{ showAdvanced ? t('listenerDialog.collapse') : t('listenerDialog.expand') }} TLS {{ t('listenerDialog.cert') }}</span>
         </div>
 
         <div class="advanced-panel" v-if="showAdvanced">
           <!-- 证书输入 -->
           <section class="form-section">
-            <h3 class="section-title">SSL 证书链 (PEM 格式)</h3>
-            <p class="field-hint">{{ isExternalTcp ? 'TLS 启用时必须同时提供证书和私钥。' : '仅 protocol=https 时使用；留空则由后端按当前能力处理。' }}</p>
+            <h3 class="section-title">{{ t('listenerDialog.sslCertChain') }}</h3>
+            <p class="field-hint">{{ isExternalTcp ? t('listenerDialog.tlsCertBothRequired') : t('listenerDialog.httpsOnlyCertHint') }}</p>
             <div class="cert-grid">
               <div class="form-group">
-                <label>SSL Certificate</label>
+                <label>SSL {{ t('listenerDialog.certificate') }}</label>
                 <textarea v-model="form.ssl_cert" class="glass-input area mono" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
               </div>
               <div class="form-group">
-                <label>SSL Private Key</label>
+                <label>SSL {{ t('listenerDialog.privateKey') }}</label>
                 <textarea v-model="form.ssl_key" class="glass-input area mono" placeholder="-----BEGIN PRIVATE KEY-----"></textarea>
               </div>
             </div>
@@ -569,10 +572,10 @@ function resetForm() {
       </div>
 
       <footer class="modal-footer">
-        <button class="btn btn-ghost" @click="handleCancel" :disabled="loading">取消</button>
+        <button class="btn btn-ghost" @click="handleCancel" :disabled="loading">{{ t('common.cancel') }}</button>
         <button class="btn btn-primary" @click="handleConfirm" :disabled="loading">
           <span v-if="loading" class="spin inline-spin"></span>
-          {{ loading ? '保存中...' : (isEdit ? '保存更改' : '确认部署') }}
+          {{ loading ? t('listenerDialog.saving') : (isEdit ? t('listenerDialog.saveChanges') : t('listenerDialog.confirmDeploy')) }}
         </button>
       </footer>
     </div>

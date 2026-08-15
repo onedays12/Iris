@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * GlobalConsoleDock - 全局控制台停靠面板
  *
@@ -6,8 +6,8 @@
  */
 
 import { computed } from 'vue'
-import { useConsoleStore } from '../../stores/console.js'
-import { useEventPanelStore } from '../../stores/eventPanel.js'
+import { useConsoleStore } from '../../stores/console'
+import { useEventPanelStore } from '../../stores/eventPanel'
 import ConsolePanel from '../dashboard/ConsolePanel.vue'
 
 const consoleStore = useConsoleStore()

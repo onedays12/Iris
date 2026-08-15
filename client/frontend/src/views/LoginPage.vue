@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * LoginPage - 登录页面
  * 提供用户名/密码登录、服务器地址配置，
@@ -6,12 +6,14 @@
  */
 
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { login } from '../features/auth/api/authApi.js'
-import { useAuthStore } from '../stores/auth.js'
-import { useWSStore } from '../stores/ws.js'
+import { login } from '../features/auth/api/authApi'
+import { useAuthStore } from '../stores/auth'
+import { useWSStore } from '../stores/ws'
 import { Browser } from '@wailsio/runtime'
 
+const { t } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const wsStore = useWSStore()
@@ -26,7 +28,7 @@ const errorMsg = ref('')
 
 async function handleLogin() {
   if (!username.value || !password.value) {
-    errorMsg.value = '请输入用户名和密码'
+    errorMsg.value = t('login.requiredFields')
     return
   }
 
@@ -54,10 +56,10 @@ async function handleLogin() {
       // 4. 跳转到仪表盘
       router.push('/dashboard')
     } else {
-      throw new Error('未获取到有效凭证')
+      throw new Error(t('login.noCredential'))
     }
   } catch (err) {
-    errorMsg.value = err.message || '登录失败，请检查 TeamServer 状态'
+    errorMsg.value = (err instanceof Error ? err.message : String(err)) || t('login.failed')
     // 如果是 WS 阶段出错，显示跳过按钮
     if (isWSConnecting.value) {
       showSkipButton.value = true
@@ -92,43 +94,43 @@ function openAuthorHome() {
           <span class="logo-icon">💠</span>
           <h1>TeamServer</h1>
         </div>
-        <p class="subtitle">终端认证管理系统</p>
+        <p class="subtitle">{{ t('login.subtitle') }}</p>
       </header>
 
       <form class="login-form" @submit.prevent="handleLogin">
         <div class="form-group" :class="{ 'has-error': errorMsg && !serverUrl }">
-          <label>服务器地址</label>
+          <label>{{ t('login.serverAddress') }}</label>
           <div class="input-wrapper">
             <span class="input-icon">🌐</span>
             <input 
               v-model="serverUrl" 
               type="text" 
-              placeholder="例如: https://127.0.0.1:8080"
+              :placeholder="t('login.serverPlaceholder')"
             >
           </div>
         </div>
 
         <div class="form-group" :class="{ 'has-error': errorMsg && !username }">
-          <label>用户名</label>
+          <label>{{ t('login.username') }}</label>
           <div class="input-wrapper">
             <span class="input-icon">👤</span>
             <input 
               v-model="username" 
               type="text" 
-              placeholder="请输入管理员账号"
+              :placeholder="t('login.usernamePlaceholder')"
               autocomplete="username"
             >
           </div>
         </div>
 
         <div class="form-group" :class="{ 'has-error': errorMsg && !password }">
-          <label>密码</label>
+          <label>{{ t('login.password') }}</label>
           <div class="input-wrapper">
             <span class="input-icon">🔒</span>
             <input 
               v-model="password" 
               type="password" 
-              placeholder="请输入访问秘钥"
+              :placeholder="t('login.passwordPlaceholder')"
               autocomplete="current-password"
             >
           </div>
@@ -145,11 +147,11 @@ function openAuthorHome() {
           :disabled="isLoading || isWSConnecting"
         >
           <template v-if="!isLoading && !isWSConnecting">
-            <span>立即验证</span>
+            <span>{{ t('login.submit') }}</span>
           </template>
           <template v-else-if="isWSConnecting">
             <div class="loader sm"></div>
-            <span>建立受控链路...</span>
+            <span>{{ t('login.connecting') }}</span>
           </template>
           <template v-else>
             <div class="loader"></div>
@@ -162,13 +164,13 @@ function openAuthorHome() {
           type="button"
           @click="router.push('/dashboard')"
         >
-          跳过链路检查，直接进入系统
+          {{ t('login.skip') }}
         </button>
       </form>
 
       <footer class="login-footer">
         <p>
-          &copy; 2026 制作 by
+          &copy; 2026 {{ t('login.madeBy') }}
           <button type="button" class="author-link" @click="openAuthorHome">oneday</button>
         </p>
       </footer>

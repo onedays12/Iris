@@ -12,33 +12,11 @@
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 /**
- * Deprecated: 使用 DoRequestWithStatus 替代。
- * DoRequest 吞掉 HTTP 状态码,无法区分 401/5xx/网络失败,仅返回纯 body 字符串。
- * dispatch 路径已改用 DoRequestWithStatus;此方法保留仅为向后兼容,
- * 前端 httpClient.js 实际不再调用。新代码请勿使用,后续版本可能移除。
- * *
- *  * DoRequest 执行转发请求
- *  * @param method HTTP 方法 (GET, POST, etc.)
- *  * @param url 完整的请求地址
- *  * @param payload JSON 报文体
- *  * @param headersMap 头信息映射
- * @param {string} method
- * @param {string} url
- * @param {string} payload
- * @param {{ [_: string]: string }} headersMap
- * @returns {$CancellablePromise<string>}
- */
-export function DoRequest(method, url, payload, headersMap) {
-    return $Call.ByID(612073058, method, url, payload, headersMap);
-}
-
-/**
  * DoRequestWithStatus executes a forwarded request and returns a structured
  * JSON string containing the HTTP status code, response body, and optional error.
  * 
- * Unlike DoRequest, this method never returns a Go error for HTTP-level failures
- * (4xx/5xx). Instead, it encodes everything into ProxyResult so the frontend can
- * handle status codes programmatically.
+ * HTTP-level failures (4xx/5xx) never produce a Go error: everything is encoded
+ * into ProxyResult so the frontend can handle status codes programmatically.
  * 
  * Network-level failures (DNS, connection refused, timeout) return status=0
  * with the error field populated. The Go error return is reserved for cases
@@ -46,7 +24,7 @@ export function DoRequest(method, url, payload, headersMap) {
  * @param {string} method
  * @param {string} url
  * @param {string} payload
- * @param {{ [_: string]: string }} headersMap
+ * @param {{ [_ in string]?: string }} headersMap
  * @returns {$CancellablePromise<string>}
  */
 export function DoRequestWithStatus(method, url, payload, headersMap) {
@@ -55,7 +33,7 @@ export function DoRequestWithStatus(method, url, payload, headersMap) {
 
 /**
  * @param {string} url
- * @param {{ [_: string]: string }} headersMap
+ * @param {{ [_ in string]?: string }} headersMap
  * @returns {$CancellablePromise<string>}
  */
 export function DownloadFileBase64(url, headersMap) {
@@ -66,7 +44,7 @@ export function DownloadFileBase64(url, headersMap) {
  * @param {string} url
  * @param {string} fileName
  * @param {string} base64Data
- * @param {{ [_: string]: string }} headersMap
+ * @param {{ [_ in string]?: string }} headersMap
  * @returns {$CancellablePromise<string>}
  */
 export function UploadFileBase64(url, fileName, base64Data, headersMap) {

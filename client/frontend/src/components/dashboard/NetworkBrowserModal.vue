@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * NetworkBrowserModal - 网络浏览器弹窗
  * 展示远程主机的网络接口信息和活动网络连接，
@@ -6,10 +6,12 @@
  */
 
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useAgentStore } from '../../stores/agent.js'
-import { useNetworkBrowserStore } from '../../stores/networkBrowser.js'
-import { useModalDragResize } from '../../composables/useModalDragResize.js'
+import { useI18n } from 'vue-i18n'
+import { useAgentStore } from '../../stores/agent'
+import { useNetworkBrowserStore } from '../../stores/networkBrowser'
+import { useModalDragResize } from '../../composables/useModalDragResize'
 
+const { t, locale } = useI18n()
 const agentStore = useAgentStore()
 const networkStore = useNetworkBrowserStore()
 
@@ -41,19 +43,19 @@ function fetchAll() {
   networkStore.requestAll(props.beaconid)
 }
 
-function formatTime(value) {
+function formatTime(value: string | null) {
   if (!value) return '--:--:--'
   const time = new Date(value)
   if (Number.isNaN(time.getTime())) return '--:--:--'
-  return time.toLocaleTimeString('zh-CN', { hour12: false })
+  return time.toLocaleTimeString(locale.value, { hour12: false })
 }
 
-function formatFlags(flags) {
+function formatFlags(flags: unknown[]) {
   if (!Array.isArray(flags) || !flags.length) return '-'
   return flags.join(', ')
 }
 
-function formatAddresses(addrs) {
+function formatAddresses(addrs: unknown[]) {
   if (!Array.isArray(addrs) || !addrs.length) return '-'
   return addrs.join(', ')
 }
@@ -162,7 +164,7 @@ onUnmounted(() => {
             <div class="header-info">
               <span class="icon">🌐</span>
               <div class="titles">
-                <h3>网络浏览器</h3>
+                <h3>{{ t('networkBrowser.title') }}</h3>
                 <span class="subtitle">
                   Agent: {{ agent?.beaconid?.substring(0, 8) || beaconid.substring(0, 8) }}@{{ agent?.hostname || beaconid.substring(0, 8) }}
                 </span>
@@ -178,14 +180,14 @@ onUnmounted(() => {
                 :class="{ active: activeTab === 'interfaces' }"
                 @click="activeTab = 'interfaces'"
               >
-                网络接口
+                {{ t('networkBrowser.interfacesTab') }}
               </button>
               <button
                 class="tab-btn"
                 :class="{ active: activeTab === 'connections' }"
                 @click="activeTab = 'connections'"
               >
-                网络连接
+                {{ t('networkBrowser.connectionsTab') }}
               </button>
             </div>
 
@@ -194,7 +196,7 @@ onUnmounted(() => {
               <input
                 v-model="searchQuery"
                 type="text"
-                :placeholder="activeTab === 'interfaces' ? '搜索网卡名、MAC 或地址...' : '搜索协议、地址、状态或 PID...'"
+                :placeholder="activeTab === 'interfaces' ? t('networkBrowser.interfacesSearchPlaceholder') : t('networkBrowser.connectionsSearchPlaceholder')"
                 spellcheck="false"
               />
             </div>
@@ -204,26 +206,26 @@ onUnmounted(() => {
               :class="{ spinning: loading }"
               @click="fetchAll"
               :disabled="loading"
-              title="刷新网络数据"
+              :title="t('networkBrowser.refreshTitle')"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
               </svg>
             </button>
 
-            <span class="sync-time">同步: {{ formatTime(lastUpdated) }}</span>
+            <span class="sync-time">{{ t('networkBrowser.syncLabel', { time: formatTime(lastUpdated) }) }}</span>
           </div>
 
           <div class="content-area">
             <div v-if="loading" class="loading-state">
               <div class="spinner"></div>
-              <span>正在获取网络数据...</span>
+              <span>{{ t('networkBrowser.loading') }}</span>
             </div>
 
             <div v-else-if="error" class="error-state">
               <span class="error-icon">⚠️</span>
               <span>{{ error }}</span>
-              <button @click="fetchAll" class="retry-btn">重试</button>
+              <button @click="fetchAll" class="retry-btn">{{ t('networkBrowser.retry') }}</button>
             </div>
 
             <div v-else-if="activeTab === 'interfaces'" class="interfaces-view">
@@ -235,7 +237,7 @@ onUnmounted(() => {
                 <div class="card-header">
                   <div>
                     <h4>{{ iface.name }}</h4>
-                    <span class="card-subtitle">索引 #{{ iface.index }}</span>
+                    <span class="card-subtitle">{{ t('networkBrowser.interfaceIndex', { index: iface.index }) }}</span>
                   </div>
                   <div class="badges">
                     <span class="state-tag" :class="{ up: iface.isUp === true, down: iface.isUp === false }">
@@ -260,24 +262,24 @@ onUnmounted(() => {
                     <span>{{ formatFlags(iface.flags) }}</span>
                   </div>
                   <div class="info-item full">
-                    <label>地址</label>
+                    <label>{{ t('networkBrowser.address') }}</label>
                     <span class="mono">{{ formatAddresses(iface.addrs) }}</span>
                   </div>
                 </div>
               </article>
 
               <div v-if="filteredInterfaces.length === 0" class="empty-state">
-                没有找到匹配的网络接口
+                {{ t('networkBrowser.noMatchingInterfaces') }}
               </div>
             </div>
 
             <table v-else class="connection-table">
               <thead>
                 <tr>
-                  <th>协议</th>
-                  <th>本地地址</th>
-                  <th>远端地址</th>
-                  <th>状态</th>
+                  <th>{{ t('networkBrowser.protocol') }}</th>
+                  <th>{{ t('networkBrowser.localAddress') }}</th>
+                  <th>{{ t('networkBrowser.remoteAddress') }}</th>
+                  <th>{{ t('networkBrowser.state') }}</th>
                   <th>PID</th>
                 </tr>
               </thead>
@@ -293,7 +295,7 @@ onUnmounted(() => {
                   <td class="copyable-cell mono">{{ conn.pid || '-' }}</td>
                 </tr>
                 <tr v-if="filteredConnections.length === 0">
-                  <td colspan="5" class="empty-row">没有找到匹配的网络连接</td>
+                  <td colspan="5" class="empty-row">{{ t('networkBrowser.noMatchingConnections') }}</td>
                 </tr>
               </tbody>
             </table>
@@ -301,8 +303,10 @@ onUnmounted(() => {
 
           <footer class="modal-footer">
             <span class="status-text">
-              {{ activeTab === 'interfaces' ? `${filteredInterfaces.length} 个网络接口` : `${filteredConnections.length} 条网络连接` }}
-              {{ searchQuery ? '(过滤后)' : '' }}
+              {{ activeTab === 'interfaces'
+                ? t('networkBrowser.interfaceCount', { count: filteredInterfaces.length })
+                : t('networkBrowser.connectionCount', { count: filteredConnections.length }) }}
+              {{ searchQuery ? t('networkBrowser.filteredSuffix') : '' }}
             </span>
           </footer>
         </div>

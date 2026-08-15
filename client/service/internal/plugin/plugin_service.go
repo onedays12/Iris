@@ -23,12 +23,6 @@ const (
 	defaultPostExWaitMS       = 3000
 	postExBackendRemoteThread = "remote-thread"
 )
-const (
-	minInt16Value = -1 << 15
-	maxInt16Value = 1<<15 - 1
-	minInt32Value = -1 << 31
-	maxInt32Value = 1<<31 - 1
-)
 
 type PluginService struct {
 	manager *PluginManager
@@ -87,8 +81,8 @@ func (m *PluginManager) List() []PluginSnapshot {
 		result = append(result, plugin.snapshot())
 	}
 	sort.Slice(result, func(i, j int) bool {
-		left := strings.ToLower(result[i].DisplayName)
-		right := strings.ToLower(result[j].DisplayName)
+		left := result[i].DisplayName.SortKey()
+		right := result[j].DisplayName.SortKey()
 		if left == right {
 			return result[i].ID < result[j].ID
 		}
@@ -277,7 +271,7 @@ func (m *PluginManager) Invoke(ctx context.Context, pluginID string, action stri
 		}
 	}
 
-	if err := m.dispatchAction(ctx, pluginAction, payload); err != nil {
+	if err := m.dispatchAction(ctx, plugin, pluginAction, payload); err != nil {
 		plugin.setError(err)
 		return plugin.snapshot(), err
 	}
@@ -286,7 +280,7 @@ func (m *PluginManager) Invoke(ctx context.Context, pluginID string, action stri
 	return plugin.snapshot(), nil
 }
 
-// loadPlugin 从磁盘加载单个插件。
+// loadPlugin 从磁盘加载单个插件(schema v2 严格模式)。
 //
 // 该函数是无状态的:只读传入的 root 路径下的 plugin.json,不访问 PluginManager
 // 任何字段,因此不需要持锁。历史上叫 loadPluginLocked 是误导——它从不在锁内访问 m。
@@ -298,28 +292,34 @@ func (m *PluginManager) loadPlugin(root string) (*PluginInstance, error) {
 		return nil, fmt.Errorf("read plugin manifest failed: %w", err)
 	}
 
-	var manifest PluginManifest
-	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
-		return nil, fmt.Errorf("parse plugin manifest failed: %w", err)
+	manifest, err := decodePluginManifestV2(manifestBytes)
+	if err != nil {
+		return nil, err
 	}
 
 	if manifest.Name == "" {
 		manifest.Name = filepath.Base(root)
 	}
-	if manifest.DisplayName == "" {
-		manifest.DisplayName = manifest.Name
+	if manifest.DisplayName.IsEmpty() {
+		manifest.DisplayName = LocalizedText{Values: map[string]string{"default": manifest.Name}}
 	}
+
+	applyManifestConventions(&manifest)
 	if err := normalizePluginActionFields(manifest.Actions); err != nil {
+		return newPluginInstance(root, manifest), err
+	}
+	if err := derivePostExFromModule(root, manifest.Actions); err != nil {
+		return newPluginInstance(root, manifest), err
+	}
+	if err := validatePluginManifest(root, manifest); err != nil {
+		return newPluginInstance(root, manifest), err
+	}
+	if err := validateManifestV2(root, manifest); err != nil {
 		return newPluginInstance(root, manifest), err
 	}
 	manifest.Actions = hydratePluginActions(root, manifest.Actions)
 
-	plugin := newPluginInstance(root, manifest)
-	if err := validatePluginManifest(root, manifest); err != nil {
-		return plugin, err
-	}
-
-	return plugin, nil
+	return newPluginInstance(root, manifest), nil
 }
 
 func newPluginInstance(root string, manifest PluginManifest) *PluginInstance {
@@ -408,18 +408,18 @@ func (p *PluginInstance) snapshot() PluginSnapshot {
 	defer p.mu.Unlock()
 
 	return PluginSnapshot{
-		ID:          p.ID,
-		Name:        p.Manifest.Name,
-		DisplayName: p.Manifest.DisplayName,
-		Version:     p.Manifest.Version,
-		Description: p.Manifest.Description,
-		Path:        p.Root,
-		Permissions: append([]string{}, p.Manifest.Permissions...),
-		Actions:     clonePluginActions(p.Manifest.Actions),
-		Status:      p.Status,
-		LastError:   p.LastError,
-		LoadedAt:    p.LoadedAt,
-		UpdatedAt:   p.UpdatedAt,
+		ID:           p.ID,
+		Name:         p.Manifest.Name,
+		DisplayName:  p.Manifest.DisplayName,
+		Version:      p.Manifest.Version,
+		Description:  p.Manifest.Description,
+		Path:         p.Root,
+		Capabilities: clonePluginCapabilities(p.Manifest.Capabilities),
+		Actions:      clonePluginActions(p.Manifest.Actions),
+		Status:       p.Status,
+		LastError:    p.LastError,
+		LoadedAt:     p.LoadedAt,
+		UpdatedAt:    p.UpdatedAt,
 	}
 }
 
