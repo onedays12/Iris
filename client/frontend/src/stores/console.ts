@@ -34,6 +34,10 @@ interface ConsoleState {
   consolePanelVisible: boolean
   /** 全局命令历史记录 (用于输入框上下键翻阅) */
   commandHistory: string[]
+  /** 聚焦请求计数器:自增一次即通知 ConsolePanel 聚焦输入框(M2 双击联动) */
+  focusTick: number
+  /** 挂载顺序补偿:面板尚未挂载时收到的聚焦请求,挂载时消费 */
+  pendingFocus: boolean
   _subscribed: boolean
 }
 
@@ -53,6 +57,8 @@ export const useConsoleStore = defineStore('console', {
     activeBeaconId: null,
     consolePanelVisible: false,
     commandHistory: [],
+    focusTick: 0,
+    pendingFocus: false,
     _subscribed: false,
   }),
 
@@ -93,6 +99,19 @@ export const useConsoleStore = defineStore('console', {
     /** 切换当前激活 Tab */
     setActiveConsole(beaconid: string): void {
       this.activeBeaconId = beaconid
+    },
+
+    /** 请求聚焦当前控制台输入框(ConsolePanel watch focusTick / onMounted 响应)。 */
+    requestFocus(): void {
+      this.focusTick++
+      this.pendingFocus = true
+    },
+
+    /** 消费挂载期滞留的聚焦请求;有则返回 true(调用方执行 focus)。 */
+    consumePendingFocus(): boolean {
+      if (!this.pendingFocus) return false
+      this.pendingFocus = false
+      return true
     },
 
     /** 发送命令（已支持结构化参数） */

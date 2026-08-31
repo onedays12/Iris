@@ -323,9 +323,7 @@ func alignedContextBuffer() ([]byte, *threadContext) {
 	return buf, (*threadContext)(unsafe.Pointer(ptr))
 }
 
-func printf(format string, a ...interface{}) {
-	fmt.Printf(format, a...)
-}
+func printf(format string, a ...interface{}) {}
 
 // PackArgs 将 BOF 参数序列化为 Cobalt Strike 格式。
 // 格式: [总长度(4B)] [参数1长度(4B)] [参数1数据] [参数2长度(4B)] [参数2数据] ...

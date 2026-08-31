@@ -111,3 +111,12 @@ INT FmtSnprintfW(WCHAR* dst, SIZE_T dst_len, const WCHAR* fmt, ...);
 #define _vscprintf FmtVscprintfA
 #define swprintf_s FmtSnprintfW
 #endif
+
+/* 以反斜杠分隔符合并两个路径段（left 为空时直接复制 right；调用方 HeapFree） */
+WCHAR* PathJoinWide(const WCHAR* left, const WCHAR* right);
+
+/* 解析为绝对路径（失败时退回原串；调用方 HeapFree） */
+WCHAR* PathFullWide(const WCHAR* path);
+
+/* 将 Win32 文件属性转换为 Unix 风格模式字符串（写满 16 字节含 NUL） */
+VOID FsModeStringFromAttrs(DWORD attrs, CHAR out[16]);

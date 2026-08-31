@@ -10,6 +10,9 @@ import { getBeaconId, normalizeBeacon, normalizeLastSeen, unwrapBeaconPayload } 
 import { pickBeacon } from '../shared/protocol/adapter'
 import { bus } from '../shared/bus'
 import type { Beacon } from '../features/beacon/model'
+import { useAuthStore } from './auth'
+import { useNotificationStore } from './notification'
+import { i18n } from '../i18n/index'
 
 export interface BeaconStatus {
   kind: 'online' | 'offline' | 'cascade'
@@ -241,14 +244,24 @@ export const useAgentStore = defineStore('agent', {
 
     /** 彻底注销并删除 Agent */
     async removeBeacon(beaconid: string): Promise<boolean> {
+      return this.removeBeacons([beaconid])
+    },
+
+    /** 批量彻底注销并删除 Agent */
+    async removeBeacons(beaconIds: string[]): Promise<boolean> {
+      const ids = [...new Set(beaconIds.map(id => String(id || '')).filter(Boolean))]
+      if (!ids.length) return false
       try {
-        await beaconApi.removeBeacon(beaconid)
-        // 只有 API 调用成功后，才从本地列表移除
-        this.agents = this.agents.filter(a => a.beaconid !== beaconid)
-
-        // 通过事件总线通知 console/explorer 清理(解除 agent→console/explorer 硬依赖)
-        bus.emit('agent:removed', { beaconid: String(beaconid) })
-
+        if (ids.length === 1) {
+          await beaconApi.removeBeacon(ids[0])
+        } else {
+          await beaconApi.removeBeacons(ids)
+        }
+        const drop = new Set(ids)
+        this.agents = this.agents.filter(a => !drop.has(a.beaconid))
+        for (const beaconid of ids) {
+          bus.emit('agent:removed', { beaconid })
+        }
         this.rebuildStatusCache()
         return true
       } catch (err) {
@@ -331,6 +344,52 @@ export const useAgentStore = defineStore('agent', {
       bus.on('ws:beacon-removed', ({ beaconid }) => {
         if (beaconid) this.removeAgent(String(beaconid))
       })
+
+      bus.on('ws:beacon-meta', ({ data }) => {
+        this.applyBeaconMeta(data)
+      })
+    },
+
+    applyBeaconMeta(raw: unknown): void {
+      const record = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+      const items = Array.isArray(record.items) ? record.items : []
+      const fallbackIds = Array.isArray(record.beacon_ids) ? record.beacon_ids.map(String) : []
+      const operator = String(record.operator || '').trim()
+      const action = String(record.action || '').trim()
+      const names: string[] = []
+
+      if (items.length) {
+        for (const item of items) {
+          const rec = item && typeof item === 'object' ? item as Record<string, unknown> : {}
+          const id = String(rec.beacon_id || '')
+          if (!id) continue
+          this.updateAgent(id, {
+            note: rec.note === undefined ? undefined : String(rec.note ?? ''),
+            groupName: rec.group_name === undefined ? undefined : String(rec.group_name ?? ''),
+          })
+          names.push(String(rec.hostname || id.substring(0, 8)))
+        }
+      } else {
+        const note = record.note === undefined ? undefined : String(record.note ?? '')
+        const groupName = record.group_name === undefined ? undefined : String(record.group_name ?? '')
+        for (const id of fallbackIds) {
+          this.updateAgent(id, { note, groupName })
+          names.push(id.substring(0, 8))
+        }
+      }
+
+      const self = useAuthStore().getCachedCredentials()?.username || ''
+      if (!operator || (self && operator === self) || names.length === 0) return
+      const label = names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '')
+      const t = i18n.global.t
+      if (action === 'group') {
+        const groupName = String(record.group_name || '').trim()
+        useNotificationStore().info(groupName
+          ? t('agentTable.metaMovedGroup', { operator, names: label, group: groupName })
+          : t('agentTable.metaUngrouped', { operator, names: label }))
+      } else {
+        useNotificationStore().info(t('agentTable.metaUpdatedNote', { operator, names: label }))
+      }
     },
   },
 })

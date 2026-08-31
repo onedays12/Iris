@@ -3,8 +3,10 @@
  * 负责与 Teamserver 的 WebSocket 链路建立、断开、自动重连，
  * 以及将原始消息分发到 wsEventRouter 进行事件路由。
  *
- * 重连策略：指数退避 + 抖动；重连耗尽后若存在缓存凭据则静默重登，
- * 否则提示用户重新登录（针对 TeamServer 重启导致 token 失效场景）。
+ * 重连策略：指数退避 + 抖动，始终携带原 token（统一密码模型下 60s 断连宽限期内
+ * 服务端按 token 自动恢复会话）；重连耗尽后若存在缓存凭据则静默重登——
+ * 宽限期内同名重登必 409，等宽限结束后自动重试一次；否则提示用户重新登录
+ * （针对 TeamServer 重启导致 token 失效场景）。
  */
 
 import { defineStore } from 'pinia'
@@ -13,9 +15,32 @@ import { WebSocketService } from '../../bindings/irisclient/service'
 import { handleWsEventMessage } from '../features/events/wsEventRouter'
 import { bus } from '../shared/bus'
 import { i18n } from '../i18n/index'
+import type { ClassifiedErrorInfo } from '../shared/api/types'
 
 export type WebSocketStatus = 'closed' | 'connecting' | 'open' | 'error'
 type StatusWaiter = (status: WebSocketStatus) => void
+
+// ─── 统一密码模型的断连宽限参数（契约:FRONTEND_API_CONTRACT 登录节） ───
+
+/** 服务端断连宽限期:期内用户名保留、原 token 可恢复会话。 */
+export const RECONNECT_GRACE_MS = 60000
+/** 宽限结束后的重试缓冲,避免卡点。 */
+export const REAUTH_GRACE_RETRY_PAD_MS = 5000
+
+/**
+ * 计算静默重登撞 409(同名会话仍占用户名)后的重试等待:
+ * 距宽限结束的剩余时间 + 缓冲;无断连时间戳(已过期/未知)返回 0 立即重试。
+ */
+export function graceReauthDelayMs(disconnectedAt: number, now: number): number {
+  if (!disconnectedAt) return 0
+  return Math.max(0, RECONNECT_GRACE_MS - (now - disconnectedAt)) + REAUTH_GRACE_RETRY_PAD_MS
+}
+
+/** TeamServer 拒绝当前会话（重启丢内存表、被顶号、已吊销）时，握手会带 401。 */
+export function isUnauthorizedHandshake(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message ?? err ?? '')
+  return /\b401\b/.test(msg) || msg.toLowerCase().includes('session is no longer active')
+}
 
 interface WebSocketState {
   status: WebSocketStatus
@@ -26,6 +51,10 @@ interface WebSocketState {
   nativeWsUnsubscribers: Array<() => void>
   manualDisconnect: boolean
   reauthenticating: boolean
+  /** 最近一次非主动断连的时刻(ms);静默重登撞 409 时据此等宽限结束 */
+  disconnectedAt: number
+  /** 409 宽限重试是否已安排(只自动重试一次) */
+  reauthDeferred: boolean
   hasConnected: boolean
 }
 
@@ -73,6 +102,8 @@ export const useWSStore = defineStore('ws', {
     manualDisconnect: false,
     /** 是否正在静默重登（重连耗尽后自动 login 拿新 token） */
     reauthenticating: false,
+    disconnectedAt: 0,
+    reauthDeferred: false,
     hasConnected: false,
   }),
 
@@ -107,9 +138,12 @@ export const useWSStore = defineStore('ws', {
 
           if (status === 'closed') {
             this.status = 'closed'
+            if (!this.manualDisconnect && !this.disconnectedAt) {
+              this.disconnectedAt = Date.now()
+            }
             notifyWaiters('closed')
             if (!this.manualDisconnect) {
-              this.handleReconnect()
+              this.recoverAfterConnectFailure(payload.message)
             }
           }
         }),
@@ -118,9 +152,12 @@ export const useWSStore = defineStore('ws', {
           const message = payload.message ?? 'unknown websocket error'
           console.error('[WS] ⚠️ Go WebSocket 链路异常:', message)
           this.status = 'error'
+          if (!this.manualDisconnect && !this.disconnectedAt) {
+            this.disconnectedAt = Date.now()
+          }
           notifyWaiters('error')
           if (!this.manualDisconnect) {
-            this.handleReconnect()
+            this.recoverAfterConnectFailure(message)
           }
         }),
       ]
@@ -169,7 +206,7 @@ export const useWSStore = defineStore('ws', {
         this.status = 'error'
         notifyWaiters('error')
         if (!this.manualDisconnect) {
-          this.handleReconnect()
+          this.recoverAfterConnectFailure(err)
         }
       }
     },
@@ -223,6 +260,15 @@ export const useWSStore = defineStore('ws', {
 
     // ─── 重连策略（指数退避 + 抖动，耗尽后自动重登） ───
 
+    recoverAfterConnectFailure(err: unknown): void {
+      if (this.manualDisconnect || this.reauthenticating || this.reconnectTimer) return
+      if (isUnauthorizedHandshake(err)) {
+        this.attemptSilentReauth()
+        return
+      }
+      this.handleReconnect()
+    },
+
     handleReconnect(): void {
       if (this.manualDisconnect || this.reconnectTimer) return
       // connecting 期间不重复触发，避免计数跳变
@@ -247,20 +293,19 @@ export const useWSStore = defineStore('ws', {
      */
     async attemptSilentReauth(): Promise<void> {
       if (this.reauthenticating || this.manualDisconnect) return
+      this.reauthenticating = true
 
       const { useAuthStore } = await import('./auth')
       const authStore = useAuthStore()
       const creds = authStore.getCachedCredentials()
 
       if (!creds) {
-        // 无缓存凭据，提示用户重新登录
+        this.reauthenticating = false
         const { useNotificationStore } = await import('./notification')
         useNotificationStore().warn(i18n.global.t('ws.linkBroken'))
         authStore.logout()
         return
       }
-
-      this.reauthenticating = true
       try {
         const { login } = await import('../features/auth/api/authApi')
         const data = await login(creds.username, creds.password)
@@ -274,6 +319,20 @@ export const useWSStore = defineStore('ws', {
         }
       } catch (err) {
         console.error('[WS] ❌ 静默重登失败:', err)
+        const kind = (err as ClassifiedErrorInfo)?.info?.kind
+        // 统一密码模型:同名会话在 60s 断连宽限期内仍占用用户名,此刻重登必 409。
+        // 等宽限结束(用户名释放)后自动重试一次;仍 409 说明用户名被其他操作员占用,放弃。
+        if (kind === 'conflict' && !this.reauthDeferred) {
+          this.reauthDeferred = true
+          const waitMs = graceReauthDelayMs(this.disconnectedAt, Date.now())
+          const { useNotificationStore } = await import('./notification')
+          useNotificationStore().warn(i18n.global.t('ws.reloginGraceWait', { seconds: Math.ceil(waitMs / 1000) }))
+          setTimeout(() => {
+            this.reauthenticating = false
+            void this.attemptSilentReauth()
+          }, waitMs)
+          return
+        }
         this.reauthenticating = false
         const { useNotificationStore } = await import('./notification')
         useNotificationStore().warn(i18n.global.t('ws.autoRecoverFailed'))
@@ -290,6 +349,8 @@ export const useWSStore = defineStore('ws', {
       this.hasConnected = true
       this.reconnectCount = 0
       this.reauthenticating = false
+      this.disconnectedAt = 0
+      this.reauthDeferred = false
       notifyWaiters('open')
       bus.emit('ws:connected', { reconnected })
     },
@@ -297,6 +358,8 @@ export const useWSStore = defineStore('ws', {
     disconnect(): void {
       this.manualDisconnect = true
       this.reauthenticating = false
+      this.reauthDeferred = false
+      this.disconnectedAt = 0
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer)
         this.reconnectTimer = null

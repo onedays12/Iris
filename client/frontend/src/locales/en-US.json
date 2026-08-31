@@ -26,7 +26,10 @@
     "htmlResponse": "Server returned an unexpected HTML page (possibly a wrong path or API change).",
     "invalidResponse": "Server returned an invalid API response.",
     "unstructuredProxy": "Proxy returned an unstructured response (contract mismatch with the Go backend).",
-    "networkFallback": "Network connection error"
+    "networkFallback": "Network connection error",
+    "conflict": "Operation conflict",
+    "conflictWithError": "Operation conflict: {error}",
+    "rateLimited": "Too many requests, please retry later"
   },
   "guards": {
     "invalidStructure": "{label} invalid response structure",
@@ -52,6 +55,11 @@
   },
   "agentTable": {
     "colHostname": "Hostname",
+    "colNote": "Note",
+    "ungrouped": "Ungrouped",
+    "metaMovedGroup": "{operator} moved {names} to {group}",
+    "metaUngrouped": "{operator} moved {names} to Ungrouped",
+    "metaUpdatedNote": "{operator} updated the note on {names}",
     "colUser": "User",
     "colOs": "OS / Arch",
     "colProtocol": "C2 Protocol",
@@ -82,6 +90,10 @@
     "connectTcpChild": "Connect TCP Child",
     "linkSmbChild": "Link SMB Child",
     "editSleep": "Edit SleepTime",
+    "addNote": "Add Note",
+    "selectGroup": "Select Group",
+    "ungrouped": "Ungrouped",
+    "newGroup": "New Group…",
     "exit": "Exit",
     "deleteSession": "Delete Session",
     "noTarget": "Target Beacon not found"
@@ -94,7 +106,20 @@
     "exitSent": "Exit command sent.",
     "exitFailed": "Failed to send exit command: {message}",
     "deleteTitle": "Delete Session Permanently",
-    "deleteMessage": "Unregister and delete session [{id}]?\nThis also clears server-side cache and cannot be undone."
+    "deleteMessage": "Unregister and delete session [{id}]?\nThis also clears server-side cache and cannot be undone.",
+    "deleteMessageMany": "Unregister and delete {n} selected sessions?\nThis also clears server-side cache and cannot be undone.",
+    "deleteFailed": "Failed to delete session: {message}",
+    "noteTitle": "Add Note",
+    "noteMessage": "Write a note for this session",
+    "noteMessageMany": "Set the same note on {n} selected sessions",
+    "notePlaceholder": "e.g. jump box / DC / do not touch",
+    "noteFailed": "Failed to set note: {message}",
+    "newGroupTitle": "New Group",
+    "newGroupMessage": "Enter a group name for this session",
+    "newGroupMessageMany": "Enter a group name for the {n} selected sessions",
+    "newGroupPlaceholder": "e.g. production",
+    "groupEmpty": "Group name cannot be empty",
+    "groupFailed": "Failed to set group: {message}"
   },
   "console": {
     "validationPrefix": "[Validation failed]",
@@ -180,6 +205,10 @@
     "attrQueued": "Attribute change queued: {name}",
     "attrFailed": "Failed to change attributes: {message}",
     "zipNoTarget": "No target path to zip",
+    "executeNoTarget": "Select a file to execute",
+    "executeNeedCwd": "Cannot resolve a working directory; open a folder first",
+    "executeQueued": "Execute queued: {name}",
+    "executeFailed": "Failed to queue execute: {message}",
     "title": "File Browser",
     "goUp": "Go up",
     "jump": "Go",
@@ -197,11 +226,14 @@
     "colActions": "Actions",
     "moreActions": "More actions",
     "myComputer": "My Computer",
+    "myDesktop": "Desktop",
+    "myHome": "Home",
     "currentDir": "Current directory",
     "pathPlaceholderWin": "Type a path and press Enter...",
     "pathPlaceholderUnix": "Type an absolute path, e.g. /etc",
     "emptyStateWin": "Type a path above or pick a drive to start browsing",
-    "emptyStateUnix": "Type an absolute path above, or click the current directory to start browsing"
+    "emptyStateUnix": "Type an absolute path above, or click the current directory to start browsing",
+    "dropSkippedFolders": "Skipped {count} folder(s); drag-drop supports files only"
   },
   "attrDialog": {
     "title": "Change Attributes",
@@ -249,6 +281,19 @@
     "fileHint": "For files, include_root is always sent as 1.",
     "submit": "Submit zip task",
     "submitting": "Submitting..."
+  },
+  "executeDialog": {
+    "title": "Execute file",
+    "file": "File",
+    "cwd": "Working directory",
+    "args": "Arguments",
+    "argsPlaceholder": "Optional, e.g. --help",
+    "submit": "Execute",
+    "submitting": "Sending...",
+    "waiting": "Waiting for output…",
+    "output": "Output",
+    "timeout": "Timed out waiting. The process may still be running; check the console for later output.",
+    "emptyOutput": "(no output)"
   },
   "tunnelPage": {
     "fetchListFailed": "Failed to fetch tunnel list",
@@ -410,17 +455,41 @@
     "uploading": "Uploading...",
     "mkdir": "New Folder",
     "download": "Download",
+    "preview": "Preview",
     "zip": "Zip to ZIP",
     "move": "Move",
     "copy": "Copy",
     "setattr": "Change Attributes",
+    "execute": "Execute",
     "delete": "Delete"
+  },
+  "preview": {
+    "loading": "Previewing…",
+    "unsupported": "This file type cannot be previewed; please download it",
+    "tooLargeHint": "File exceeds the 2MB preview limit; use download instead",
+    "tooLarge": "File exceeds 2MB; please use download",
+    "readError": "Failed to read the file",
+    "fetchFailed": "Failed to fetch preview content",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "download": "Download",
+    "imageHint": "Scroll to zoom · Drag to pan · Double-click to reset"
+  },
+  "dock": {
+    "consoleTab": "Console",
+    "eventsTab": "Events",
+    "transfersEmpty": "No transfers yet; progress shows here after you upload or download files",
+    "consoleEmptyHint": "Double-click a beacon row to open its console. Consoles are multi-tab with per-beacon history.",
+    "collapse": "Collapse panel"
   },
   "transfer": {
     "beaconRemoved": "Beacon removed; transfer task cancelled",
     "statusCompleted": "Completed",
     "statusCancelled": "Cancelled",
     "statusFailed": "Failed",
+    "statusStale": "Stale",
+    "staleHint": "Progress signal lost; state unknown. Verify the remote file and retry if needed.",
     "taskCount": "{n} transfer tasks",
     "recordCount": "{n} transfer records",
     "monitor": "Transfer Monitor"
@@ -429,17 +498,24 @@
     "subtitle": "Terminal Authentication Management System",
     "serverAddress": "Server address",
     "serverPlaceholder": "e.g. https://127.0.0.1:8080",
-    "username": "Username",
-    "usernamePlaceholder": "Enter administrator account",
-    "password": "Password",
-    "passwordPlaceholder": "Enter access key",
-    "requiredFields": "Please enter username and password",
+    "username": "Operator",
+    "usernamePlaceholder": "Custom operator name (session alias, case-sensitive)",
+    "password": "Unified Password",
+    "passwordPlaceholder": "TeamServer unified password",
+    "rememberPassword": "Remember password",
+    "requiredFields": "Please enter the unified password",
     "noCredential": "No valid credential returned",
     "failed": "Login failed, check TeamServer status",
     "submit": "Sign in",
     "connecting": "Establishing controlled link...",
     "skip": "Skip link check and enter directly",
-    "madeBy": "made by"
+    "madeBy": "made by",
+    "nameRequired": "Please enter an operator name",
+    "nameTooLong": "Operator name too long (max 32 UTF-8 bytes)",
+    "nameControlChars": "Operator name must not contain control characters",
+    "wrongPassword": "Invalid unified password",
+    "usernameTaken": "Operator name is taken (online or in reconnect grace) - choose another",
+    "rateLimited": "Too many failed logins; source IP temporarily locked (~5 minutes)"
   },
   "genBeacon": {
     "titleBeacon": "Generate Beacon Client",
@@ -727,6 +803,9 @@
     "beaconOnlineGeneric": "Beacon is online",
     "beaconOfflineWithId": "Beacon {id} is offline",
     "beaconOfflineGeneric": "Beacon is offline",
+    "beaconMetaNote": "{operator} updated a session note",
+    "beaconMetaGroup": "{operator} moved session(s) to {group}",
+    "beaconMetaUngroup": "{operator} moved session(s) to Ungrouped",
     "tunnelStartedWithDetails": "Tunnel started: {details}",
     "tunnelStartedGeneric": "Tunnel started",
     "tunnelPausedWithDetails": "Tunnel paused: {details}",
@@ -751,6 +830,7 @@
     "tunnelControlAcknowledgedGeneric": "Tunnel control acknowledged"
   },
   "eventHandler": {
+    "explorerFetchFailed": "Failed to list directory",
     "processDataFetchFailed": "Failed to fetch process data",
     "networkInterfaceFetchFailed": "Failed to fetch network interfaces",
     "networkConnectionsFetchFailed": "Failed to fetch network connections",
@@ -1119,7 +1199,8 @@
     "linkFailed": "Managed link connection failed",
     "linkBroken": "The managed link keeps dropping. TeamServer may have restarted or the credential expired. Please log in again.",
     "reloginNoToken": "Re-login did not return a valid token",
-    "autoRecoverFailed": "Automatic recovery failed. Please log in again."
+    "autoRecoverFailed": "Automatic recovery failed. Please log in again.",
+    "reloginGraceWait": "Previous session is still within the 60s reconnect grace; retrying login in ~{seconds}s"
   },
   "explorer": {
     "cwdTimeout": "Timed out fetching the current working directory. Please retry.",

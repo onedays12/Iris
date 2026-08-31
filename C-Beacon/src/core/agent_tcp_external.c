@@ -132,7 +132,7 @@ INT AgentRunExternalTcp(Agent* agent)
         BbFree(&response);
 
         AgentFlushTransfers(ctx);
-        AgentFlushTunnels(ctx);
+        AgentHarvestTunnels(ctx);
         AgentFlushCascade(ctx);
         AgentFlushPostEx(ctx);
         if (!AgentFlushOutbox(ctx, TcpExternalSendEncrypted, &session)) {

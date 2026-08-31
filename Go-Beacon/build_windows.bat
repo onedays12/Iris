@@ -11,11 +11,11 @@ if errorlevel 1 exit /b 1
 echo [*] Building Go Beacon windows/amd64...
 set GOOS=windows
 set GOARCH=amd64
-go build -trimpath -ldflags="-s -w" -o bin\beacon_http_external_windows_amd64.exe .
+go build -trimpath -ldflags="-s -w -H windowsgui" -o bin\beacon_http_external_windows_amd64.exe .
 if errorlevel 1 exit /b 1
-go build -trimpath -ldflags="-s -w" -o bin\beacon_tcp_internal_windows_amd64.exe .
+go build -trimpath -ldflags="-s -w -H windowsgui" -o bin\beacon_tcp_internal_windows_amd64.exe .
 if errorlevel 1 exit /b 1
-go build -trimpath -ldflags="-s -w" -o bin\beacon_smb_internal_windows_amd64.exe .
+go build -trimpath -ldflags="-s -w -H windowsgui" -o bin\beacon_smb_internal_windows_amd64.exe .
 if errorlevel 1 exit /b 1
 
 echo [*] Building profile patch tool...

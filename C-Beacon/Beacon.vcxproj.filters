@@ -1,284 +1,367 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="源文件">
+    <Filter Include="src">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>c;cpp;cxx;cc</Extensions>
     </Filter>
-    <Filter Include="头文件">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hpp</Extensions>
+    <Filter Include="src\bof">
+      <UniqueIdentifier>{5E9A1C01-1001-4E01-8101-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\commands">
+      <UniqueIdentifier>{5E9A1C02-1002-4E02-8102-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core">
+      <UniqueIdentifier>{5E9A1C03-1003-4E03-8103-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\core\syscall">
+      <UniqueIdentifier>{5E9A1C04-1004-4E04-8104-000000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\inject">
+      <UniqueIdentifier>{5E9A1C05-1005-4E05-8105-000000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\loader">
+      <UniqueIdentifier>{5E9A1C06-1006-4E06-8106-000000000006}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\managers">
+      <UniqueIdentifier>{5E9A1C07-1007-4E07-8107-000000000007}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\syscall">
+      <UniqueIdentifier>{5E9A1C08-1008-4E08-8108-000000000008}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\transport">
+      <UniqueIdentifier>{5E9A1C09-1009-4E09-8109-000000000009}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\common">
+      <UniqueIdentifier>{6E9A1C11-2001-4E11-8111-000000000011}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\commands">
+      <UniqueIdentifier>{6E9A1C12-2002-4E12-8112-000000000012}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\core">
+      <UniqueIdentifier>{6E9A1C13-2003-4E13-8113-000000000013}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\core\syscall">
+      <UniqueIdentifier>{6E9A1C14-2004-4E14-8114-000000000014}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\bof">
+      <UniqueIdentifier>{6E9A1C15-2005-4E15-8115-000000000015}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\loader">
+      <UniqueIdentifier>{6E9A1C16-2006-4E16-8116-000000000016}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\inject">
+      <UniqueIdentifier>{6E9A1C17-2007-4E17-8117-000000000017}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\managers">
+      <UniqueIdentifier>{6E9A1C18-2008-4E18-8118-000000000018}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="include\transport">
+      <UniqueIdentifier>{6E9A1C19-2009-4E19-8119-000000000019}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\beacon.c">
-      <Filter>源文件</Filter>
+      <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="src\bof\bof_entry.c">
-      <Filter>源文件</Filter>
+      <Filter>src\bof</Filter>
     </ClCompile>
     <ClCompile Include="src\bof\bof_loader.c">
-      <Filter>源文件</Filter>
+      <Filter>src\bof</Filter>
     </ClCompile>
     <ClCompile Include="src\bof\bof_resolve.c">
-      <Filter>源文件</Filter>
+      <Filter>src\bof</Filter>
     </ClCompile>
     <ClCompile Include="src\bof\bof_runtime.c">
-      <Filter>源文件</Filter>
+      <Filter>src\bof</Filter>
     </ClCompile>
     <ClCompile Include="src\bof\bof_util.c">
-      <Filter>源文件</Filter>
+      <Filter>src\bof</Filter>
     </ClCompile>
     <ClCompile Include="src\commands\command_attr.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_exec.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_filebrowser.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_fs.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_net.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_process.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_screenshot.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\command_zip.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\commands\dispatcher.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\agent.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\agent_common.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\agent_http.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\agent_internal.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\agent_tcp_external.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\common.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\context.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\crypto.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\outbox.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\packet.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\profile.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\runtime.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\sleep.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\core\sysinfo.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\loader\reflective_loader.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\tunnel_frame.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\tunnel_client.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\tunnel_server.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\transfer.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\jobs.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\migrate.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\migrate_backend.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\postex.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\postex_backend.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\postex_frame.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\postex_job.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\postex_pipe.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\postex_request.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\cascade.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\cascade_channel.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\cascade_frame.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\cascade_io.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\cascade_io_smb.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\managers\cascade_io_tcp.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\transport\http_external.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\transport\tcp_external.c">
-      <Filter>源文件</Filter>
+      <Filter>src\commands</Filter>
     </ClCompile>
     <ClCompile Include="src\commands\command_beacon_api.c">
-      <Filter>源文件</Filter>
+      <Filter>src\commands</Filter>
     </ClCompile>
     <ClCompile Include="src\commands\command_bof.c">
-      <Filter>源文件</Filter>
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_exec.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_filebrowser.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_fs.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_net.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_process.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_screenshot.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\command_zip.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\commands\dispatcher.c">
+      <Filter>src\commands</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_common.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_http.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_internal.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent_tcp_external.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\agent.c">
+      <Filter>src\core</Filter>
     </ClCompile>
     <ClCompile Include="src\core\api.c">
-      <Filter>源文件</Filter>
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\common.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\context.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\crypto.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\outbox.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\packet.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\profile.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\runtime.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\sleep.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\syscall.c">
+      <Filter>src\core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\syscall\gate_common.c">
+      <Filter>src\core\syscall</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\syscall\halos_gate.c">
+      <Filter>src\core\syscall</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\syscall\invoke.c">
+      <Filter>src\core\syscall</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\syscall\native.c">
+      <Filter>src\core\syscall</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\syscall\recycled_gate.c">
+      <Filter>src\core\syscall</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\sysinfo.c">
+      <Filter>src\core</Filter>
     </ClCompile>
     <ClCompile Include="src\inject\inject_pe.c">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="src\inject\inject.c">
-      <Filter>源文件</Filter>
+      <Filter>src\inject</Filter>
     </ClCompile>
     <ClCompile Include="src\inject\inject_reflective.c">
-      <Filter>源文件</Filter>
+      <Filter>src\inject</Filter>
     </ClCompile>
     <ClCompile Include="src\inject\inject_remote.c">
-      <Filter>源文件</Filter>
+      <Filter>src\inject</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="include\beacon.h">
-      <Filter>头文件</Filter>
+    <ClCompile Include="src\inject\inject.c">
+      <Filter>src\inject</Filter>
+    </ClCompile>
+    <ClCompile Include="src\loader\reflective_loader.c">
+      <Filter>src\loader</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_channel.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_frame.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_io_smb.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_io_tcp.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade_io.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\cascade.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\jobs.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\migrate_backend.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\migrate.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_backend.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_frame.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_job.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_pipe.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex_request.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\postex.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\spawn.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\transfer.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\tunnel_client.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\tunnel_frame.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\managers\tunnel_server.c">
+      <Filter>src\managers</Filter>
+    </ClCompile>
+    <ClCompile Include="src\transport\http_external.c">
+      <Filter>src\transport</Filter>
+    </ClCompile>
+    <ClCompile Include="src\transport\tcp_external.c">
+      <Filter>src\transport</Filter>
+    </ClCompile>
+    <ClInclude Include="include\beacon_agent_internal.h">
+      <Filter>include\core</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_agent.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_agent_internal.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_commands.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_common.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_context.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_crypto.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_outbox.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_packet.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_postex.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_postex_backend.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_postex_module.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\postex_internal.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_profile.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_sysinfo.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_transfer.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_tunnel.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_tunnel_internal.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_transport.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_jobs.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_migrate.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_reflective_loader.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_runtime.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_sleep.h">
-      <Filter>头文件</Filter>
+      <Filter>include\core</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_api.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\beacon_bof.h">
-      <Filter>头文件</Filter>
+      <Filter>include\common</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_bof_internal.h">
-      <Filter>头文件</Filter>
+      <Filter>include\bof</Filter>
     </ClInclude>
-    <ClInclude Include="include\beacon_cascade.h">
-      <Filter>头文件</Filter>
+    <ClInclude Include="include\beacon_bof.h">
+      <Filter>include\bof</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_cascade_internal.h">
-      <Filter>头文件</Filter>
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_cascade.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_commands.h">
+      <Filter>include\commands</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_common.h">
+      <Filter>include\common</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_context.h">
+      <Filter>include\common</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_crypto.h">
+      <Filter>include\core</Filter>
     </ClInclude>
     <ClInclude Include="include\beacon_inject.h">
-      <Filter>头文件</Filter>
+      <Filter>include\inject</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_jobs.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_migrate.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_outbox.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_packet.h">
+      <Filter>include\common</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_postex_backend.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_postex_module.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_postex.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_profile.h">
+      <Filter>include\common</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_reflective_loader.h">
+      <Filter>include\loader</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_runtime.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_sleep.h">
+      <Filter>include\core</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_spawn.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_syscall_internal.h">
+      <Filter>include\core\syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_syscall.h">
+      <Filter>include\core\syscall</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_sysinfo.h">
+      <Filter>include\common</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_transfer.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_transport.h">
+      <Filter>include\transport</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_tunnel_internal.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon_tunnel.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <ClInclude Include="include\beacon.h">
+      <Filter>include\common</Filter>
     </ClInclude>
     <ClInclude Include="include\inject_internal.h">
-      <Filter>头文件</Filter>
+      <Filter>include\inject</Filter>
     </ClInclude>
+    <ClInclude Include="include\postex_internal.h">
+      <Filter>include\managers</Filter>
+    </ClInclude>
+    <MASM Include="src\syscall\stubs_x64.asm">
+      <Filter>src\syscall</Filter>
+    </MASM>
   </ItemGroup>
 </Project>

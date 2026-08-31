@@ -26,7 +26,10 @@
     "htmlResponse": "服务器返回了非预期的 HTML 页面 (可能是路径错误或接口变更)。",
     "invalidResponse": "服务器返回了无效的 API 响应。",
     "unstructuredProxy": "代理返回了非结构化响应（与 Go 端契约不符）",
-    "networkFallback": "网络连接异常"
+    "networkFallback": "网络连接异常",
+    "conflict": "操作冲突",
+    "conflictWithError": "操作冲突：{error}",
+    "rateLimited": "请求过于频繁，请稍后再试"
   },
   "guards": {
     "invalidStructure": "{label} 响应结构无效",
@@ -52,6 +55,11 @@
   },
   "agentTable": {
     "colHostname": "主机名",
+    "colNote": "备注",
+    "ungrouped": "未分组",
+    "metaMovedGroup": "{operator} 将 {names} 移到了 {group}",
+    "metaUngrouped": "{operator} 将 {names} 移到了未分组",
+    "metaUpdatedNote": "{operator} 更新了 {names} 的备注",
     "colUser": "用户",
     "colOs": "系统 / 架构",
     "colProtocol": "C2 协议",
@@ -82,6 +90,10 @@
     "connectTcpChild": "Connect TCP Child",
     "linkSmbChild": "Link SMB Child",
     "editSleep": "修改 SleepTime",
+    "addNote": "添加备注",
+    "selectGroup": "选择分组",
+    "ungrouped": "未分组",
+    "newGroup": "新建分组…",
     "exit": "退出",
     "deleteSession": "删除会话",
     "noTarget": "未找到目标 Beacon"
@@ -94,7 +106,20 @@
     "exitSent": "退出指令已下发。",
     "exitFailed": "发送退出指令失败: {message}",
     "deleteTitle": "彻底删除会话",
-    "deleteMessage": "你确定要注销并删除会话 [{id}] 吗？\n此操作将同步清理服务端的缓存数据，且不可撤销。"
+    "deleteMessage": "你确定要注销并删除会话 [{id}] 吗？\n此操作将同步清理服务端的缓存数据，且不可撤销。",
+    "deleteMessageMany": "你确定要注销并删除选中的 {n} 台会话吗？\n此操作将同步清理服务端的缓存数据，且不可撤销。",
+    "deleteFailed": "删除会话失败: {message}",
+    "noteTitle": "添加备注",
+    "noteMessage": "为这台会话写一句备注",
+    "noteMessageMany": "为选中的 {n} 台会话设置同一句备注",
+    "notePlaceholder": "例如：跳板 / 域控 / 不要动",
+    "noteFailed": "设置备注失败: {message}",
+    "newGroupTitle": "新建分组",
+    "newGroupMessage": "输入组名，这台会话会放到该组",
+    "newGroupMessageMany": "输入组名，选中的 {n} 台会话会放到该组",
+    "newGroupPlaceholder": "例如：生产网",
+    "groupEmpty": "组名不能为空",
+    "groupFailed": "设置分组失败: {message}"
   },
   "console": {
     "validationPrefix": "【指令校验失败】",
@@ -180,6 +205,10 @@
     "attrQueued": "属性修改任务已入队: {name}",
     "attrFailed": "属性修改失败: {message}",
     "zipNoTarget": "未找到可压缩的目标路径",
+    "executeNoTarget": "请选择要执行的文件",
+    "executeNeedCwd": "无法确定工作目录，请先进入具体文件夹",
+    "executeQueued": "已下发执行: {name}",
+    "executeFailed": "执行下发失败: {message}",
     "title": "文件浏览器",
     "goUp": "返回上一级",
     "jump": "跳转",
@@ -197,11 +226,14 @@
     "colActions": "操作",
     "moreActions": "更多操作",
     "myComputer": "我的电脑",
+    "myDesktop": "我的桌面",
+    "myHome": "我的 Home",
     "currentDir": "当前目录",
     "pathPlaceholderWin": "输入路径回车...",
     "pathPlaceholderUnix": "输入绝对路径回车，例如 /etc",
     "emptyStateWin": "请在上方输入路径或选择盘符开始预览",
-    "emptyStateUnix": "请在上方输入绝对路径，或点击当前目录开始预览"
+    "emptyStateUnix": "请在上方输入绝对路径，或点击当前目录开始预览",
+    "dropSkippedFolders": "已跳过 {count} 个文件夹（拖拽仅支持文件）"
   },
   "attrDialog": {
     "title": "修改属性",
@@ -249,6 +281,19 @@
     "fileHint": "目标是文件，include_root 固定发送为 1。",
     "submit": "提交压缩任务",
     "submitting": "提交中..."
+  },
+  "executeDialog": {
+    "title": "执行文件",
+    "file": "文件",
+    "cwd": "工作目录",
+    "args": "参数",
+    "argsPlaceholder": "可选，例如 --help",
+    "submit": "执行",
+    "submitting": "下发中...",
+    "waiting": "等待输出…",
+    "output": "输出",
+    "timeout": "等待超时。进程可能仍在跑，请到控制台查看后续输出。",
+    "emptyOutput": "(无输出)"
   },
   "tunnelPage": {
     "fetchListFailed": "获取 Tunnel 列表失败",
@@ -410,17 +455,41 @@
     "uploading": "上传中...",
     "mkdir": "创建文件夹",
     "download": "下载",
+    "preview": "预览",
     "zip": "压缩为 ZIP",
     "move": "移动",
     "copy": "复制",
     "setattr": "修改属性",
+    "execute": "执行",
     "delete": "删除"
+  },
+  "preview": {
+    "loading": "预览中…",
+    "unsupported": "该文件类型不支持预览，请使用下载",
+    "tooLargeHint": "文件超过 2MB 预览上限，请改用下载",
+    "tooLarge": "文件超过 2MB，请使用下载",
+    "readError": "文件读取失败",
+    "fetchFailed": "预览内容拉取失败",
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "复制失败",
+    "download": "下载",
+    "imageHint": "滚轮缩放 · 拖拽平移 · 双击复位"
+  },
+  "dock": {
+    "consoleTab": "控制台",
+    "eventsTab": "事件流",
+    "transfersEmpty": "暂无传输任务，上传文件或下载文件后在此查看进度",
+    "consoleEmptyHint": "双击 beacon 行打开控制台；控制台支持多 tab，每个 beacon 独立历史",
+    "collapse": "收起面板"
   },
   "transfer": {
     "beaconRemoved": "Beacon 已移除，传输任务已取消",
     "statusCompleted": "完成",
     "statusCancelled": "已取消",
     "statusFailed": "失败",
+    "statusStale": "无响应",
+    "staleHint": "进度信号中断，状态未知；可核对远端文件后重试",
     "taskCount": "{n} 个传输任务",
     "recordCount": "{n} 个传输记录",
     "monitor": "传输监控"
@@ -429,17 +498,24 @@
     "subtitle": "终端认证管理系统",
     "serverAddress": "服务器地址",
     "serverPlaceholder": "例如: https://127.0.0.1:8080",
-    "username": "用户名",
-    "usernamePlaceholder": "请输入管理员账号",
-    "password": "密码",
-    "passwordPlaceholder": "请输入访问秘钥",
-    "requiredFields": "请输入用户名和密码",
+    "username": "操作员名",
+    "usernamePlaceholder": "自定义操作员名（会话别名，区分大小写）",
+    "password": "统一密码",
+    "passwordPlaceholder": "TeamServer 统一密码",
+    "rememberPassword": "记住密码",
+    "requiredFields": "请输入统一密码",
     "noCredential": "未获取到有效凭证",
     "failed": "登录失败，请检查 TeamServer 状态",
     "submit": "立即验证",
     "connecting": "建立受控链路...",
     "skip": "跳过链路检查，直接进入系统",
-    "madeBy": "制作 by"
+    "madeBy": "制作 by",
+    "nameRequired": "请输入操作员名",
+    "nameTooLong": "操作员名过长（最多 32 字节 UTF-8）",
+    "nameControlChars": "操作员名不能包含控制字符",
+    "wrongPassword": "统一密码错误",
+    "usernameTaken": "操作员名已被占用（对方在线或断连宽限期内），请更换用户名",
+    "rateLimited": "登录失败次数过多，来源 IP 已被临时锁定（约 5 分钟）"
   },
   "genBeacon": {
     "titleBeacon": "生成 Beacon 客户端",
@@ -727,6 +803,9 @@
     "beaconOnlineGeneric": "Beacon 已上线",
     "beaconOfflineWithId": "Beacon {id} 已下线",
     "beaconOfflineGeneric": "Beacon 已下线",
+    "beaconMetaNote": "{operator} 更新了会话备注",
+    "beaconMetaGroup": "{operator} 将会话移到了 {group}",
+    "beaconMetaUngroup": "{operator} 将会话移到了未分组",
     "tunnelStartedWithDetails": "Tunnel 已启动: {details}",
     "tunnelStartedGeneric": "Tunnel 已启动",
     "tunnelPausedWithDetails": "Tunnel 已暂停: {details}",
@@ -751,6 +830,7 @@
     "tunnelControlAcknowledgedGeneric": "Tunnel 控制确认"
   },
   "eventHandler": {
+    "explorerFetchFailed": "目录列表获取失败",
     "processDataFetchFailed": "获取进程数据失败",
     "networkInterfaceFetchFailed": "获取网络接口失败",
     "networkConnectionsFetchFailed": "获取网络连接失败",
@@ -1119,7 +1199,8 @@
     "linkFailed": "受控链路连接失败",
     "linkBroken": "受控链路持续断开，可能是 TeamServer 重启或凭证失效，请重新登录。",
     "reloginNoToken": "重登未返回有效 token",
-    "autoRecoverFailed": "自动恢复失败，请重新登录。"
+    "autoRecoverFailed": "自动恢复失败，请重新登录。",
+    "reloginGraceWait": "同名会话仍在 60 秒断连宽限期内，约 {seconds} 秒后自动重试登录"
   },
   "explorer": {
     "cwdTimeout": "获取当前工作目录超时，请重试",

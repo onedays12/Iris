@@ -33,3 +33,16 @@ func TestReadRawCommandRejectsSplitArgs(t *testing.T) {
 		t.Fatalf("expected fixed raw command error, got %v", err)
 	}
 }
+
+func TestWindowsShellCmdLineKeepsRawCommand(t *testing.T) {
+	raw := `cd /d "C:\Users\Administrator\Desktop" && "C:\Users\Administrator\Desktop\images (1).jpeg"`
+	got := windowsShellCmdLine(raw, false)
+	want := `cmd.exe /c ` + raw
+	if got != want {
+		t.Fatalf("cmd line =\n%q\nwant\n%q", got, want)
+	}
+	ps := windowsShellCmdLine("Get-Process", true)
+	if ps != `powershell.exe -ExecutionPolicy Bypass -Command Get-Process` {
+		t.Fatalf("powershell line = %q", ps)
+	}
+}

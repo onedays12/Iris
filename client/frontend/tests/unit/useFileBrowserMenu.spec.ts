@@ -127,12 +127,12 @@ describe('useFileBrowserMenu.placeMenu', () => {
   })
 
   it('flips the Y coordinate when the menu would overflow the bottom edge', () => {
-    // MENU_HEIGHT = 286. With innerHeight=400 and y=300, menu extends to
-    // 300 + 286 = 586 > 400, so y flips to 300 - 286 = 14.
+    // MENU_HEIGHT = 326. With innerHeight=400 and y=300, menu extends to
+    // 300 + 326 = 626 > 400, so y flips to 300 - 326 = -26, then clamped to 10.
     setWindowSize(1024, 400)
     const { wrapper, result } = mountMenu()
     result.placeMenu(100, 300)
-    expect(result.menuPos.value.y).toBe(300 - 286)
+    expect(result.menuPos.value.y).toBe(10)
     wrapper.unmount()
   })
 
@@ -209,6 +209,7 @@ describe('useFileBrowserMenu.handleMenuAction', () => {
 
   it.each([
     ['download', 'handleDownload', 'file'],
+    ['execute', 'handleExecute', 'target'],
     ['zip', 'handleZip', 'target'],
     ['delete', 'handleDelete', 'target'],
     ['mkdir', 'handleMkdir', null],

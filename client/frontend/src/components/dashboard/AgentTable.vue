@@ -5,13 +5,15 @@
  * 支持右键菜单操作和搜索过滤。
  */
 
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAgentStore } from '../../stores/agent'
 import type { BeaconStatus } from '../../stores/agent'
 import { useConsoleStore } from '../../stores/console'
+import { useDockStore } from '../../stores/dock'
 import type { Beacon } from '../../features/beacon/model'
 import BeaconContextMenu from '../beacon/BeaconContextMenu.vue'
+import { groupBeacons, matchesBeaconSearch, UNGROUPED_KEY } from '../../features/beacon/groupBeacons'
 
 const props = defineProps({
   searchQuery: { type: String, default: '' }
@@ -21,7 +23,11 @@ const { t } = useI18n()
 const agentStore = useAgentStore()
 const consoleStore = useConsoleStore()
 const selectedBeaconId = ref<string | null>(null)
-const contextMenu = ref<{ visible: boolean; x: number; y: number; beaconid: string }>({ visible: false, x: 0, y: 0, beaconid: '' })
+const checkedIds = ref<string[]>([])
+const collapsedGroups = ref<Record<string, boolean>>({})
+const contextMenu = ref<{ visible: boolean; x: number; y: number; beaconid: string; beaconIds: string[] }>({
+  visible: false, x: 0, y: 0, beaconid: '', beaconIds: [],
+})
 let timer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
@@ -40,16 +46,23 @@ function selectAgent(beaconid: string) {
 
 function openConsole(beaconid: string) {
   consoleStore.openConsole(beaconid)
+  // M2:双击 → 展开 BottomDock 控制台 tab 并聚焦输入框
+  useDockStore().openConsoleTab()
+  consoleStore.requestFocus()
 }
 
 function onRowContextMenu(e: MouseEvent, agent: Beacon) {
   e.preventDefault()
   selectedBeaconId.value = agent.beaconid
+  const ids = checkedIds.value.includes(agent.beaconid) && checkedIds.value.length > 0
+    ? [...checkedIds.value]
+    : [agent.beaconid]
   contextMenu.value = {
     visible: true,
     x: e.clientX,
     y: e.clientY,
     beaconid: agent.beaconid,
+    beaconIds: ids,
   }
 }
 
@@ -105,32 +118,86 @@ function getStatusTitle(agent: Beacon) {
 }
 
 const filteredAgents = computed(() => {
-  if (!props.searchQuery) return agentStore.agents
-  
-  const q = props.searchQuery.toLowerCase()
-  return agentStore.agents.filter(agent => {
-    // 增加健壮性检查：确保属性存在后再调用 toLowerCase
-    const bid = (agent.beaconid || '').toLowerCase()
-    const host = (agent.hostname || '').toLowerCase()
-    const user = (agent.username || '').toLowerCase()
-    const ip = (agent.ip || '').toLowerCase()
-    const extIp = (agent.externalIp || '').toLowerCase()
-    const proc = (agent.processName || '').toLowerCase()
-    const os = (agent.os || '').toLowerCase()
-    const pid = (agent.parentId || '').toLowerCase()
-
-    return (
-      bid.includes(q) ||
-      host.includes(q) ||
-      user.includes(q) ||
-      ip.includes(q) ||
-      extIp.includes(q) ||
-      proc.includes(q) ||
-      os.includes(q) ||
-      pid.includes(q)
-    )
-  })
+  return agentStore.agents.filter((agent) => matchesBeaconSearch(agent, props.searchQuery))
 })
+
+const groupedAgents = computed(() => groupBeacons(filteredAgents.value))
+const visibleIds = computed(() => filteredAgents.value.map((agent) => agent.beaconid))
+
+watch(() => agentStore.agents.map((agent) => agent.beaconid), (liveIds) => {
+  const live = new Set(liveIds)
+  const next = checkedIds.value.filter((id) => live.has(id))
+  if (next.length !== checkedIds.value.length) checkedIds.value = next
+})
+const allVisibleChecked = computed(() => visibleIds.value.length > 0 && visibleIds.value.every((id) => checkedIds.value.includes(id)))
+const someVisibleChecked = computed(() => visibleIds.value.some((id) => checkedIds.value.includes(id)))
+
+function isChecked(id: string): boolean {
+  return checkedIds.value.includes(id)
+}
+
+function setChecked(id: string, on: boolean): void {
+  if (on) {
+    if (!checkedIds.value.includes(id)) checkedIds.value = [...checkedIds.value, id]
+    return
+  }
+  checkedIds.value = checkedIds.value.filter((item) => item !== id)
+}
+
+function toggleChecked(id: string, event: Event): void {
+  const on = (event.target as HTMLInputElement).checked
+  setChecked(id, on)
+}
+
+function toggleAllVisible(event: Event): void {
+  const on = (event.target as HTMLInputElement).checked
+  if (on) {
+    const merged = new Set(checkedIds.value)
+    for (const id of visibleIds.value) merged.add(id)
+    checkedIds.value = [...merged]
+    return
+  }
+  const visible = new Set(visibleIds.value)
+  checkedIds.value = checkedIds.value.filter((id) => !visible.has(id))
+}
+
+function groupIds(agents: Beacon[]): string[] {
+  return agents.map((agent) => agent.beaconid)
+}
+
+function groupAllChecked(agents: Beacon[]): boolean {
+  const ids = groupIds(agents)
+  return ids.length > 0 && ids.every((id) => checkedIds.value.includes(id))
+}
+
+function groupSomeChecked(agents: Beacon[]): boolean {
+  return groupIds(agents).some((id) => checkedIds.value.includes(id))
+}
+
+function toggleGroupChecked(agents: Beacon[], event: Event): void {
+  const on = (event.target as HTMLInputElement).checked
+  const ids = groupIds(agents)
+  if (on) {
+    const merged = new Set(checkedIds.value)
+    for (const id of ids) merged.add(id)
+    checkedIds.value = [...merged]
+    return
+  }
+  const drop = new Set(ids)
+  checkedIds.value = checkedIds.value.filter((id) => !drop.has(id))
+}
+
+function groupLabel(key: string): string {
+  return key === UNGROUPED_KEY ? t('agentTable.ungrouped') : key
+}
+
+function isGroupCollapsed(key: string): boolean {
+  return Boolean(collapsedGroups.value[key])
+}
+
+function toggleGroupCollapsed(key: string): void {
+  collapsedGroups.value = { ...collapsedGroups.value, [key]: !collapsedGroups.value[key] }
+}
 
 /**
  * 格式化进程名：移除冗余的 .exe 后缀以便美观显示
@@ -155,9 +222,20 @@ function protocolText(agent: Beacon) {
     <table class="data-table" v-if="filteredAgents.length > 0">
       <thead>
         <tr>
+          <th style="width: 36px">
+            <input
+              :key="`all-check-${allVisibleChecked}-${someVisibleChecked}`"
+              type="checkbox"
+              :checked="allVisibleChecked"
+              :indeterminate="someVisibleChecked && !allVisibleChecked"
+              @click.stop
+              @change="toggleAllVisible"
+            >
+          </th>
           <th style="width: 40px"></th>
           <th>ID</th>
           <th>{{ t('agentTable.colHostname') }}</th>
+          <th>{{ t('agentTable.colNote') }}</th>
           <th>{{ t('agentTable.colUser') }}</th>
           <th>{{ t('agentTable.colOs') }}</th>
           <th>{{ t('agentTable.colProtocol') }}</th>
@@ -171,15 +249,36 @@ function protocolText(agent: Beacon) {
         </tr>
       </thead>
       <tbody>
-        <tr
-          v-for="agent in filteredAgents"
-          :key="agent.beaconid"
-          :class="{ selected: selectedBeaconId === agent.beaconid }"
-          @click="selectAgent(agent.beaconid)"
-          @dblclick="openConsole(agent.beaconid)"
-          @contextmenu="onRowContextMenu($event, agent)"
-          class="agent-row"
-        >
+        <template v-for="group in groupedAgents" :key="group.key || '__ungrouped'">
+          <tr class="group-header-row" @click="toggleGroupCollapsed(group.key)">
+            <td @click.stop>
+              <input
+                :key="`group-check-${group.key}-${groupAllChecked(group.agents)}-${groupSomeChecked(group.agents)}`"
+                type="checkbox"
+                :checked="groupAllChecked(group.agents)"
+                :indeterminate="groupSomeChecked(group.agents) && !groupAllChecked(group.agents)"
+                @change="toggleGroupChecked(group.agents, $event)"
+              >
+            </td>
+            <td colspan="14" class="group-header-cell">
+              <span class="group-toggle">{{ isGroupCollapsed(group.key) ? '▶' : '▼' }}</span>
+              <span class="group-title">{{ groupLabel(group.key) }}</span>
+              <span class="group-count">{{ group.agents.length }}</span>
+            </td>
+          </tr>
+          <tr
+            v-for="agent in group.agents"
+            v-show="!isGroupCollapsed(group.key)"
+            :key="agent.beaconid"
+            :class="{ selected: selectedBeaconId === agent.beaconid, checked: isChecked(agent.beaconid) }"
+            @click="selectAgent(agent.beaconid)"
+            @dblclick="openConsole(agent.beaconid)"
+            @contextmenu="onRowContextMenu($event, agent)"
+            class="agent-row"
+          >
+          <td @click.stop>
+            <input type="checkbox" :checked="isChecked(agent.beaconid)" @change="toggleChecked(agent.beaconid, $event)">
+          </td>
           <td>
             <span class="status-dot" :class="getStatusDotClass(agent)"></span>
           </td>
@@ -187,6 +286,7 @@ function protocolText(agent: Beacon) {
           <td>
             <span class="cell-hostname">{{ agent.hostname }}</span>
           </td>
+          <td class="cell-note" :title="agent.note">{{ agent.note || '—' }}</td>
           <td :title="agent.username">
             <span :class="{ 'admin-user': agent.isAdmin }">
               {{ agent.username }}{{ agent.isAdmin ? '*' : '' }}
@@ -239,6 +339,7 @@ function protocolText(agent: Beacon) {
             </div>
           </td>
         </tr>
+        </template>
       </tbody>
     </table>
 
@@ -270,12 +371,20 @@ function protocolText(agent: Beacon) {
       :x="contextMenu.x"
       :y="contextMenu.y"
       :beaconid="contextMenu.beaconid"
+      :beacon-ids="contextMenu.beaconIds"
       @close="closeContextMenu"
     />
   </div>
 </template>
 
 <style scoped>
+/* 操作员需要复制 beacon 会话字段(ID/主机/IP/进程等):放开数据单元格的文本选择 */
+.agent-table-wrapper :deep(.data-table tbody td) {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 .agent-table-wrapper {
   position: relative;
   min-height: 200px;
@@ -287,6 +396,51 @@ function protocolText(agent: Beacon) {
 
 .agent-row:active {
   background: rgba(79, 70, 229, 0.1) !important;
+}
+
+.agent-row.checked {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.group-header-row {
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.group-header-row:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.group-header-cell {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  padding: 8px 12px !important;
+}
+
+.group-toggle {
+  display: inline-block;
+  width: 14px;
+  color: #64748b;
+}
+
+.group-title {
+  margin-left: 6px;
+}
+
+.group-count {
+  margin-left: 8px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.cell-note {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #475569;
+  font-size: 12px;
 }
 
 .cell-id {

@@ -19,6 +19,9 @@ import {
 import { BEACON_ACTION, buildBeaconMenuItems } from './beaconActionDefinitions'
 import type { BeaconMenuItem } from './beaconActionDefinitions'
 import { sendExitCommand } from './beaconCommandActions'
+import { setBeaconGroup, setBeaconNote } from '../api/beaconApi'
+import { uniqueGroupNames } from '../groupBeacons'
+import { useNotificationStore } from '../../../stores/notification'
 
 // ─── 内部工具函数 ───
 
@@ -52,7 +55,7 @@ export function useBeaconActions() {
    */
   function getBeaconMenuItems(beaconid: string): BeaconMenuItem[] {
     const targetAgent = agentStore.getAgentById(beaconid)
-    return buildBeaconMenuItems(targetAgent, pluginStore.plugins)
+    return buildBeaconMenuItems(targetAgent, pluginStore.plugins, uniqueGroupNames(agentStore.agents))
   }
 
   // ─── 动作执行 ───
@@ -88,10 +91,38 @@ export function useBeaconActions() {
    * @param beaconid - 目标 Beacon ID
    * @param item - 动作标识或菜单项对象
    */
-  async function runBeaconAction(beaconid: string, item: BeaconMenuItem | string): Promise<void> {
+  async function applyNote(ids: string[], currentNote = ''): Promise<void> {
+    const note = await modalStore.showPrompt({
+      title: t('beaconAction.noteTitle'),
+      message: ids.length > 1
+        ? t('beaconAction.noteMessageMany', { n: ids.length })
+        : t('beaconAction.noteMessage'),
+      defaultValue: ids.length > 1 ? '' : currentNote,
+      placeholder: t('beaconAction.notePlaceholder'),
+    })
+    if (note === null) return
+    try {
+      const result = await setBeaconNote(ids, note)
+      agentStore.applyBeaconMeta(result)
+    } catch (err) {
+      useNotificationStore().error(t('beaconAction.noteFailed', { message: err instanceof Error ? err.message : String(err) }))
+    }
+  }
+
+  async function applyGroup(ids: string[], groupName: string): Promise<void> {
+    try {
+      const result = await setBeaconGroup(ids, groupName)
+      agentStore.applyBeaconMeta(result)
+    } catch (err) {
+      useNotificationStore().error(t('beaconAction.groupFailed', { message: err instanceof Error ? err.message : String(err) }))
+    }
+  }
+
+  async function runBeaconAction(beaconid: string, item: BeaconMenuItem | string, targetIds: string[] = []): Promise<void> {
     if (!beaconid || (typeof item !== 'string' && item?.disabled)) return
 
     const action = typeof item === 'string' ? item : item?.action || item?.type || ''
+    const ids = (targetIds.length ? targetIds : [beaconid]).map(String).filter(Boolean)
 
     switch (action) {
       case BEACON_ACTION.CONSOLE:
@@ -137,6 +168,29 @@ export function useBeaconActions() {
         consoleStore.openConsole(beaconid)
         modalStore.openSleepModal(beaconid)
         break
+      case BEACON_ACTION.ADD_NOTE:
+        await applyNote(ids, agentStore.getAgentById(beaconid)?.note || '')
+        break
+      case BEACON_ACTION.SET_GROUP:
+        await applyGroup(ids, typeof item === 'string' ? '' : String(item.groupName ?? ''))
+        break
+      case BEACON_ACTION.NEW_GROUP: {
+        const name = await modalStore.showPrompt({
+          title: t('beaconAction.newGroupTitle'),
+          message: ids.length > 1
+            ? t('beaconAction.newGroupMessageMany', { n: ids.length })
+            : t('beaconAction.newGroupMessage'),
+          placeholder: t('beaconAction.newGroupPlaceholder'),
+        })
+        if (name === null) return
+        const trimmed = name.trim()
+        if (!trimmed) {
+          useNotificationStore().error(t('beaconAction.groupEmpty'))
+          return
+        }
+        await applyGroup(ids, trimmed)
+        break
+      }
       case BEACON_ACTION.EXIT:
         {
           consoleStore.openConsole(beaconid)
@@ -162,11 +216,17 @@ export function useBeaconActions() {
         {
           const confirmed = await modalStore.showConfirm({
             title: t('beaconAction.deleteTitle'),
-            message: t('beaconAction.deleteMessage', { id: shortBeaconId(beaconid) }),
+            message: ids.length > 1
+              ? t('beaconAction.deleteMessageMany', { n: ids.length })
+              : t('beaconAction.deleteMessage', { id: shortBeaconId(beaconid) }),
             type: 'danger',
           })
           if (confirmed) {
-            agentStore.removeBeacon(beaconid).catch(() => {})
+            try {
+              await agentStore.removeBeacons(ids)
+            } catch (err) {
+              useNotificationStore().error(t('beaconAction.deleteFailed', { message: err instanceof Error ? err.message : String(err) }))
+            }
           }
         }
         break

@@ -133,14 +133,23 @@ function buildWindowsAttributeValue(selection: Record<string, boolean>) {
   return String(value)
 }
 
+function linuxModeBits(selection: Record<string, boolean>): number {
+  const owner = (selection.ownerRead ? 4 : 0) + (selection.ownerWrite ? 2 : 0) + (selection.ownerExecute ? 1 : 0)
+  const group = (selection.groupRead ? 4 : 0) + (selection.groupWrite ? 2 : 0) + (selection.groupExecute ? 1 : 0)
+  const other = (selection.otherRead ? 4 : 0) + (selection.otherWrite ? 2 : 0) + (selection.otherExecute ? 1 : 0)
+  return (owner << 6) | (group << 3) | other
+}
+
 function buildLinuxModeValue(selection: Record<string, boolean>) {
-  const digits = [
-    (selection.ownerRead ? 4 : 0) + (selection.ownerWrite ? 2 : 0) + (selection.ownerExecute ? 1 : 0),
-    (selection.groupRead ? 4 : 0) + (selection.groupWrite ? 2 : 0) + (selection.groupExecute ? 1 : 0),
-    (selection.otherRead ? 4 : 0) + (selection.otherWrite ? 2 : 0) + (selection.otherExecute ? 1 : 0),
-  ]
-  if (digits.every(d => d === 0)) return ''
-  return digits.join('')
+  const bits = linuxModeBits(selection)
+  if (!bits) return ''
+  return String(bits)
+}
+
+function formatLinuxModeOctal(selection: Record<string, boolean>) {
+  const bits = linuxModeBits(selection)
+  if (!bits) return ''
+  return bits.toString(8).padStart(3, '0')
 }
 
 function formatWindowsAttributes(selection: Record<string, boolean>) {
@@ -366,7 +375,7 @@ defineExpose({ form, submitting })
                   </template>
                 </div>
                 <div class="attribute-time-preview">
-                  {{ t('attrDialog.result', { value: buildLinuxModeValue(form.linuxMode) || t('attrDialog.noneSelected') }) }}
+                  {{ t('attrDialog.result', { value: formatLinuxModeOctal(form.linuxMode) || t('attrDialog.noneSelected') }) }}
                   <span class="attribute-preview-hint">({{ formatLinuxMode(form.linuxMode) }})</span>
                 </div>
               </div>

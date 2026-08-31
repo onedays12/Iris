@@ -21,9 +21,8 @@ import { useNotificationStore } from './stores/notification'
 import { bus } from './shared/bus'
 import Sidebar from './components/layout/Sidebar.vue'
 import ToastContainer from './components/common/ToastContainer.vue'
-import EventPanel from './components/common/EventPanel.vue'
 import GlobalModalHost from './components/app/GlobalModalHost.vue'
-import GlobalConsoleDock from './components/app/GlobalConsoleDock.vue'
+import BottomDock from './components/app/BottomDock.vue'
 
 const authStore = useAuthStore()
 const wsStore = useWSStore()
@@ -103,7 +102,6 @@ onErrorCaptured((err) => {
   <div class="root">
     <ToastContainer />
     <GlobalModalHost />
-    <GlobalConsoleDock v-if="!isLoginPage" />
 
     <!-- 液态玻璃动画背板 -->
     <div class="liquid-bg">
@@ -117,7 +115,7 @@ onErrorCaptured((err) => {
       <main class="content" :class="{ 'full-width': isLoginPage }">
         <RouterView />
       </main>
-      <EventPanel v-if="!isLoginPage" />
+      <BottomDock v-if="!isLoginPage" />
     </div>
   </div>
 </template>
@@ -200,6 +198,7 @@ onErrorCaptured((err) => {
 .workspace {
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   height: 100%;

@@ -3,7 +3,6 @@ package command
 import (
 	"beacon/pkg/cascade"
 	"beacon/pkg/profile"
-	"beacon/pkg/utils/crypt"
 	"beacon/pkg/utils/packet"
 	"fmt"
 	"net"
@@ -196,14 +195,6 @@ func (cm *CascadeManager) registerChannel(childID string, protocol uint32, proto
 	}
 	if childID == "" {
 		childID = hint
-	}
-
-	if _, err := crypt.DecryptHeartbeat(profile.GlobalProfile.EncryptKey, heartbeat); err != nil {
-		fmt.Printf("[diag][cascade] hello child=%q protocol=%q encrypted_heartbeat_len=%d decrypt failed: %v\n",
-			childID, protocolName, len(heartbeat), err)
-	} else {
-		fmt.Printf("[diag][cascade] hello child=%q protocol=%q encrypted_heartbeat_len=%d decrypt ok\n",
-			childID, protocolName, len(heartbeat))
 	}
 
 	ch := &CascadeChannel{

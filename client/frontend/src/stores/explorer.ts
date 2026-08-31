@@ -66,6 +66,11 @@ interface ExplorerState {
    * 由 initSubscriptions 订阅 agent:registered/os-changed 维护,clearCache 时清除。
    */
   osByBeacon: Record<string, string>
+  /**
+   * 各 Beacon 在途目录请求路径(归一化键)。
+   * explorer 错误事件不携带请求路径,用它把错误落回发起请求的缓存节点。
+   */
+  pendingByBeacon: Record<string, string>
   _subscribed: boolean
 }
 
@@ -75,6 +80,62 @@ interface ExplorerState {
  * 路径归一化引擎
  * 将 Windows/Linux 路径统一为可比较的缓存键
  */
+/**
+ * 文件浏览器首开默认路径:按目标系统给根(Windows→C:\,其他→/)。
+ * 每 beacon 的会话内记忆由 uiCurrentPath 承载,本函数只负责"无记忆时的起点"。
+ */
+export function defaultExplorerPath(os: string): string {
+  return String(os || '').toLowerCase().includes('windows') ? 'C:\\' : '/'
+}
+
+export type ExplorerSortKey = 'name' | 'mtime'
+export type ExplorerSortDir = 'asc' | 'desc'
+
+/**
+ * 客户端文件列表排序：文件夹始终在文件前面，再按名称或修改时间。
+ * 不改 beacon 回包顺序，只影响当前窗口展示。
+ */
+export function sortExplorerFiles(
+  files: ExplorerFileInfo[],
+  key: ExplorerSortKey,
+  dir: ExplorerSortDir,
+): ExplorerFileInfo[] {
+  const sign = dir === 'asc' ? 1 : -1
+  return [...files].sort((a, b) => {
+    if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+    let cmp = 0
+    if (key === 'mtime') {
+      cmp = (Number(a.mod_time) || 0) - (Number(b.mod_time) || 0)
+    } else {
+      cmp = String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    }
+    if (cmp === 0) {
+      cmp = String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    }
+    return cmp * sign
+  })
+}
+
+/**
+ * 当前用户快捷目录。用户名无效时返回空串，调用方应隐藏快捷入口。
+ * Windows 进桌面；Linux/Unix 进 $HOME（没有统一的 Desktop）。
+ */
+export function desktopExplorerPath(os: string, username: string): string {
+  const user = String(username || '').trim()
+  if (!user || /^unknown$/i.test(user) || /[\\/]/.test(user)) return ''
+  if (String(os || '').toLowerCase().includes('windows')) {
+    return `C:\\Users\\${user}\\Desktop`
+  }
+  if (user === 'root') return '/root'
+  return `/home/${user}`
+}
+
 export function normalizePathKey(path: string): string {
   if (path === undefined || path === null) return ''
   let n = path.trim()
@@ -230,6 +291,7 @@ export const useExplorerStore = defineStore('explorer', {
     uiCurrentPath: {},
     workingDirectories: {},
     osByBeacon: {},
+    pendingByBeacon: {},
     _subscribed: false,
   }),
 
@@ -307,8 +369,9 @@ export const useExplorerStore = defineStore('explorer', {
       const offset = Math.max(0, Number(options.offset ?? 0) || 0)
       const append = Boolean(options.append && offset > 0)
 
-      // 1. 同步 UI 路径展示
-      this.uiCurrentPath[beaconid] = nPath
+      // 1. 同步 UI 路径展示(保留原始大小写;nPath 仅作缓存键,
+      //    否则路径栏与每 beacon 目录记忆会退化成全小写)
+      this.uiCurrentPath[beaconid] = requestPath
 
       // 2. 缓存检查
       const node = this.getCacheNode(beaconid, nPath)
@@ -323,6 +386,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         this.setPathLoading(beaconid, nPath, true)
+        this.pendingByBeacon[beaconid] = nPath
         const timerKey = getRequestTimerKey(beaconid, nPath)
         clearTimeout(explorerRequestTimers.get(timerKey))
         explorerRequestTimers.set(timerKey, setTimeout(() => {
@@ -336,6 +400,9 @@ export const useExplorerStore = defineStore('explorer', {
             errorMessage: i18n.global.t('explorer.dirLoadTimeout'),
           }
           this.setPathLoading(beaconid, nPath, false)
+          if (this.pendingByBeacon[beaconid] === nPath) {
+            delete this.pendingByBeacon[beaconid]
+          }
         }, EXPLORER_REQUEST_TIMEOUT_MS))
 
         // 核心接口调用：POST /api/v1/beacon/explorer/files
@@ -352,7 +419,30 @@ export const useExplorerStore = defineStore('explorer', {
           errorMessage: err instanceof Error ? err.message : String(err)
         }
         this.setPathLoading(beaconid, nPath, false)
+        if (this.pendingByBeacon[beaconid] === nPath) {
+          delete this.pendingByBeacon[beaconid]
+        }
       }
+    },
+
+    /**
+     * 目录命令失败(WebSocket error 事件)落点:
+     * 把错误写进发起请求的缓存节点,让浏览器模态框显示真实原因,
+     * 而不是"该目录为空"的假象(错误事件本身不携带请求路径,用 pendingByBeacon 回溯)。
+     */
+    handleExplorerError(beaconid: string, message: string): void {
+      const nPath = this.pendingByBeacon[beaconid]
+        || normalizePathKey(this.uiCurrentPath[beaconid] || '')
+      if (!nPath) return
+
+      if (!this.cache[beaconid]) this.cache[beaconid] = {}
+      this.cache[beaconid][nPath] = {
+        ...(this.cache[beaconid][nPath] || {}),
+        isLoaded: false,
+        errorMessage: message,
+      }
+      this.setPathLoading(beaconid, nPath, false)
+      delete this.pendingByBeacon[beaconid]
     },
 
     // ─── 响应处理 ───
@@ -368,6 +458,7 @@ export const useExplorerStore = defineStore('explorer', {
         const fallbackPath = normalizePathKey(this.uiCurrentPath[beaconid] || '')
         console.warn(`[ExplorerStore] 无法解析目录响应，回退清理路径锁: ${fallbackPath}`)
         this.setPathLoading(beaconid, fallbackPath, false)
+        delete this.pendingByBeacon[beaconid]
         return
       }
 
@@ -421,6 +512,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       // 4. 同步 UI 展示路径 (非归一化官方路径)
       this.uiCurrentPath[beaconid] = rawPath
+      delete this.pendingByBeacon[beaconid]
     },
 
     handlePwdResponse(beaconid: string, result: unknown): void {

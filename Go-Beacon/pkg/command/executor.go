@@ -260,6 +260,15 @@ func (h *Handler) GetPendingTunnelPackets() [][]byte {
 	return h.Tunnels.GetPendingPackets()
 }
 
+// HarvestTunnels 同 tick 收割：本 tick 有下行写入或新通道启动且队列为空时，
+// 短暂等待 worker 完成 recv/入队（对齐 C 版 AgentHarvestTunnels）。
+func (h *Handler) HarvestTunnels() {
+	if h == nil || h.Tunnels == nil {
+		return
+	}
+	h.Tunnels.HarvestWait()
+}
+
 func (h *Handler) GetPendingCascadePackets() [][]byte {
 	return h.Cascade.GetPendingPackets()
 }

@@ -24,8 +24,10 @@ static VOID FbPackWide(ByteBuf* out, const WCHAR* text)
     HeapFree(GetProcessHeap(), 0, u);
 }
 
-/* 将 Win32 FILETIME 转换为 Unix 时间戳（自纪元以来的秒数） */
-static INT64 FbFiletimeToUnix(FILETIME ft)
+/* 将 Win32 FILETIME 转换为 Unix 时间戳（自纪元以来的毫秒数）。
+ * 与 TeamServer FileInfo.mod_time / 前端 new Date(mod_time) 对齐。
+ * FILETIME 是 100ns 间隔，除以 10000 得到毫秒。 */
+static INT64 FbFiletimeToUnixMs(FILETIME ft)
 {
     ULARGE_INTEGER v;
     const UINT64 epoch = 116444736000000000ull;
@@ -36,77 +38,7 @@ static INT64 FbFiletimeToUnix(FILETIME ft)
     if (v.QuadPart <= epoch) {
         return 0;
     }
-    return (INT64)((v.QuadPart - epoch) / 10000000ull);
-}
-
-/* 将路径解析为完整的绝对路径；调用方需 HeapFree 结果 */
-static WCHAR* FbGetFullPath(const WCHAR* path)
-{
-    DWORD need;
-    WCHAR* out;
-
-    if (!path || !*path) {
-        return HeapStrDupW(L"");
-    }
-
-    /* 查询所需缓冲区大小 */
-    need = GetFullPathNameW(path, 0, NULL, NULL);
-    if (need == 0) {
-        return HeapStrDupW(path);
-    }
-
-    out = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ((SIZE_T)need + 1) * sizeof(WCHAR));
-    if (!out) {
-        return NULL;
-    }
-
-    /* 解析完整路径 */
-    if (GetFullPathNameW(path, need, out, NULL) == 0) {
-        HeapFree(GetProcessHeap(), 0, out);
-        return HeapStrDupW(path);
-    }
-    return out;
-}
-
-/* 在需要时以反斜杠分隔符合并两个路径段 */
-static WCHAR* FbJoinPath(const WCHAR* left, const WCHAR* right)
-{
-    SIZE_T left_len = left ? wcslen(left) : 0;
-    SIZE_T right_len = right ? wcslen(right) : 0;
-    INT need_sep;
-    WCHAR* out;
-
-    if (left_len == 0) {
-        return HeapStrDupW(right ? right : L"");
-    }
-
-    /* 判断两个路径段之间是否需要分隔符 */
-    need_sep = left[left_len - 1] != L'\\' && left[left_len - 1] != L'/';
-    out = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (left_len + (need_sep ? 1u : 0u) + right_len + 1u) * sizeof(WCHAR));
-    if (!out) {
-        return NULL;
-    }
-
-    wcscpy_s(out, left_len + 1u, left);
-    if (need_sep) {
-        out[left_len++] = L'\\';
-    }
-    if (right_len) {
-        wcscpy_s(out + left_len, right_len + 1u, right);
-    }
-    return out;
-}
-
-/* 将 Win32 文件属性转换为 Unix 风格的权限字符串 */
-static VOID FbModeFromAttrs(DWORD attrs, CHAR out[16])
-{
-    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
-        strcpy_s(out, 16, "drwxrwxrwx");
-    } else if (attrs & FILE_ATTRIBUTE_READONLY) {
-        strcpy_s(out, 16, "-r--r--r--");
-    } else {
-        strcpy_s(out, 16, "-rw-rw-rw-");
-    }
+    return (INT64)((v.QuadPart - epoch) / 10000ull);
 }
 
 /* 按名称排序文件条目的比较回调（不区分大小写） */
@@ -145,7 +77,7 @@ static INT FbCollectEntries(const WCHAR* path, FileBrowserEntry** entries, SIZE_
     }
 
     /* 构建用于目录枚举的通配符模式 */
-    pattern = FbJoinPath(path, L"*");
+    pattern = PathJoinWide(path, L"*");
     if (!pattern) {
         snprintf(error, error_len, "allocation failed");
         return 0;
@@ -184,12 +116,12 @@ static INT FbCollectEntries(const WCHAR* path, FileBrowserEntry** entries, SIZE_
         /* 从查找数据填充条目 */
         memset(&out[used], 0, sizeof(out[used]));
         out[used].name = HeapStrDupW(fd.cFileName);
-        out[used].path = FbJoinPath(path, fd.cFileName);
+        out[used].path = PathJoinWide(path, fd.cFileName);
         out[used].attrs = fd.dwFileAttributes;
         sz.LowPart = fd.nFileSizeLow;
         sz.HighPart = fd.nFileSizeHigh;
         out[used].size = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 0ull : sz.QuadPart;
-        out[used].mtime = FbFiletimeToUnix(fd.ftLastWriteTime);
+        out[used].mtime = FbFiletimeToUnixMs(fd.ftLastWriteTime);
         if (!out[used].name || !out[used].path) {
             FindClose(find);
             FbFreeEntries(out, used + 1u);
@@ -228,7 +160,7 @@ static VOID FbPackEntry(ByteBuf* out, const FileBrowserEntry* entry)
 {
     CHAR mode[16];
 
-    FbModeFromAttrs(entry->attrs, mode);
+    FsModeStringFromAttrs(entry->attrs, mode);
     FbPackWide(out, entry->name);
     FbPackWide(out, entry->path);
     BbU8(out, (entry->attrs & FILE_ATTRIBUTE_DIRECTORY) ? 1u : 0u);
@@ -340,7 +272,7 @@ ByteBuf CommandFilebrowser(Parser* p)
 
     /* 将路径解析为绝对路径 */
     path_wide = Utf8ToWide(path_utf8);
-    abs_wide = FbGetFullPath(path_wide);
+    abs_wide = PathFullWide(path_wide);
     abs_utf8 = WideToUtf8(abs_wide);
     BbInit(&out);
 

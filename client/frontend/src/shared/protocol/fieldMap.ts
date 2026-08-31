@@ -37,6 +37,8 @@ export const BEACON_FIELDS = {
   jitter:        ['jitter'],
   lastSeen:      ['last_seen'],
   status:        ['status'],
+  note:          ['note'],
+  groupName:     ['group_name'],
 } as const
 
 /**

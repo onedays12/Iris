@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { bus } from '../../src/shared/bus'
 import zhCN from '../../src/locales/zh-CN.json'
@@ -211,5 +211,170 @@ describe('fileTransfer progress (from check-file-transfer)', () => {
       status: 'receiving',
     }, 'receiving')
     expect(store.transfers.find(t => t.transferKey === 'b6:download:t6')!.progress).toBeLessThanOrEqual(99)
+  })
+})
+
+describe('fileTransfer upload fidelity (acked_bytes / completion backfill)', () => {
+  it('falls back upload receivedBytes to acked_bytes so the panel stops showing 0 B', () => {
+    const store = useFileTransferStore()
+    store.handleTransferEvent({
+      task_id: 'u1',
+      direction: 'upload',
+      beacon_id: 'b1',
+      total_chunks: 20,
+      acked_chunks: 15,
+      acked_bytes: 7864320,
+      size: 10181673,
+      status: 'uploading',
+    }, 'uploading')
+    const rec = store.transfers.find(t => t.transferKey === 'b1:upload:u1')!
+    expect(rec.receivedBytes).toBe(7864320)
+    expect(rec.progress).toBe(77) // 7864320/10181673 ≈ 77%,基于字节而非块
+  })
+
+  it('backfills chunks and bytes when only a bare completion frame arrives', () => {
+    const store = useFileTransferStore()
+    store.startUpload({ beaconid: 'b2', taskId: '', remotePath: 'C:\\x\\aigc.exe', fileName: 'aigc.exe', size: 10181673 })
+    // 断连前的最后进度
+    store.handleTransferEvent({
+      task_id: 'srv-1', direction: 'upload', beacon_id: 'b2',
+      remote_path: 'C:\\x\\aigc.exe', file_name: 'aigc.exe',
+      total_chunks: 20, acked_chunks: 15, acked_bytes: 7864320, status: 'uploading',
+    }, 'uploading')
+    // 丢帧后只等到最终完成帧(无计数)
+    store.handleTransferEvent({
+      task_id: 'srv-1', direction: 'upload', beacon_id: 'b2',
+      remote_path: 'C:\\x\\aigc.exe', file_name: 'aigc.exe', size: 10181673,
+      status: 'completed',
+    }, 'completed')
+    const rec = store.transfers.find(t => t.beaconId === 'b2' && t.direction === 'upload')!
+    expect(rec.status).toBe('completed')
+    expect(rec.progress).toBe(100)
+    expect(rec.receivedChunks).toBe(20)
+    expect(rec.receivedBytes).toBe(10181673)
+  })
+})
+
+describe('fileTransfer reconcile with /transfers/active snapshots', () => {
+  it('heals a frozen record from the server snapshot (lost progress frames)', () => {
+    const store = useFileTransferStore()
+    store.startUpload({ beaconid: 'b1', taskId: '', remotePath: 'C:\\x\\aigc.exe', fileName: 'aigc.exe', size: 10181673 })
+    store.handleTransferEvent({
+      task_id: 'srv-9', direction: 'upload', beacon_id: 'b1',
+      remote_path: 'C:\\x\\aigc.exe', file_name: 'aigc.exe',
+      total_chunks: 20, acked_chunks: 15, acked_bytes: 7864320, status: 'uploading',
+    }, 'uploading')
+
+    // 断连期间 16~20 块的帧丢失;服务端快照已是完成态
+    store.reconcileWithServer([{
+      transfer_id: 'srv-9', direction: 'upload', beacon_id: 'b1',
+      file_name: 'aigc.exe', remote_path: 'C:\\x\\aigc.exe',
+      total_chunks: 20, done_chunks: 20, done_bytes: 10181673,
+      size: 10181673, status: 'completed', failed_chunks: 0,
+    }])
+
+    const rec = store.transfers.find(t => t.beaconId === 'b1' && t.direction === 'upload')!
+    expect(rec.status).toBe('completed')
+    expect(rec.receivedChunks).toBe(20)
+    expect(rec.receivedBytes).toBe(10181673)
+    expect(rec.progress).toBe(100)
+  })
+
+  it('maps upload snapshot done_chunks onto acked_chunks so reconcile cannot zero progress', () => {
+    const store = useFileTransferStore()
+    store.handleTransferEvent({
+      task_id: 'srv-u', direction: 'upload', beacon_id: 'b-u',
+      remote_path: 'C:\\x\\dogcs.jar', file_name: 'dogcs.jar',
+      total_chunks: 57, acked_chunks: 6, acked_bytes: 3145728, status: 'uploading',
+    }, 'uploading')
+
+    store.reconcileWithServer([{
+      transfer_id: 'srv-u', direction: 'upload', beacon_id: 'b-u',
+      file_name: 'dogcs.jar', remote_path: 'C:\\x\\dogcs.jar',
+      total_chunks: 57, done_chunks: 6, done_bytes: 3145728,
+      size: 29609741, status: 'uploading', failed_chunks: 0,
+    }])
+
+    const rec = store.transfers.find(t => t.beaconId === 'b-u' && t.direction === 'upload')!
+    expect(rec.receivedChunks).toBe(6)
+    expect(rec.receivedBytes).toBe(3145728)
+    expect(rec.status).toBe('uploading')
+  })
+
+  it('does not let a missing-acked frame regress in-flight upload counts', () => {
+    const store = useFileTransferStore()
+    store.handleTransferEvent({
+      task_id: 'srv-u2', direction: 'upload', beacon_id: 'b-u2',
+      remote_path: 'C:\\x\\a.bin', file_name: 'a.bin',
+      total_chunks: 57, acked_chunks: 5, acked_bytes: 2621440, status: 'uploading',
+    }, 'uploading')
+    store.handleTransferEvent({
+      task_id: 'srv-u2', direction: 'upload', beacon_id: 'b-u2',
+      remote_path: 'C:\\x\\a.bin', file_name: 'a.bin',
+      total_chunks: 57, status: 'queued',
+    }, 'queued')
+
+    const rec = store.transfers.find(t => t.beaconId === 'b-u2' && t.direction === 'upload')!
+    expect(rec.receivedChunks).toBe(5)
+    expect(rec.receivedBytes).toBe(2621440)
+  })
+
+  it('applies in-flight snapshot counts to a lagging record', () => {
+    const store = useFileTransferStore()
+    store.handleTransferEvent({
+      task_id: 'srv-2', direction: 'download', beacon_id: 'b2',
+      remote_path: 'C:\\l\\loot.zip', file_name: 'loot.zip',
+      total_chunks: 10, received_chunks: 2, received_bytes: 1000, status: 'receiving',
+    }, 'receiving')
+
+    store.reconcileWithServer([{
+      transfer_id: 'srv-2', direction: 'download', beacon_id: 'b2',
+      file_name: 'loot.zip', remote_path: 'C:\\l\\loot.zip',
+      total_chunks: 10, done_chunks: 8, done_bytes: 4000,
+      size: 5000, status: 'receiving', failed_chunks: 0,
+    }])
+
+    const rec = store.transfers.find(t => t.beaconId === 'b2' && t.direction === 'download')!
+    expect(rec.receivedChunks).toBe(8)
+    expect(rec.receivedBytes).toBe(4000)
+    expect(rec.status).toBe('receiving')
+  })
+
+  it('marks a long-silenced active record stale when the server has no such transfer', () => {
+    vi.useFakeTimers()
+    try {
+      const store = useFileTransferStore()
+      store.startUpload({ beaconid: 'b3', taskId: '', remotePath: 'C:\\x\\gone.bin', fileName: 'gone.bin', size: 1 })
+      store.handleTransferEvent({
+        task_id: 'srv-3', direction: 'upload', beacon_id: 'b3',
+        remote_path: 'C:\\x\\gone.bin', file_name: 'gone.bin',
+        total_chunks: 4, acked_chunks: 1, acked_bytes: 1, status: 'uploading',
+      }, 'uploading')
+
+      // 宽限期内不误伤
+      store.reconcileWithServer([])
+      expect(store.transfers[0].status).toBe('uploading')
+
+      // 超过宽限期且服务端查无 → stale
+      vi.advanceTimersByTime(31_000)
+      store.reconcileWithServer([])
+      const rec = store.transfers.find(t => t.beaconId === 'b3' && t.direction === 'upload')!
+      expect(rec.status).toBe('stale')
+      // stale 不再算活跃,允许操作员重试
+      expect(store.hasActiveTransfer('b3', 'C:\\x\\gone.bin', 'upload')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves records of other beacons untouched', () => {
+    const store = useFileTransferStore()
+    store.handleTransferEvent({
+      task_id: 'srv-4', direction: 'upload', beacon_id: 'b9',
+      remote_path: 'C:\\x\\a.exe', file_name: 'a.exe',
+      total_chunks: 5, acked_chunks: 1, acked_bytes: 10, status: 'uploading',
+    }, 'uploading')
+    store.reconcileWithServer([])
+    expect(store.transfers[0].status).toBe('uploading') // 未到宽限期,保持原状
   })
 })

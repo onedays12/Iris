@@ -172,6 +172,7 @@ ByteBuf PostExRegisterStartedJob(struct BeaconContext* ctx,
                           "postex-spawn-dll" : "postex-inject-dll";
     job->job_id = req->task_id;
     job->subcmd = req->subcmd;
+    job->api = req->api;
     job->pid = result->pid;
     job->pipe = pipe;
     job->process = result->process;

@@ -6,6 +6,9 @@
 #include "beacon_jobs.h"
 #include "beacon_sleep.h"
 
+/* 事件常量唯一事实源：beacon_test_events.h（本头文件不再重复定义） */
+#include "beacon_test_events.h"
+
 typedef enum BeaconTestFaultPoint {
     BEACON_TEST_FAULT_NONE = 0,
     BEACON_TEST_FAULT_RANDOM,
@@ -21,19 +24,6 @@ typedef struct BeaconTestFaultPlan {
 } BeaconTestFaultPlan;
 
 typedef unsigned int BeaconTestEventType;
-
-enum BeaconTestEventValues {
-    BEACON_TEST_EVENT_CONTEXT_INIT_BEGIN = 1,
-    BEACON_TEST_EVENT_CONTEXT_INIT_FAILED,
-    BEACON_TEST_EVENT_WSA_STARTUP,
-    BEACON_TEST_EVENT_AGENT_RUN_BEGIN,
-    BEACON_TEST_EVENT_JOB_CREATED,
-    BEACON_TEST_EVENT_JOB_THREAD_STARTED,
-    BEACON_TEST_EVENT_JOB_THREAD_EXITED,
-    BEACON_TEST_EVENT_JOB_COMPLETE,
-    BEACON_TEST_EVENT_OUTBOX_ENQUEUE,
-    BEACON_TEST_EVENT_CONTEXT_FREE
-};
 
 typedef struct BeaconTestEvent {
     BeaconTestEventType type;
@@ -93,3 +83,34 @@ VOID BeaconTestScenarioStartupWsaFailure(VOID);
 VOID BeaconTestScenarioCryptoAndJitterFailure(VOID);
 VOID BeaconTestScenarioTaskOutboxFlow(VOID);
 VOID BeaconTestScenarioJobShutdown(VOID);
+VOID BeaconTestScenarioSyscallNativeNoBind(VOID);
+VOID BeaconTestScenarioSyscallFakeBind(VOID);
+VOID BeaconTestScenarioSyscallFallback(VOID);
+VOID BeaconTestScenarioSyscallRandomizedPool(VOID);
+VOID BeaconTestScenarioSyscallGateCommon(VOID);
+VOID BeaconTestScenarioSyscallHalosNeighbor(VOID);
+VOID BeaconTestScenarioSyscallHalosReal(VOID);
+VOID BeaconTestScenarioSyscallRecycledConfirmed(VOID);
+VOID BeaconTestScenarioSyscallRecycledOpcodeWins(VOID);
+VOID BeaconTestScenarioSyscallRecycledSortWins(VOID);
+VOID BeaconTestScenarioSyscallRecycledSortFallback(VOID);
+VOID BeaconTestScenarioSyscallRecycledReal(VOID);
+VOID BeaconTestScenarioSyscallBindSixSlots(VOID);
+VOID BeaconTestScenarioSyscallToggle(VOID);
+
+VOID BeaconTestScenarioSpawnNoPpid(VOID);
+VOID BeaconTestScenarioSpawnPpidSpoofed(VOID);
+VOID BeaconTestScenarioSpawnOpenFailFallback(VOID);
+VOID BeaconTestScenarioSpawnOpenFailStrict(VOID);
+VOID BeaconTestScenarioSpawnCreateFailFallback(VOID);
+VOID BeaconTestScenarioSpawnApplyProfile(VOID);
+VOID BeaconTestScenarioSpawnPpidStdDup(VOID);
+
+VOID BeaconTestScenarioTunnelPollRotateCursor(VOID);
+VOID BeaconTestScenarioTunnelPollFairnessCrossTick(VOID);
+VOID BeaconTestScenarioTunnelSplitTargetBounds(VOID);
+VOID BeaconTestScenarioFsLsPathTooLong(VOID);
+
+VOID BeaconTestScenarioParserMvCpTruncatedArgs(VOID);
+VOID BeaconTestScenarioParserFsTruncatedSingleArg(VOID);
+VOID BeaconTestScenarioParserKillStealTokenTruncated(VOID);

@@ -449,7 +449,7 @@ ByteBuf CascadeRegisterChannel(BeaconContext* ctx, const CHAR* child_id, UINT32 
     UINT16 cmd = 0;
     DWORD immediate_read = 0;
 
-    if (!CascadeIoReadFrame(io, &cmd, &hello_body) || cmd != CASCADE_FRAME_HELLO) {
+    if (!CascadeIoReadHelloFrame(io, &cmd, &hello_body) || cmd != CASCADE_FRAME_HELLO) {
         CascadeIoClose(io);
         return BbFromText("cascade child did not send HELLO");
     }

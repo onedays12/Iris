@@ -48,6 +48,19 @@ describe('buildBeaconCommandArgs', () => {
     ])
   })
 
+  it('packs LinuxMode as Unix permission bits, not octal digits', () => {
+    expect(buildBeaconCommandArgs(COMMAND_ID.SETATTR, ['/tmp/a.txt', 32, 420])).toEqual([
+      { kind: 'string', value: '/tmp/a.txt' },
+      { kind: 'int32', value: 32 },
+      { kind: 'int32', value: 420 },
+    ])
+    expect(buildBeaconCommandArgs(COMMAND_ID.SETATTR, ['/tmp/a.txt', 32, '420'])).toEqual([
+      { kind: 'string', value: '/tmp/a.txt' },
+      { kind: 'int32', value: 32 },
+      { kind: 'int32', value: 420 },
+    ])
+  })
+
   it('uses int32 screenshot defaults and rejects invalid quality', () => {
     expect(buildBeaconCommandArgs(COMMAND_ID.SCREENSHOT, [0, 80])).toEqual([
       { kind: 'int32', value: 0 },

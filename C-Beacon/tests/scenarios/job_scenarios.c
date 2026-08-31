@@ -30,4 +30,7 @@ VOID BeaconTestScenarioJobShutdown(VOID)
     ContextFree(&ctx);
     TEST_ASSERT(BeaconTestTraceHas(BeaconTestGetTrace(), BEACON_TEST_EVENT_JOB_CREATED));
     TEST_ASSERT(BeaconTestTraceHas(BeaconTestGetTrace(), BEACON_TEST_EVENT_JOB_THREAD_STARTED));
+
+    /* NULL 取消探测必须视为编程错误返回 FALSE，而非伪装成“已取消” */
+    TEST_ASSERT(!JobIsCancelRequested(NULL));
 }

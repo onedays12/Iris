@@ -124,8 +124,8 @@ async function refreshDashboard() {
 .header-stats {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 8px 16px;
+  gap: 12px;
+  padding: 4px 12px;
   background: var(--bg-card);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
@@ -141,7 +141,7 @@ async function refreshDashboard() {
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -164,15 +164,21 @@ async function refreshDashboard() {
 
 .stat-divider {
   width: 1px;
-  height: 30px;
+  height: 22px;
   background: var(--border);
 }
 
 .table-section {
   flex: 1 1 auto;
-  min-height: 240px;
-  margin: 0 24px 24px;
-  overflow-y: auto;
+  min-height: 200px;
+  /* 底边距收紧:beacon 列表与底部控制台 dock 之间不留大留白(2026-08 反馈) */
+  margin: 0 20px 6px;
+  overflow: auto;
   padding: 0;
+}
+
+/* 表内横向滚动条压薄,少占一行的高度 */
+.table-section::-webkit-scrollbar {
+  height: 8px;
 }
 </style>

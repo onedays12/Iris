@@ -533,6 +533,13 @@ onUnmounted(() => {
   cursor: text;
 }
 
+/* 网卡卡片内容(MAC/MTU/FLAGS/地址)可选中复制 */
+.interface-card {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
 .empty-row {
   padding: 40px !important;
   text-align: center;

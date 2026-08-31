@@ -63,7 +63,58 @@ export async function listDownloads(): Promise<StoredFile[]> {
   return parseStoredFileList(await request<unknown>('GET', '/api/v1/files/downloads'))
 }
 
+/** 服务端 /transfers/active 返回的传输运行态快照。 */
+export interface ActiveTransferSnapshot {
+  transfer_id: string
+  direction: string
+  beacon_id: string
+  file_name: string
+  remote_path: string
+  total_chunks: number
+  done_chunks: number
+  done_bytes: number
+  size: number
+  status: string
+  failed_chunks: number
+  started_at: string
+  updated_at: string
+}
+
+/**
+ * 拉取传输运行态快照供传输面板对账。
+ * 映射为 store 已理解的进度帧字段契约(download: received_*;upload: acked_*)。
+ */
+export async function listActiveTransfers(): Promise<ActiveTransferSnapshot[]> {
+  const data = await request<unknown>('GET', '/api/v1/transfers/active')
+  return expectArray(data, 'Active transfers').map((raw) => {
+    const s = expectRecord(raw, 'Active transfer')
+    return {
+      transfer_id: expectStringField(s, 'transfer_id', 'Active transfer'),
+      direction: expectStringField(s, 'direction', 'Active transfer'),
+      beacon_id: expectStringField(s, 'beacon_id', 'Active transfer'),
+      file_name: String(s.file_name ?? ''),
+      remote_path: String(s.remote_path ?? ''),
+      total_chunks: Number(s.total_chunks ?? 0),
+      done_chunks: Number(s.done_chunks ?? 0),
+      done_bytes: Number(s.done_bytes ?? 0),
+      size: Number(s.size ?? 0),
+      status: String(s.status ?? 'running'),
+      failed_chunks: Number(s.failed_chunks ?? 0),
+      started_at: String(s.started_at ?? ''),
+      updated_at: String(s.updated_at ?? ''),
+    }
+  })
+}
+
 export async function downloadFileBase64({ fileId, downloadUrl }: DownloadFileParams): Promise<string> {
   const path = downloadUrl || `/api/v1/files/downloads/${encodeURIComponent(fileId)}`
   return downloadBinaryBase64(path)
+}
+
+/**
+ * 按 base64 直接入服务器暂存区(拖拽上传桥专用):
+ * 文件内容已在 Go 侧经 FileService 读取,无需浏览器 File 对象。
+ */
+export async function uploadFileByBase64(fileName: string, base64Data: string): Promise<StoredFile> {
+  return parseStoredFile(await uploadFileBase64<unknown>('/api/v1/files/uploads', fileName, base64Data))
 }

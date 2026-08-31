@@ -2,13 +2,15 @@ name: CI
 
 # ┌─────────────────────────────────────────────────────────────────────────────
 # 触发:
-#   - push 到 dev:  只跑 test job(前端 check:all + vitest),不构建产物
+#   - push 到 main/dev:  只跑 test job(前端 check:all + vitest),不构建产物
 #   - 创建 tag v*:  跑 test job → 通过后三端并行 build → 发布 GitHub Release
 #   - workflow_dispatch(手动): 填目标 tag 后跑完整流程(test → 三端 build → Release),
 #     适合 Server 产物已备好、想跳过打 tag 流程或需要重发版本时使用
 #
 # 注: 本 workflow 由 client 子项目迁移至仓库根,所有 client 相关操作都加
 #     `working-directory: client`。产物最终 zip 写回仓库根目录。
+#     工具链对齐 client/go.mod: wails v3.0.0-beta.15 + Go 1.25,
+#     Linux cgo 依赖为 gtk4 / webkitgtk-6.0(alpha.47 时代是 gtk3 / webkit2gtk-4.1)。
 #     Server 产物(release-assets/)只在本地构建、不入库;Release 创建后
 #     在本机用 `gh release upload` 手动补传,避免大文件进 git 历史。
 # └─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +55,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: client/go.sum
 
       - name: Setup Node
@@ -64,11 +66,11 @@ jobs:
           cache-dependency-path: client/frontend/package-lock.json
 
       # go vet/test ./... 会编译主包, 依赖 Wails 的 cgo 绑定
-      # (webkit2gtk/gtk3), 环境需与 build-linux job 对齐。
+      # (gtk4 / webkitgtk-6.0, beta.15), 环境需与 build-linux job 对齐。
       - name: Install Linux system deps (for wails cgo)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev build-essential pkg-config
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config
 
       - name: Install frontend deps
         working-directory: client/frontend
@@ -117,7 +119,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: client/go.sum
 
       - name: Setup Node
@@ -127,8 +129,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: client/frontend/package-lock.json
 
-      - name: Install wails3 CLI (alpha.47, aligned with go.mod)
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.47
+      - name: Install wails3 CLI (beta.15, aligned with go.mod)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
 
       - name: Install frontend deps
         working-directory: client/frontend
@@ -172,7 +174,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: client/go.sum
 
       - name: Setup Node
@@ -185,10 +187,10 @@ jobs:
       - name: Install Linux system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev build-essential pkg-config
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev build-essential pkg-config
 
-      - name: Install wails3 CLI (alpha.47, aligned with go.mod)
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.47
+      - name: Install wails3 CLI (beta.15, aligned with go.mod)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
 
       - name: Install frontend deps
         working-directory: client/frontend
@@ -270,7 +272,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: client/go.sum
 
       - name: Setup Node
@@ -280,8 +282,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: client/frontend/package-lock.json
 
-      - name: Install wails3 CLI (alpha.47, aligned with go.mod)
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.47
+      - name: Install wails3 CLI (beta.15, aligned with go.mod)
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
 
       - name: Install frontend deps
         working-directory: client/frontend

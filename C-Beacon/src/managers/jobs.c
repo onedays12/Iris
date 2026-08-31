@@ -260,10 +260,16 @@ VOID JobComplete(BeaconJob* job)
 #endif
 }
 
-/* 查询 Job 是否已收到取消请求 */
+/* 查询 Job 是否已收到取消请求。
+ * 契约：job 必须指向有效对象。NULL 属编程错误——此前 NULL 被当作“已取消”
+ * 处理，会让误传空指针的调用点静默进入取消分支（exec 侧即 TerminateProcess），
+ * 方向与 fail-safe 相反；现改为记录后返回 FALSE。 */
 BOOL JobIsCancelRequested(const BeaconJob* job)
 {
-    if (!job) return TRUE;
+    if (!job) {
+        DebugPrintf("[jobs] cancel probe on NULL job\n");
+        return FALSE;
+    }
     return InterlockedCompareExchange((volatile LONG*)&job->cancel_requested, 0, 0) != 0;
 }
 

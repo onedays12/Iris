@@ -53,7 +53,33 @@ type WebSocketService struct {
 	*transport.WebSocketService
 }
 
-// NewWebSocketService 构造 WebSocketService。
+// NewWebSocketService 构造 WebSocketService(默认 Wails 事件出口)。
 func NewWebSocketService() *WebSocketService {
 	return &WebSocketService{WebSocketService: transport.NewWebSocketService()}
 }
+
+// NewWebSocketServiceWithOpts 构造带定制项的 WebSocketService(main.go 用于
+// 组装 FanoutEmitter 与 MCP 凭据钩子)。internal 包类型无法越过 internal/
+// 可见性边界直达根包,故在此透传所需的构造项与出口。
+func NewWebSocketServiceWithOpts(opts ...transport.WebSocketOption) *WebSocketService {
+	return &WebSocketService{WebSocketService: transport.NewWebSocketService(opts...)}
+}
+
+// 以下为 transport 包构建项到 service 层的透传别名(main.go 组装 MCP 扇出用):
+type WebSocketOption = transport.WebSocketOption
+
+func WithEventEmitter(e transport.EventEmitter) WebSocketOption {
+	return transport.WithEventEmitter(e)
+}
+
+func WithConnectHook(fn func(apiBase, token string)) WebSocketOption {
+	return transport.WithConnectHook(fn)
+}
+
+type EventEmitter = transport.EventEmitter
+
+func NewFanoutEmitter(emitters ...EventEmitter) EventEmitter {
+	return transport.NewFanoutEmitter(emitters...)
+}
+
+func NewWailsEventEmitter() EventEmitter { return transport.NewWailsEventEmitter() }

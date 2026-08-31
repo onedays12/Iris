@@ -44,6 +44,8 @@ BeaconJob* JobCreate(struct BeaconContext* ctx, UINT32 task_id, UINT32 command_i
                      JobType type, const CHAR* name);
 BOOL JobStartThread(BeaconJob* job, LPTHREAD_START_ROUTINE start, PVOID arg);
 VOID JobComplete(BeaconJob* job);
+/* 查询协作式取消标志。job 必须非空（NULL 是编程错误，记录日志并返回 FALSE，
+ * 不再伪装成“已取消”）。 */
 BOOL JobIsCancelRequested(const BeaconJob* job);
 VOID JobSetProcessHandle(BeaconJob* job, HANDLE process_handle);
 VOID JobEnqueueResult(struct BeaconContext* ctx, UINT32 task_id, UINT32 command_id,

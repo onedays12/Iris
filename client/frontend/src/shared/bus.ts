@@ -9,6 +9,7 @@
  */
 
 import type {
+  BeaconMetaEventData,
   BeaconRegisteredEventData,
   EventRecord,
   ListenerStateChangedEventData,
@@ -33,6 +34,7 @@ export interface AppEvents {
   'ws:beacon-registered': { data: BeaconRegisteredEventData }
   'ws:beacon-tick': { beaconid: string; lastSeen: string; status: string }
   'ws:beacon-removed': { beaconid: string }
+  'ws:beacon-meta': { data: BeaconMetaEventData }
   'ws:connected': { reconnected: boolean }
   'ws:listener-changed': { data: ListenerStateChangedEventData }
   'ws:event-record': WsEventRecordPayload

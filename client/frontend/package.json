@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,8 @@
     "build": "vite build --mode production",
     "preview": "vite preview",
     "check:i18n-keys": "node scripts/check-i18n-keys.mjs",
-    "check:all": "npm run check:i18n-keys",
+    "check:preview-mirror": "node scripts/check-preview-mirror.mjs",
+    "check:all": "npm run check:i18n-keys && npm run check:preview-mirror",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && vue-tsc --noEmit -p tsconfig.node.json && vue-tsc --noEmit -p tsconfig.vitest.json",
     "test": "vitest run",
     "test:watch": "vitest",

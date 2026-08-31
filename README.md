@@ -8,7 +8,11 @@ IrisC2 是一个面向授权安全测试、红队演练、攻防实验和内部�
 
 ## 项目状态
 
-主体框架已经搭完，早期规划的核心能力也都补得差不多了。权限提升、横向移动这些更高级的功能，等我把相关技术再学扎实些会陆续加上；后续会持续更新 Wiki、完善 Go-Beacon、补文档和示例，把稳定性和使用体验一点点磨好。
+主体框架已经搭完，早期规划的核心能力也都补得差不多了。后续路线：
+
+- **v0.4.x** — 持续优化 Client / Server 的使用体验，Beacon 暂时不动。
+- **v0.5** — 着手开发插件编写框架、凭据提取、权限维持等工具。这些工具破坏性较强，暂不随 Release 公开发布；鼓励社区基于现有插件体系自行编写插件，确有需要的可以私信联系。
+- 涉及 Beacon 防御规避的技术，我会毫无保留地开源。
 
 Server 目前只通过 Releases 以二进制形式发布，源码暂不公开——等这个项目攒到 200 star 之后，我会把 Server 源码开源出来。
 
@@ -30,7 +34,7 @@ Client 源码在 `client/`，基于 Wails 3 构建（Go + Vue/TypeScript）。Se
 
 ## 工作方式
 
-- Client 负责操作界面、任务下发、结果查看和插件入口。
+- Client 负责操作界面、任务下发、结果查看和插件入口，并内嵌 MCP Server，Agent 可直接驱动监听器、Beacon、命令、文件和事件。
 - Server 负责认证、Listener、Payload、任务、文件、截图、隧道和事件同步。
 - Beacon 在授权目标环境中运行，按 C2 Profile 与 Listener 通信并执行任务。
 - Stager 用于 staged payload 场景，先下载 stage，再启动 Beacon stage。
@@ -60,18 +64,25 @@ GitHub 仓库页面可能不会直接预览较大的 LFS 视频。可以直接�
 - 支持 Beacon 右键菜单和插件动作入口。
 - 支持 BOF/OBJ 与 PostEx 插件动作（含 `spawn-dll` / `inject-dll`、按架构选 DLL、manifest lint）。
 - 支持 PostEx metadata / progress / artifact / error 等结构化 frame 展示，artifact 接入下载页面。
+- 内嵌 MCP Server，Agent 可直接驱动监听器、Beacon、命令、文件和事件。
+- 工作台 BottomDock：控制台、事件、传输集中收纳在窗口底部。
+- 远程文件预览：文本 / 图片白名单，内存中转，不落盘。
+- Beacon 备注与分组、勾选批量删除；文件浏览器支持执行、原生拖拽上传和本 Beacon 传输面板。
+- 登录支持记住密码（登录成功才写入）。
 
 构建详见 [client/README.md](client/README.md)。
 
 ### Server
 
-- 账号密码 + JWT 鉴权；同名用户单会话，新登录替换旧会话。
+- 账号密码 + JWT 鉴权；登录为 CS 风格统一密码，带用户名占用和断连宽限。
 - REST API + WebSocket 事件通道。
 - HTTP/HTTPS Listener 和 External TCP Listener；TCP 可按配置启用 SSL/TLS。
 - 通过 C2 Profile 管理 Beacon sleep、jitter、sleep obfuscation、HTTP transforms、stager 等行为。
 - 支持 stagerless 与 staged payload 生成，支持 C/Go 两类 Beacon 模板。
 - 任务持久化、pending 任务恢复、任务状态跟踪、结果回传。
 - PostEx `spawn_dll` / `inject_dll`、结构化 frame 事件、artifact 下载。
+- 远程文件预览（文本 / 图片白名单，内存中转，不落盘），Beacon 无需改动。
+- 会话备注、分组、批量删除 API；`GET /transfers/active` 传输对账快照。
 - 文件上传 / Beacon 文件下载 / 分块传输 / 截图 / 隧道转发。
 - Windows 7 兼容 TLS cipher fallback；SQLite 本地持久化；基础伪装响应。
 
@@ -90,6 +101,8 @@ Beacon 源码在 `C-Beacon/`，当前能力：
 - 首次上线注册、心跳刷新、会话密钥更新。
 - sleep time / jitter / sleep obfuscation（none / ekko / zilean / gargle）。
 - 命令执行、文件系统、文件传输、文件浏览、进程/作业/身份、网络信息、截图。
+- syscall 间接调用：recycled / halos gate，invoke 随机化。
+- PPID 伪装：目标进程名或 PID 写在 profile 里，TSCF 可开关 syscall。
 - 隧道：SOCKS / 端口转发类 tunnel start / control / data / close。
 - 扩展执行：BOF/OBJ 加载、重定位、执行、输出回传、任务取消。
 - PostEx：`spawn-dll` / `inject-dll`、异步 job 轮询、metadata/progress/artifact/error frame 回传。
@@ -109,6 +122,8 @@ Go-Beacon 源码在 `Go-Beacon/`，使用 Go 实现，支持 Windows、Linux、m
   - Windows x64：COFF 格式，VirtualAlloc + NtCreateThreadEx，含 VEH 崩溃恢复。
   - Linux x64：ELF 格式，mmap + 直接调用，含 GOT/trampoline 外部符号解析。
 - 配置通过 TSCF v2 TLV 格式写入，由 `tools/patch_profile.go` 工具生成。
+- 隧道与 C-Beacon 对齐，支持批量回传。
+- Windows 构建为无窗口程序，运行时不再弹出控制台。
 
 构建与模板部署详见 [Go-Beacon/README.md](Go-Beacon/README.md)。
 

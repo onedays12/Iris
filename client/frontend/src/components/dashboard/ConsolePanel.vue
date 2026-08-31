@@ -5,7 +5,7 @@
  * 内置 help/local 命令，以及结构化参数发送。
  */
 
-import { ref, nextTick, watch, computed, onUnmounted } from 'vue'
+import { ref, nextTick, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAgentStore } from '../../stores/agent'
 import { useConsoleStore } from '../../stores/console'
@@ -38,7 +38,25 @@ const modalStore = useModalStore()
 // ─── 状态 ───
 
 const commandInput = ref('')
+const inputRef = ref<HTMLInputElement | null>(null)
 const outputRef = ref<HTMLElement | null>(null)
+
+// M2 联动:双击 beacon 行 → consoleStore.requestFocus() → 此处聚焦输入框
+watch(
+  () => consoleStore.focusTick,
+  async () => {
+    if (!consoleStore.consolePanelVisible || !consoleStore.currentConsole) return
+    await nextTick()
+    inputRef.value?.focus()
+  },
+)
+
+onMounted(() => {
+  // 聚焦请求可能早于本面板挂载(双击时面板尚未渲染),挂载即消费
+  if (consoleStore.consumePendingFocus()) {
+    inputRef.value?.focus()
+  }
+})
 
 // ─── 计算属性 ───
 
@@ -62,50 +80,6 @@ const {
 function isCommandAllowed(command: string | number) {
   return isCommandSupportedForOS(command, activeBeaconOs.value)
 }
-
-// ─── 面板拖拽调整高度 ───
-const panelHeight = ref(350)
-let isDragging = false
-let startY = 0
-let startHeight = 0
-
-function startDrag(e: MouseEvent) {
-  isDragging = true
-  startY = e.clientY
-  startHeight = panelHeight.value
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', stopDrag)
-  document.body.style.userSelect = 'none' // 防止拖拽时选中文本
-}
-
-function onDrag(e: MouseEvent) {
-  if (!isDragging) return
-  // 向上拖拽 clientY 减小，面板高度应该增加
-  const delta = startY - e.clientY
-  let newHeight = startHeight + delta
-  
-  // 限制最小和最大高度
-  const minHeight = 200
-  const maxHeight = window.innerHeight * 0.8
-  
-  if (newHeight < minHeight) newHeight = minHeight
-  if (newHeight > maxHeight) newHeight = maxHeight
-  
-  panelHeight.value = newHeight
-}
-
-function stopDrag() {
-  if (isDragging) {
-    isDragging = false
-    document.removeEventListener('mousemove', onDrag)
-    document.removeEventListener('mouseup', stopDrag)
-    document.body.style.userSelect = ''
-  }
-}
-
-onUnmounted(() => {
-  stopDrag()
-})
 
 // 自动滚动到底部
 watch(
@@ -526,12 +500,7 @@ function formatTimestamp(iso: string) {
 </script>
 
 <template>
-  <div class="console-panel" v-if="consoleStore.consolePanelVisible" :style="{ height: panelHeight + 'px' }">
-    <!-- 拖拽缩放手柄 -->
-    <div class="resize-handle" @mousedown="startDrag">
-      <div class="resize-indicator"></div>
-    </div>
-
+  <div class="console-panel" v-if="consoleStore.consolePanelVisible">
     <!-- 标签栏 -->
     <div class="console-tabs">
       <div class="tabs-left">
@@ -583,6 +552,7 @@ function formatTimestamp(iso: string) {
       <div class="console-input-bar">
         <span class="input-prompt">❯</span>
         <input
+          ref="inputRef"
           v-model="commandInput"
           class="console-input"
           type="text"
@@ -613,36 +583,10 @@ function formatTimestamp(iso: string) {
   display: flex;
   flex-direction: column;
   background: var(--bg-console);
-  border-top: 1px solid var(--border);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   overflow: hidden;
-  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
   position: relative;
-}
-
-/* 拖拽手柄 */
-.resize-handle {
-  height: 8px;
-  width: 100%;
-  cursor: ns-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  flex-shrink: 0;
-  z-index: 10;
-}
-
-.resize-indicator {
-  width: 40px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.15);
-  transition: var(--transition);
-}
-
-.resize-handle:hover .resize-indicator {
-  background: rgba(0, 0, 0, 0.22);
 }
 
 /* 标签栏 */
@@ -887,13 +831,7 @@ function formatTimestamp(iso: string) {
   border-top-color: rgba(148, 163, 184, 0.18);
 }
 
-:global(html[data-ui-theme="dark"] .resize-indicator){
-  background: rgba(148, 163, 184, 0.28);
-}
 
-:global(html[data-ui-theme="dark"] .resize-handle:hover .resize-indicator){
-  background: rgba(148, 163, 184, 0.42);
-}
 
 :global(html[data-ui-theme="dark"] .console-tabs){
   background: rgba(15, 23, 42, 0.72);

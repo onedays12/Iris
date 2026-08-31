@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.4.0
+
+### Client
+
+- 新增 — 内嵌 MCP Server，Agent 可直接驱动监听器、beacon、命令、文件和事件
+- 新增 — 远程文件预览（文本 / 图片白名单，内存中转，不落盘）
+- 新增 — 工作台 BottomDock：控制台、事件、传输收纳到窗口底部
+- 新增 — Beacon 备注、分组、勾选批量删除
+- 新增 — 文件浏览器支持执行、原生拖拽上传，以及本 beacon 传输面板
+- 新增 — 登录记住密码（只有登录成功才写入）
+- 变更 — 登录改为 CS 风格统一密码
+- 变更 — Wails 3 从 alpha.47 升到 beta.15
+- 变更 — Linux 快捷入口从「我的桌面」改为「我的 Home」
+- 变更 — setattr 下发 Unix 权限位，界面仍显示 644 这种八进制
+- 修复 — TeamServer 重启后，有效 JWT 第一次 `/connect` 就能恢复，不必干等到静默重登
+- 修复 — 文件浏览器命令失败不再显示成空目录
+- 修复 — 传输进度丢帧后不再把进度写错
+- 修复 — Windows 执行带空格、括号的文件名
+- 若干优化
+
+### Server
+
+- 新增 — 会话备注、分组、批量删除 API
+- 新增 — `GET /transfers/active` 传输对账快照
+- 新增 — 远程文件预览（Beacon 不用改）
+- 变更 — 登录改为 CS 风格统一密码，带用户名占用和断连宽限
+- 修复 — 进程重启后，有效 JWT 第一次认证即可重建内存会话
+- 修复 — 下载完成不再拿 FileID 当内容哈希比对（go-beacon 的 FileID 是元数据哈希，会误报 mismatch）
+- 修复 — 结构化结果不再整包走 ACP 文本启发式，目录浏览不会再全量失败
+- 修复 — beacon 文本按 ACP 转 UTF-8，shell 中文不再乱码
+- 修复 — 大文件上传按字节预算出队，避免云函数中转截断后卡在 0/N
+- 修复 — 目录 mtime 升到毫秒
+- 若干优化
+
+### C-Beacon
+
+- 新增 — syscall 间接调用：recycled / halos gate，invoke 随机化
+- 新增 — PPID 伪装，目标进程名或 PID 写在 profile 里，TSCF 可开关 syscall
+- 优化 — 隧道
+- 修复 — shell / powershell 接入 PPID 伪装：stdio 改用管道并复制进假父进程，不再依赖控制台句柄
+- 修复 — 级联 HELLO 读帧 30 秒超时；WOULDBLOCK 按进度窗口重试，不再死等
+- 修复 — 文件浏览 FILETIME 转成 Unix 毫秒，跟前端日期对得上
+- 若干优化
+
+### Go-Beacon
+
+- 新增 — 隧道与 C-Beacon 对齐，支持批量回传
+- 变更 — Windows 构建改为无窗口，运行时不再打控制台
+- 修复 — setattr 同时认 Unix 权限位和旧的十进制「644」
+- 修复 — Windows shell 走 `CmdLine` 原样下发，括号路径不会被二次加引号
+- 修复 — 文件浏览 ModTime 改为 Unix 毫秒
+- 若干优化
+
 ## v0.3.0
 
 ### Client

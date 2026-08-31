@@ -158,6 +158,8 @@ VOID CascadeIoClose(CascadeIo* io);
 
 /* 读取一帧（阻塞式），用于 HELLO 握手 */
 BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body);
+/* HELLO 握手专用：总 deadline 约束的帧读取，防止静默对端挂死主循环 */
+BOOL CascadeIoReadHelloFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body);
 
 /* 写入一帧（阻塞式，带写锁） */
 BOOL CascadeIoWriteFrame(CascadeIo* io, UINT16 cmd, const ByteBuf* body);

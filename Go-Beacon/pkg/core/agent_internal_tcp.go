@@ -13,11 +13,8 @@ func (a *Agent) runInternalTCP() int {
 			profile.GlobalProfile.TCPInternal.BindHost,
 			fmt.Sprintf("%d", profile.GlobalProfile.TCPInternal.BindPort),
 		)
-		fmt.Printf("[*] Internal TCP listening on %s\n", addr)
-
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
-			fmt.Printf("[!] Internal TCP listen error: %v\n", err)
 			a.internalReconnectDelay()
 			continue
 		}
@@ -25,15 +22,12 @@ func (a *Agent) runInternalTCP() int {
 		conn, err := a.acceptInternalTCP(ln)
 		_ = ln.Close()
 		if err != nil {
-			fmt.Printf("[!] Internal TCP accept error: %v\n", err)
 			a.internalReconnectDelay()
 			continue
 		}
 		if conn == nil {
 			break
 		}
-
-		fmt.Printf("[*] Internal TCP parent connected: %s\n", conn.RemoteAddr())
 		_ = a.runInternal(conn)
 		a.internalReconnectDelay()
 	}

@@ -26,6 +26,8 @@ export interface Beacon {
   linkState: string
   linkHint: string
   linkAddr: string
+  note: string
+  groupName: string
 }
 
 /**
@@ -81,5 +83,7 @@ export function normalizeBeacon(value: unknown, now = Date.now()): Beacon | null
     linkState: String(c.linkState || ''),
     linkHint: String(c.linkHint || ''),
     linkAddr: String(c.linkAddr || ''),
+    note: String(c.note || ''),
+    groupName: String(c.groupName || ''),
   }
 }

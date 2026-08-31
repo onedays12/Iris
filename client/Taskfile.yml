@@ -39,6 +39,16 @@ tasks:
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 
+  mcp:stdio:build:
+    summary: Builds the stdio MCP bridge (bin/iris-mcp-stdio.exe)
+    cmds:
+      - go build -trimpath -o bin/iris-mcp-stdio.exe ./cmd/iris-mcp-stdio
+
+  version:bump:
+    summary: Bump client version on every release surface (VERSION=x.y.z)
+    cmds:
+      - node ./scripts/bump-version.mjs {{.VERSION}}
+
   setup:docker:
     summary: Builds Docker image for cross-compilation (~800MB download)
     cmds:

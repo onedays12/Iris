@@ -1,14 +1,7 @@
 #pragma once
 
-#define BEACON_TEST_EVENT_CONTEXT_INIT_BEGIN 1u
-#define BEACON_TEST_EVENT_CONTEXT_INIT_FAILED 2u
-#define BEACON_TEST_EVENT_WSA_STARTUP 3u
-#define BEACON_TEST_EVENT_AGENT_RUN_BEGIN 4u
-#define BEACON_TEST_EVENT_JOB_CREATED 5u
-#define BEACON_TEST_EVENT_JOB_THREAD_STARTED 6u
-#define BEACON_TEST_EVENT_JOB_THREAD_EXITED 7u
-#define BEACON_TEST_EVENT_JOB_COMPLETE 8u
-#define BEACON_TEST_EVENT_OUTBOX_ENQUEUE 9u
-#define BEACON_TEST_EVENT_CONTEXT_FREE 10u
-
-VOID BeaconTestRecord(unsigned int type, UINT32 id, ULONG value);
+/*
+ * 生产侧测试挂钩入口（仅 #ifdef BEACON_TEST 的翻译单元应包含本头）。
+ * 事件常量定义在 beacon_test_events.h（唯一事实源），此处只做转发。
+ */
+#include "beacon_test_events.h"

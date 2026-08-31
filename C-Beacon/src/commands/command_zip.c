@@ -45,7 +45,7 @@ static VOID ZipCrc32Init(VOID)
 }
 
 /* 将 C 字符串以数据包就绪数组形式打包到 ByteBuf 中 */
-static ByteBuf ZipPackText(const CHAR* text)
+static ByteBuf PacketPackTextArray(const CHAR* text)
 {
     ByteBuf out;
     BbInit(&out);
@@ -130,23 +130,13 @@ static VOID ZipStripTrailingSlash(WCHAR* path)
     }
 }
 
-/* 将路径解析为完整的绝对路径 */
+/* 将路径解析为绝对路径并剥离尾部斜杠（共享 PathFullWide 后补做 strip） */
 static WCHAR* ZipFullPath(const WCHAR* path)
 {
-    DWORD need = GetFullPathNameW(path, 0, NULL, NULL);
-    WCHAR* out;
-    if (need == 0) {
-        return HeapStrDupW(path);
+    WCHAR* out = PathFullWide(path);
+    if (out) {
+        ZipStripTrailingSlash(out);
     }
-    out = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (SIZE_T)((SIZE_T)need + 1u)*(sizeof(WCHAR)));
-    if (!out) {
-        return NULL;
-    }
-    if (GetFullPathNameW(path, need, out, NULL) == 0) {
-        HeapFree(GetProcessHeap(), 0, (out));
-        return HeapStrDupW(path);
-    }
-    ZipStripTrailingSlash(out);
     return out;
 }
 
@@ -177,34 +167,6 @@ static WCHAR* ZipParentPath(const WCHAR* path)
         slash[1] = 0;
     } else {
         *slash = 0;
-    }
-    return out;
-}
-
-/* 以反斜杠分隔符合并两个路径组件 */
-static WCHAR* ZipJoinPath(const WCHAR* left, const WCHAR* right)
-{
-    SIZE_T left_len = left ? wcslen(left) : 0;
-    SIZE_T right_len = right ? wcslen(right) : 0;
-    INT need_sep;
-    WCHAR* out;
-
-    if (left_len == 0) {
-        return HeapStrDupW(right ? right : L"");
-    }
-
-    /* 若左侧未以分隔符结尾则插入分隔符 */
-    need_sep = !ZipIsSlash(left[left_len - 1]);
-    out = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (SIZE_T)(left_len + (need_sep ? 1u : 0u) + right_len + 1u)*(sizeof(WCHAR)));
-    if (!out) {
-        return NULL;
-    }
-    wcscpy_s(out, left_len + 1u, left);
-    if (need_sep) {
-        out[left_len++] = L'\\';
-    }
-    if (right_len) {
-        wcscpy_s(out + left_len, right_len + 1u, right);
     }
     return out;
 }
@@ -491,7 +453,7 @@ static INT ZipWriteEntry(ZipContext* ctx, const WCHAR* path, DWORD attrs, const 
 /* 递归遍历目录并将所有条目添加到归档 */
 static INT ZipWalkDir(ZipContext* ctx, const WCHAR* dir)
 {
-    WCHAR* pattern = ZipJoinPath(dir, L"*");
+    WCHAR* pattern = PathJoinWide(dir, L"*");
     WIN32_FIND_DATAW fd;
     HANDLE find;
 
@@ -510,7 +472,7 @@ static INT ZipWalkDir(ZipContext* ctx, const WCHAR* dir)
         if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) {
             continue;
         }
-        child = ZipJoinPath(dir, fd.cFileName);
+        child = PathJoinWide(dir, fd.cFileName);
         if (!child) {
             FindClose(find);
             return ZipSetError(ctx, "allocation failed");
@@ -712,7 +674,7 @@ ByteBuf CommandZip(Parser* p)
         CHAR msg[128];
         snprintf(msg, sizeof(msg), "zip failed: requires 4 arguments (source_path, zip_path, overwrite, include_root), got %lu",
                  (ULONG)arg_count);
-        return ZipPackText(msg);
+        return PacketPackTextArray(msg);
     }
 
     /* 解析命令参数 */
@@ -725,31 +687,31 @@ ByteBuf CommandZip(Parser* p)
         snprintf(msg, sizeof(msg), "zip failed: %s", p->error);
         HeapFree(GetProcessHeap(), 0, (source_utf8));
         HeapFree(GetProcessHeap(), 0, (zip_utf8));
-        return ZipPackText(msg);
+        return PacketPackTextArray(msg);
     }
 
     /* 验证布尔标志 */
     if (overwrite > 1u) {
         HeapFree(GetProcessHeap(), 0, (source_utf8));
         HeapFree(GetProcessHeap(), 0, (zip_utf8));
-        return ZipPackText("zip failed: overwrite must be 0 or 1");
+        return PacketPackTextArray("zip failed: overwrite must be 0 or 1");
     }
     if (include_root > 1u) {
         HeapFree(GetProcessHeap(), 0, (source_utf8));
         HeapFree(GetProcessHeap(), 0, (zip_utf8));
-        return ZipPackText("zip failed: include_root must be 0 or 1");
+        return PacketPackTextArray("zip failed: include_root must be 0 or 1");
     }
 
     /* 验证必需的字符串参数 */
     if (!source_utf8 || source_utf8[0] == 0) {
         HeapFree(GetProcessHeap(), 0, (source_utf8));
         HeapFree(GetProcessHeap(), 0, (zip_utf8));
-        return ZipPackText("zip failed: source_path is required");
+        return PacketPackTextArray("zip failed: source_path is required");
     }
     if (!zip_utf8 || zip_utf8[0] == 0) {
         HeapFree(GetProcessHeap(), 0, (source_utf8));
         HeapFree(GetProcessHeap(), 0, (zip_utf8));
-        return ZipPackText("zip failed: zip_path is required");
+        return PacketPackTextArray("zip failed: zip_path is required");
     }
 
     /* 将路径转换为宽字符并解析为绝对路径 */
@@ -764,7 +726,7 @@ ByteBuf CommandZip(Parser* p)
         HeapFree(GetProcessHeap(), 0, (zip_wide));
         HeapFree(GetProcessHeap(), 0, (source_abs));
         HeapFree(GetProcessHeap(), 0, (zip_abs));
-        return ZipPackText("zip failed: allocation failed");
+        return PacketPackTextArray("zip failed: allocation failed");
     }
 
     /* 创建归档 */
@@ -772,7 +734,7 @@ ByteBuf CommandZip(Parser* p)
                           &stats, error, sizeof(error))) {
         CHAR msg[256];
         snprintf(msg, sizeof(msg), "zip failed: %s", error);
-        result = ZipPackText(msg);
+        result = PacketPackTextArray(msg);
     } else {
         /* 构建包含统计信息的成功响应 */
         ByteBuf text;
@@ -786,7 +748,7 @@ ByteBuf CommandZip(Parser* p)
                   (ULONG)stats.skipped,
                   (unsigned __int64)stats.bytes_in,
                   (unsigned __int64)stats.bytes_out);
-        result = ZipPackText((const CHAR*)text.data);
+        result = PacketPackTextArray((const CHAR*)text.data);
         BbFree(&text);
     }
 

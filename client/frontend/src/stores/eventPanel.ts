@@ -245,7 +245,8 @@ function summarizeTransfer(data: unknown, status = '', phase = '', resultType = 
     : (isTransferResult(normalizedResultType) ? normalizedResultType : '')
   const actionLabel = transferDirection === COMMAND_RESULT_TYPE.UPLOAD ? t('eventPanel.upload') : (transferDirection === COMMAND_RESULT_TYPE.DOWNLOAD ? t('eventPanel.download') : t('eventPanel.transfer'))
   const totalChunks = pick(data, ['total_chunks'], '')
-  const receivedChunks = pick(data, ['received_chunks'], '')
+  // 契约: download 进度带 received_chunks,upload 确认带 acked_chunks;缺一即恒显 0。
+  const receivedChunks = pick(data, ['received_chunks', 'acked_chunks'], '')
   const fileName = pick(data, ['file_name'], '')
   const error = errorMessage || getTransferError(data)
   const receivedNum = Number(receivedChunks)
@@ -332,6 +333,17 @@ export function formatEventSummary(type: string, data: unknown, raw: unknown = n
       return bid ? t('eventPanel.beaconOnlineWithId', { id: bid }) : t('eventPanel.beaconOnlineGeneric')
     case EVENT_TYPE.BEACON_REMOVED:
       return bid ? t('eventPanel.beaconOfflineWithId', { id: bid }) : t('eventPanel.beaconOfflineGeneric')
+    case EVENT_TYPE.BEACON_META: {
+      const operator = String(pick(eventData, ['operator'], '') || '')
+      const action = String(pick(eventData, ['action'], '') || '')
+      const groupName = String(pick(eventData, ['group_name'], '') || '')
+      if (action === 'group') {
+        return groupName
+          ? t('eventPanel.beaconMetaGroup', { operator: operator || '?', group: groupName })
+          : t('eventPanel.beaconMetaUngroup', { operator: operator || '?' })
+      }
+      return t('eventPanel.beaconMetaNote', { operator: operator || '?' })
+    }
     case EVENT_TYPE.COMMAND_EVENT:
       return summarizeCommandEvent(eventData, raw, commandId, phase, status, resultType)
     case EVENT_TYPE.LISTENER_STATE_CHANGED:

@@ -1,10 +1,10 @@
 # Linux ELF BOF
 
-This plugin exposes the Linux amd64 ELF BOF loader stress sample from `D:\代码\go\beacon\examples\elf_bof`.
+[中文](README.md) · [English](README.en.md)
 
-The action sends command `70` with:
+给 Linux amd64 beacon 用的 ELF BOF 样例。编法、API、限制看 [docs/linux-elf-bof.md](../../docs/linux-elf-bof.md)。动作走命令 `70`：
 
-- `bytes`: `bin/loader_stress.o`
-- declared BOF arg specs: `int32 1234`, `short 77`, and `string "hello-elf-bof"`
+- `bytes`：`bin/loader_stress.o`
+- 声明的 BOF 参数：`int32 1234`、`short 77`、`string "hello-elf-bof"`
 
-TeamServer is responsible for converting those arg specs into BOF packed args. The plugin is intentionally limited to Linux amd64 beacons.
+参数怎么打成 BOF packed args，是 TeamServer 的事。这个插件故意只对 Linux amd64 露出菜单。

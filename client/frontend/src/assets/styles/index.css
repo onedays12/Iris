@@ -312,6 +312,14 @@ html[data-ui-theme="paper"] * {
   -webkit-user-select: text !important;
 }
 
+/* 文本选中高亮:liquid/dark/paper 主题原本未定义 ::selection,
+   WebView2 默认选中底色在玻璃/纸张底上几乎不可见,操作员选中了"像没选中"。
+   用主色半透明统一可见性;sketch 主题的黄色规则(更高优先级)不受影响。 */
+::selection {
+  background: rgba(79, 70, 229, 0.32);
+  color: var(--text-primary);
+}
+
 html, body {
   width: 100%;
   height: 100%;
@@ -725,11 +733,12 @@ html[data-ui-theme="dark"] .modal-overlay {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 28px 32px 20px;
+  /* 紧凑化:压缩页头占地,给列表多留可视行(2026-08 UI 反馈) */
+  padding: 14px 24px 10px;
 }
 
 .page-title {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
@@ -745,7 +754,7 @@ html[data-ui-theme="dark"] .modal-overlay {
 .header-search {
   flex: 1;
   max-width: 400px;
-  margin: 0 40px;
+  margin: 0 24px;
 }
 
 .search-input-wrapper {
@@ -755,8 +764,8 @@ html[data-ui-theme="dark"] .modal-overlay {
   background: rgba(0, 0, 0, 0.03);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 0 16px;
-  height: 42px;
+  padding: 0 12px;
+  height: 34px;
   transition: var(--transition);
   backdrop-filter: blur(8px);
 }

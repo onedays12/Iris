@@ -6,7 +6,11 @@
 #define INTERNAL_RECONNECT_DEFAULT_DELAY_MS 1000u
 
 /* Internal cascade 发送回调：把 encrypted result 作为 RESULT 帧写到上游 channel。
- * internal 不收任务响应（任务由独立的 TASK 帧推送），response 始终为空。 */
+ * internal 不收任务响应（任务由独立的 TASK 帧推送），response 始终为空。
+ *
+ * response 清理契约（三个 send 回调统一遵守，见 OutboxSendFn 声明处）：
+ * 回调开头必须 BbInit(response)；失败时回调自身负责 BbFree(response) 并返回 0，
+ * 成功时 response 的所有权与释放责任转移给 AgentFlushOutbox。 */
 static INT InternalSendEncrypted(BeaconContext* ctx, VOID* ctx_sender,
                                  const ByteBuf* encrypted, ByteBuf* response)
 {
@@ -291,7 +295,7 @@ static INT AgentRunInternal(Agent* agent, CascadeIo* upstream)
 
         /* 每个 tick 都轮询异步子系统并 flush result 到父级。 */
         AgentFlushTransfers(ctx);
-        AgentFlushTunnels(ctx);
+        AgentHarvestTunnels(ctx);
         AgentFlushCascade(ctx);
         AgentFlushPostEx(ctx);
         if (!AgentFlushOutbox(ctx, InternalSendEncrypted, upstream)) break;

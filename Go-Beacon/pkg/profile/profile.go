@@ -190,14 +190,11 @@ func Load() error {
 	p := defaultProfile()
 
 	if string(patchSlot[0:4]) == "TSCF" {
-		fmt.Println("[*] Running in Template Mode (Patched Configuration)")
 		parsed, err := parseProfileSlot(patchSlot[:], p)
 		if err != nil {
 			return fmt.Errorf("failed to parse patch slot: %w", err)
 		}
 		p = parsed
-	} else {
-		fmt.Println("[!] Running in Debug Mode (Hardcoded Configuration)")
 	}
 
 	finalizeProfile(&p)

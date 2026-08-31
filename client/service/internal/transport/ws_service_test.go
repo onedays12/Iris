@@ -1,9 +1,16 @@
 package transport
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // ─── buildWebSocketURL ───
@@ -226,5 +233,220 @@ func TestConnectFailureSetsErrorStatus(t *testing.T) {
 	}
 }
 
-// readLoop 的真实路径需 ws server 配合,留作后续集成测试。
+// ─── readLoop(真实 gorilla WS 服务器 + 注入式事件出口) ───
 
+// eventRecorder 实现 EventEmitter,收集事件供断言,替代 Wails 总线。
+type eventRecorder struct {
+	mu     sync.Mutex
+	events []recordedEvent
+}
+
+type recordedEvent struct {
+	name string
+	data any
+}
+
+func (r *eventRecorder) Emit(name string, data ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var payload any
+	if len(data) > 0 {
+		payload = data[0]
+	}
+	r.events = append(r.events, recordedEvent{name: name, data: payload})
+}
+
+func (r *eventRecorder) snapshot() []recordedEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]recordedEvent(nil), r.events...)
+}
+
+// waitFor 轮询直到条件成立或超时。
+func waitFor(timeout time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// dialTestWS 对 httptest 服务器拨一条 ws 连接。
+func dialTestWS(t *testing.T, srvURL string) *websocket.Conn {
+	t.Helper()
+	wsURL := strings.Replace(srvURL, "http://", "ws://", 1)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial %s: %v", wsURL, err)
+	}
+	return conn
+}
+
+func TestReadLoopEmitsMessageEvents(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for _, msg := range []string{"hello-1", "hello-2"} {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+				return
+			}
+		}
+		// 阻塞读保持连接,直到客户端侧关闭
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	rec := &eventRecorder{}
+	s := NewWebSocketService(WithEventEmitter(rec))
+	conn := dialTestWS(t, srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 收齐 2 条消息后取消 ctx 并关 conn,让同步运行的 readLoop 确定性返回;
+	// 无论条件是否达成都必须执行收尾,避免测试挂死。
+	go func() {
+		waitFor(2*time.Second, func() bool { return len(rec.snapshot()) >= 2 })
+		cancel()
+		closeConn(conn)
+	}()
+
+	s.readLoop(ctx, 1, conn)
+
+	events := rec.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("expected exactly 2 message events, got %d: %+v", len(events), events)
+	}
+	want := []websocketMessageEvent{{Data: "hello-1"}, {Data: "hello-2"}}
+	for i, w := range want {
+		if events[i].name != websocketEventMessage {
+			t.Errorf("event[%d] name = %q, want %q", i, events[i].name, websocketEventMessage)
+		}
+		if events[i].data != w {
+			t.Errorf("event[%d] data = %+v, want %+v", i, events[i].data, w)
+		}
+	}
+}
+
+func TestReadLoopUnexpectedCloseEmitsStatusClosed(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		// 不发 close frame 直接断开 → 客户端 ReadMessage 报异常关闭错误
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	rec := &eventRecorder{}
+	s := NewWebSocketService(WithEventEmitter(rec))
+	s.session = 5
+	s.status = "open"
+	conn := dialTestWS(t, srv.URL)
+
+	// Background ctx 未取消 → 走 finishReadFailure 分支而非静默返回
+	s.readLoop(context.Background(), 5, conn)
+
+	if got := s.Status(); got != "closed" {
+		t.Fatalf("status after abrupt close = %q, want closed", got)
+	}
+
+	events := rec.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("expected exactly 1 status event, got %d: %+v", len(events), events)
+	}
+	if events[0].name != websocketEventStatus {
+		t.Errorf("event name = %q, want %q", events[0].name, websocketEventStatus)
+	}
+	st, ok := events[0].data.(websocketStatusEvent)
+	if !ok {
+		t.Fatalf("event data type = %T, want websocketStatusEvent", events[0].data)
+	}
+	if st.Status != "closed" {
+		t.Errorf("status payload = %q, want closed", st.Status)
+	}
+	if st.Message == "" {
+		t.Error("status payload should carry the read failure message")
+	}
+}
+
+func TestReadLoopCtxCancelExitsSilently(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	rec := &eventRecorder{}
+	s := NewWebSocketService(WithEventEmitter(rec))
+	conn := dialTestWS(t, srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 先取消 ctx 再关 conn 解除 ReadMessage 阻塞 → 应静默退出、不发任何事件
+	go func() {
+		cancel()
+		closeConn(conn)
+	}()
+
+	start := time.Now()
+	s.readLoop(ctx, 9, conn)
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("readLoop took too long to exit after ctx cancel: %v", elapsed)
+	}
+
+	if events := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("ctx-cancelled readLoop should emit nothing, got %+v", events)
+	}
+}
+
+func TestReadLoopStaleSessionEmitsNothing(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	rec := &eventRecorder{}
+	s := NewWebSocketService(WithEventEmitter(rec))
+	s.session = 99 // 当前 session 已被新连接取代
+	s.status = "open"
+	conn := dialTestWS(t, srv.URL)
+
+	// 传入旧 session 5:读失败应被守卫拦截——状态不变、零事件
+	s.readLoop(context.Background(), 5, conn)
+
+	if got := s.Status(); got != "open" {
+		t.Fatalf("stale-session failure should not change status, got %q", got)
+	}
+	if events := rec.snapshot(); len(events) != 0 {
+		t.Fatalf("stale-session failure should emit nothing, got %+v", events)
+	}
+}

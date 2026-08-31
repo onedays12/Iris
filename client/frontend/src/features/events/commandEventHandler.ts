@@ -199,7 +199,16 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
     }
   } else if (normalizedResultType === COMMAND_RESULT_TYPE.EXPLORER_FILES) {
     const { useExplorerStore } = await import('../../stores/explorer')
-    useExplorerStore().handleExplorerResponse(String(bid), resultPayload)
+    const explorerStore = useExplorerStore()
+    if (isError) {
+      // 错误要落进浏览器缓存节点:否则模态框无缓存无 loading,
+      // 会误显示"该目录为空"而不是真实失败原因。
+      const message = eventError || i18n.global.t('eventHandler.explorerFetchFailed')
+      explorerStore.handleExplorerError(String(bid), message)
+      consoleStore.pushCommandResult(bid, message)
+    } else {
+      explorerStore.handleExplorerResponse(String(bid), resultPayload)
+    }
   } else if (isProcessResult(normalizedResultType, numericCommandId)) {
     const { useProcessBrowserStore } = await import('../../stores/processBrowser')
     const processStore = useProcessBrowserStore()
@@ -340,6 +349,11 @@ export async function handleCommandEvent({ data, raw, commandId = '', phase = ''
     } else {
       consoleStore.pushCommandResult(bid, `[cascade:${childId || '?'}] ${action || 'event'}`)
     }
+  } else if (normalizedResultType === COMMAND_RESULT_TYPE.PREVIEW || normalizedPhase === 'preview') {
+    // 文件预览事件 (phase=preview): ready → 前端拉取内容; failed → 按 reason 提示。
+    // 与 preview 无关的事件(如其他 phase 的 preview 结果) 交给 preview store 自行判定。
+    const { usePreviewStore } = await import('../../stores/preview')
+    await usePreviewStore().handlePreviewEvent(resultPayload)
   } else if (isTransferResult(normalizedResultType)) {
     const transferPayload = resultRecord
     const transferData = {

@@ -2,18 +2,6 @@
 
 #include <direct.h>
 
-/* 将文件属性转换为 Unix 风格的模式字符串 */
-static VOID FsModeString(DWORD attrs, CHAR out[16])
-{
-    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
-        strcpy_s(out, 16, "drwxrwxrwx");
-    } else if (attrs & FILE_ATTRIBUTE_READONLY) {
-        strcpy_s(out, 16, "-r--r--r--");
-    } else {
-        strcpy_s(out, 16, "-rw-rw-rw-");
-    }
-}
-
 /* 根据当前时区偏差返回时区缩写 */
 static const CHAR* FsTimezoneAbbrev(VOID)
 {
@@ -63,7 +51,9 @@ static VOID FsFormatFiletime(FILETIME ft, CHAR out[32])
              FsTimezoneAbbrev());
 }
 
-/* 从解析器中解析单个路径参数，返回宽字符串 */
+/* 从解析器中解析单个路径参数，返回宽字符串。
+ * 解析失败（缺参或协议截断）时填充 *error 并返回 NULL——不再静默产出空路径，
+ * 否则下游会报误导性的 "open file failed" 而非真实协议错误。 */
 static WCHAR* ParseOnePath(Parser* p, const CHAR* name, ByteBuf* error)
 {
     UINT32 count = ParserU32(p);
@@ -79,6 +69,15 @@ static WCHAR* ParseOnePath(Parser* p, const CHAR* name, ByteBuf* error)
     }
 
     s = ParserString(p);
+    if (p->error[0] || !s) {
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg), "%s: %s", name,
+                 p->error[0] ? p->error : "path parse failed");
+        *error = BbFromText(msg);
+        HeapFree(GetProcessHeap(), 0, (s));
+        return NULL;
+    }
+
     w = Utf8ToWide(s);
     HeapFree(GetProcessHeap(), 0, (s));
     return w;
@@ -113,6 +112,12 @@ ByteBuf CommandCd(Parser* p)
     }
 
     s = ParserString(p);
+    if (p->error[0] || !s) {
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg), "cd: %s",
+                 p->error[0] ? p->error : "path parse failed");
+        return BbFromText(msg);
+    }
     w = Utf8ToWide(s);
     HeapFree(GetProcessHeap(), 0, (s));
 
@@ -141,6 +146,13 @@ ByteBuf CommandLs(Parser* p)
     /* 从参数解析目标目录，默认为 "." */
     if (count) {
         s = ParserString(p);
+        if (p->error[0] || !s) {
+            CHAR msg[160];
+            snprintf(msg, sizeof(msg), "ls: %s",
+                     p->error[0] ? p->error : "path parse failed");
+            BbFree(&out);
+            return BbFromText(msg);
+        }
         dir = Utf8ToWide(s);
         HeapFree(GetProcessHeap(), 0, (s));
     } else {
@@ -148,8 +160,21 @@ ByteBuf CommandLs(Parser* p)
     }
     if (!dir) return BbFromText("path allocation failed");
 
-    /* 构建用于目录枚举的通配符模式 */
-    swprintf_s(pattern, ARRAYSIZE(pattern), L"%s\\*", dir);
+    /* 构建用于目录枚举的通配符模式。
+     * swprintf_s 截断即触发 CRT invalid parameter handler（进程终止），而目录名
+     * 来自控制端、长度不受限：超长时按惯例回退为显式截断检查 + 报错文本。 */
+    {
+        size_t dir_len = wcslen(dir);
+        if (dir_len + 2 >= ARRAYSIZE(pattern)) { /* 需容纳 dir + '\' + '*' + NUL */
+            HeapFree(GetProcessHeap(), 0, (dir));
+            BbFree(&out);
+            return BbFromText("path too long");
+        }
+        memcpy(pattern, dir, dir_len * sizeof(WCHAR));
+        pattern[dir_len] = L'\\';
+        pattern[dir_len + 1] = L'*';
+        pattern[dir_len + 2] = L'\0';
+    }
     {
         CHAR* u = WideToUtf8(dir);
         BbPrintf(&out, "Listing directory: %s\n", u ? u : "");
@@ -188,7 +213,7 @@ ByteBuf CommandLs(Parser* p)
         /* 格式化文件条目行 */
         sz.LowPart = fd.nFileSizeLow;
         sz.HighPart = fd.nFileSizeHigh;
-        FsModeString(fd.dwFileAttributes, mode);
+        FsModeStringFromAttrs(fd.dwFileAttributes, mode);
         FsFormatFiletime(fd.ftLastWriteTime, mtime);
         BbPrintf(&out, "%-20s %-10I64u %-20s %s%s\n",
                   mode,
@@ -284,6 +309,7 @@ ByteBuf CommandRm(Parser* p)
     ByteBuf err;
     WCHAR* path;
     DWORD attrs;
+    BOOL removed;
 
     BbInit(&err);
 
@@ -291,14 +317,17 @@ ByteBuf CommandRm(Parser* p)
     path = ParseOnePath(p, "rm", &err);
     if (!path) return err;
 
-    /* 根据属性删除目录或文件 */
+    /* 根据属性删除目录或文件；旧实现忽略返回值，即使失败也谎报 "Removed" */
     attrs = GetFileAttributesW(path);
     if (attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-        RemoveDirectoryW(path);
+        removed = RemoveDirectoryW(path);
     } else {
-        DeleteFileW(path);
+        removed = DeleteFileW(path);
     }
     HeapFree(GetProcessHeap(), 0, (path));
+    if (!removed) {
+        return BbFromText("remove failed");
+    }
     return BbFromText("Removed");
 }
 
@@ -313,13 +342,27 @@ ByteBuf CommandMv(Parser* p)
     /* 验证参数数量 */
     if (ParserU32(p) < 2) return BbFromText("mv requires 2 arguments");
 
-    /* 解析源路径和目标路径 */
+    /* 解析源路径和目标路径（截断包在此显式失败，不再产出空路径） */
     a = ParserString(p);
-    b = ParserString(p);
+    b = p->error[0] ? NULL : ParserString(p);
+    if (p->error[0] || !a || !b) {
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg), "mv: %s",
+                 p->error[0] ? p->error : "path parse failed");
+        HeapFree(GetProcessHeap(), 0, (a));
+        HeapFree(GetProcessHeap(), 0, (b));
+        return BbFromText(msg);
+    }
     wa = Utf8ToWide(a);
     wb = Utf8ToWide(b);
     HeapFree(GetProcessHeap(), 0, (a));
     HeapFree(GetProcessHeap(), 0, (b));
+
+    if (!wa || !wb) {
+        HeapFree(GetProcessHeap(), 0, (wa));
+        HeapFree(GetProcessHeap(), 0, (wb));
+        return BbFromText("mv: path allocation failed");
+    }
 
     /* 执行移动操作 */
     if (!MoveFileExW(wa, wb, MOVEFILE_REPLACE_EXISTING)) {
@@ -343,13 +386,27 @@ ByteBuf CommandCp(Parser* p)
     /* 验证参数数量 */
     if (ParserU32(p) < 2) return BbFromText("cp requires 2 arguments");
 
-    /* 解析源路径和目标路径 */
+    /* 解析源路径和目标路径（截断包在此显式失败，不再产出空路径） */
     a = ParserString(p);
-    b = ParserString(p);
+    b = p->error[0] ? NULL : ParserString(p);
+    if (p->error[0] || !a || !b) {
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg), "cp: %s",
+                 p->error[0] ? p->error : "path parse failed");
+        HeapFree(GetProcessHeap(), 0, (a));
+        HeapFree(GetProcessHeap(), 0, (b));
+        return BbFromText(msg);
+    }
     wa = Utf8ToWide(a);
     wb = Utf8ToWide(b);
     HeapFree(GetProcessHeap(), 0, (a));
     HeapFree(GetProcessHeap(), 0, (b));
+
+    if (!wa || !wb) {
+        HeapFree(GetProcessHeap(), 0, (wa));
+        HeapFree(GetProcessHeap(), 0, (wb));
+        return BbFromText("cp: path allocation failed");
+    }
 
     /* 执行复制操作 */
     if (!CopyFileW(wa, wb, FALSE)) {

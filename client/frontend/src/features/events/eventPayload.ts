@@ -129,6 +129,15 @@ function normalizeKnownEventData(type: EventType, data: EventRecord): EventRecor
     return normalized
   }
 
+  if (type === EVENT_TYPE.BEACON_META) {
+    const ids = Array.isArray(normalized.beacon_ids) ? normalized.beacon_ids : []
+    const items = Array.isArray(normalized.items) ? normalized.items : []
+    if (ids.length === 0 && items.length === 0) {
+      return `${type} requires data.beacon_ids or data.items`
+    }
+    return normalized
+  }
+
   if (type === EVENT_TYPE.LISTENER_STATE_CHANGED) {
     const id = canonicalId(normalized, 'id', ['id'])
     const name = canonicalId(normalized, 'name', ['name'])

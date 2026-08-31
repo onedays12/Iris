@@ -17,6 +17,7 @@ import { useNotificationStore } from '../../stores/notification'
 import { useThemeStore } from '../../stores/theme'
 import { useLocaleStore } from '../../stores/locale'
 import { useWSStore } from '../../stores/ws'
+import { APP_VERSION } from '../../constants/appVersion'
 import defaultAvatar from '../../assets/default-avatar.jpg'
 
 const { t } = useI18n()
@@ -181,7 +182,7 @@ async function handleLogout() {
         </div>
         <div class="logo-text">
           <span class="logo-name">Iris Client</span>
-          <span class="logo-version">v0.3.0</span>
+          <span class="logo-version">v{{ APP_VERSION }}</span>
         </div>
       </div>
       <div class="logo-actions">

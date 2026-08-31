@@ -37,7 +37,7 @@ func getFileOwner(path string) string {
 func applyPlatformAttributes(path string, flag int, cTime int64, winAttrs uint32, linuxMode uint32, mTime, aTime int64) error {
 	// 1. 设置 Unix 权限 (LinuxMode) - Bit 32
 	if flag&32 != 0 {
-		if err := os.Chmod(path, os.FileMode(linuxMode)); err != nil {
+		if err := os.Chmod(path, unixFileMode(linuxMode)); err != nil {
 			return err
 		}
 	}

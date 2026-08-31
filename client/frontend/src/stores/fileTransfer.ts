@@ -12,6 +12,14 @@ import { i18n } from '../i18n/index'
 
 const ACTIVE_TRANSFER_STATUSES = new Set(['queued', 'running', 'receiving', 'uploading'])
 
+// 对账:活跃记录超过该时长无任何进度事件且服务端查无此任务,则标记 stale(状态未知)。
+const TRANSFER_STALE_MS = 30_000
+const TRANSFER_RECONCILE_INTERVAL_MS = 5_000
+
+// 模块级对账定时器(非响应式;store 实例全局唯一)。
+let reconcileTimer: ReturnType<typeof setInterval> | null = null
+let reconcileInFlight = false
+
 export interface TransferItem {
   taskId: string
   direction: string
@@ -53,6 +61,13 @@ function calcProgress(receivedBytes: number, size: number, receivedChunks: numbe
   }
 
   return 0
+}
+
+function mergeMonotonicCount(next: number, current: number, status: string): number {
+  if (status === 'error' || status === 'cancelled' || status === 'stale') return next
+  // 进行中/完成:计数只增不减。queued 帧没有 acked_chunks、对账写错字段时
+  // normalize 会得到 0,不能把已经 ACK 的进度打回去。
+  return Math.max(toNumber(next), toNumber(current))
 }
 
 function pickBeaconId(current: TransferItem, next: TransferItem): string {
@@ -123,7 +138,8 @@ function normalizeTransfer(data: unknown, fallbackStatus = 'running'): TransferI
     remotePath: String(adapted.remotePath || ''),
     totalChunks,
     receivedChunks,
-    receivedBytes: toNumber(adapted.receivedBytes),
+    // 上传帧无 received_bytes,以 acked_bytes 兜底,否则面板恒显 "0 B"
+    receivedBytes: toNumber(adapted.receivedBytes) || toNumber(adapted.ackedBytes),
     size,
     status,
     error: String(adapted.error || ''),
@@ -135,6 +151,13 @@ function normalizeTransfer(data: unknown, fallbackStatus = 'running'): TransferI
   // 状态转换：如果收到了进度数据且当前是 queued，则转为 running/uploading 状态
   if (res.status === 'queued' && (res.receivedChunks > 0 || res.receivedBytes > 0)) {
     res.status = res.direction === 'upload' ? 'uploading' : 'running'
+  }
+
+  // 完成回填:完成帧可能只带最终状态(分块/字节计数缺省),按总量补齐,
+  // 避免完成记录仍显示中途百分比。
+  if (res.status === 'completed' || res.status === 'success') {
+    if (res.totalChunks > 0) res.receivedChunks = res.totalChunks
+    if (res.receivedBytes <= 0 && res.size > 0) res.receivedBytes = res.size
   }
 
   res.progress = calcProgress(res.receivedBytes, res.size, res.receivedChunks, res.totalChunks, res.status)
@@ -169,6 +192,13 @@ export const useFileTransferStore = defineStore('fileTransfer', {
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .slice(0, 3)
     },
+
+    /** 全局聚合:跨 beacon 最近传输(BottomDock 传输监控 tab 用)。 */
+    recentAll: (state) => (limit = 10) => {
+      return [...state.transfers]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, limit)
+    },
   },
 
   actions: {
@@ -182,6 +212,7 @@ export const useFileTransferStore = defineStore('fileTransfer', {
         size,
         status: 'queued',
       }, 'queued')
+      this.startReconciling()
     },
 
     startUpload({ beaconid, taskId = '', remotePath, fileName, size = 0 }: { beaconid: string; taskId?: string; remotePath: string; fileName: string; size?: number }): void {
@@ -194,10 +225,12 @@ export const useFileTransferStore = defineStore('fileTransfer', {
         size,
         status: 'queued',
       }, 'queued')
+      this.startReconciling()
     },
 
     handleTransferEvent(data: unknown, status = 'running'): void {
       this.upsert(data, status)
+      this.startReconciling()
     },
 
     unshift(next: TransferItem): void {
@@ -251,6 +284,99 @@ export const useFileTransferStore = defineStore('fileTransfer', {
       bus.on('agent:removed', ({ beaconid }) => {
         this.cancelByBeacon(beaconid)
       })
+      // WS 重连窗口内的进度帧已丢失:连接恢复后立即对账一次,自愈冻结的记录。
+      bus.on('ws:connected', ({ reconnected }) => {
+        if (!reconnected) return
+        void this.reconcileOnce().catch(() => {})
+      })
+    },
+
+    /**
+     * 以服务端 /transfers/active 快照对账本地记录:
+     * - 命中:回填分块/字节/状态(含完成回填),修复断连窗口内丢失的进度帧;
+     * - 活跃记录在服务端查无且超过宽限期:标记 stale,不再假装进行中。
+     */
+    reconcileWithServer(snapshots: unknown): void {
+      const list = (Array.isArray(snapshots) ? snapshots : []) as Array<Record<string, unknown>>
+      const now = Date.now()
+      for (const rec of this.transfers) {
+        if (!ACTIVE_TRANSFER_STATUSES.has(rec.status)) continue
+
+        const match = list.find((s) => {
+          if (String(s.direction ?? '').toLowerCase() !== rec.direction) return false
+          if (String(s.beacon_id ?? '') !== rec.beaconId) return false
+          const remotePath = String(s.remote_path ?? '')
+          if (remotePath && normalizePath(remotePath) === normalizePath(rec.remotePath)) return true
+          const fileName = String(s.file_name ?? '')
+          return Boolean(rec.fileName && fileName && normalizeName(fileName) === normalizeName(rec.fileName))
+        })
+        if (!match) {
+          if (now - rec.updatedAt > TRANSFER_STALE_MS) {
+            const index = this.transfers.indexOf(rec)
+            if (index >= 0) {
+              this.transfers.splice(index, 1, {
+                ...rec,
+                status: 'stale',
+                error: i18n.global.t('transfer.staleHint'),
+                updatedAt: now,
+              })
+            }
+          }
+          continue
+        }
+
+        const doneChunks = toNumber(match.done_chunks)
+        const doneBytes = toNumber(match.done_bytes)
+        const status = String(match.status ?? 'running').toLowerCase()
+        // 快照统一用 done_*；上传进度契约读的是 acked_*。若只写 received_chunks,
+        // normalizeTransfer 会把 acked_chunks 当成缺省并归零，进度条每 5s 对账就跳回 0。
+        const snapshot = rec.direction === 'upload'
+          ? { acked_chunks: doneChunks, acked_bytes: doneBytes }
+          : { received_chunks: doneChunks, received_bytes: doneBytes }
+        this.upsert({
+          task_id: rec.taskId,
+          direction: rec.direction,
+          beacon_id: rec.beaconId,
+          file_id: rec.fileId,
+          file_name: String(match.file_name ?? '') || rec.fileName,
+          remote_path: rec.remotePath,
+          total_chunks: toNumber(match.total_chunks) || rec.totalChunks,
+          size: toNumber(match.size) || rec.size,
+          status,
+          ...snapshot,
+        }, status)
+      }
+    },
+
+    /** 拉取服务端传输快照并对账;失败静默(对账是尽力而为的兜底)。 */
+    async reconcileOnce(): Promise<void> {
+      if (reconcileInFlight) return
+      reconcileInFlight = true
+      try {
+        const { listActiveTransfers } = await import('../features/files/api/fileApi')
+        this.reconcileWithServer(await listActiveTransfers())
+      } finally {
+        reconcileInFlight = false
+      }
+    },
+
+    /** 存在活跃传输期间开启周期对账;全部结束后自停。 */
+    startReconciling(): void {
+      if (reconcileTimer !== null) return
+      reconcileTimer = setInterval(() => {
+        if (!this.transfers.some(t => ACTIVE_TRANSFER_STATUSES.has(t.status))) {
+          this.stopReconciling()
+          return
+        }
+        void this.reconcileOnce().catch(() => {})
+      }, TRANSFER_RECONCILE_INTERVAL_MS)
+    },
+
+    stopReconciling(): void {
+      if (reconcileTimer !== null) {
+        clearInterval(reconcileTimer)
+        reconcileTimer = null
+      }
     },
 
     upsert(data: unknown, fallbackStatus = 'running'): void {
@@ -262,6 +388,10 @@ export const useFileTransferStore = defineStore('fileTransfer', {
         if (current.status === 'cancelled') return
 
         const mergedStatus = (next.status && next.status !== 'running') ? next.status : (current.status === 'queued' ? 'running' : current.status)
+        const receivedChunks = mergeMonotonicCount(next.receivedChunks, current.receivedChunks, mergedStatus)
+        const receivedBytes = mergeMonotonicCount(next.receivedBytes, current.receivedBytes, mergedStatus)
+        const size = next.size || current.size
+        const totalChunks = next.totalChunks || current.totalChunks
 
         // 使用 splice 确保响应式更新
         this.transfers.splice(index, 1, {
@@ -273,18 +403,12 @@ export const useFileTransferStore = defineStore('fileTransfer', {
           fileName: next.fileName || current.fileName,
           remotePath: next.remotePath || current.remotePath,
           beaconId: pickBeaconId(current, next),
-          size: next.size || current.size,
-          totalChunks: next.totalChunks || current.totalChunks,
-          receivedChunks: next.receivedChunks !== undefined ? next.receivedChunks : current.receivedChunks,
-          receivedBytes: next.receivedBytes !== undefined ? next.receivedBytes : current.receivedBytes,
+          size,
+          totalChunks,
+          receivedChunks,
+          receivedBytes,
           status: mergedStatus,
-          progress: calcProgress(
-            next.receivedBytes !== undefined ? next.receivedBytes : current.receivedBytes,
-            next.size || current.size,
-            next.receivedChunks !== undefined ? next.receivedChunks : current.receivedChunks,
-            next.totalChunks || current.totalChunks,
-            mergedStatus
-          ),
+          progress: calcProgress(receivedBytes, size, receivedChunks, totalChunks, mergedStatus),
           updatedAt: Date.now()
         })
       } else {

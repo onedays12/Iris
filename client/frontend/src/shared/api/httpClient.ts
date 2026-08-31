@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useNotificationStore } from '../../stores/notification'
 import { i18n } from '../../i18n/index'
 import type {
+  ClassifiedErrorInfo,
   HttpErrorInfo,
   HttpHeaders,
   HttpMethod,
@@ -21,14 +22,10 @@ function errorMessage(error: unknown, fallback = ''): string {
   return error instanceof Error ? error.message : String(error || fallback)
 }
 
-/** 已分类错误: 通知已发出, 上层 catch 直接透传, 避免二次通知。 */
-interface ClassifiedError extends Error {
-  classified?: boolean
-}
-
-function classifiedError(message: string): ClassifiedError {
-  const err = new Error(message) as ClassifiedError
-  err.classified = true
+/** 已分类错误: 通知已发出, 上层 catch 直接透传, 避免二次通知;info 携带分类供上层细分文案。 */
+function classifiedError(info: HttpErrorInfo): ClassifiedErrorInfo {
+  const err = new Error(info.message) as ClassifiedErrorInfo
+  err.info = info
   return err
 }
 
@@ -108,6 +105,12 @@ function classifyHttpError(status: number, errorText: string): HttpErrorInfo {
   }
   if (status === 401) return { kind: 'auth', message: i18n.global.t('httpError.authExpired') }
   if (status === 403) return { kind: 'forbidden', message: i18n.global.t('httpError.forbidden') }
+  if (status === 409) {
+    return errorText
+      ? { kind: 'conflict', message: i18n.global.t('httpError.conflictWithError', { error: errorText }) }
+      : { kind: 'conflict', message: i18n.global.t('httpError.conflict') }
+  }
+  if (status === 429) return { kind: 'rateLimited', message: i18n.global.t('httpError.rateLimited') }
   if (status >= 500) return { kind: 'server', message: i18n.global.t('httpError.server', { status }) }
   if (status >= 400) {
     return errorText
@@ -151,14 +154,14 @@ export async function request<TResponse, TBody = undefined>(
       const classified = classifyHttpError(0, proxyResult.error)
       useNotificationStore().error(classified.message)
       console.error(`[Proxy-API] ${method} ${path} network error:`, proxyResult.error)
-      throw classifiedError(classified.message)
+      throw classifiedError(classified)
     }
 
     if (proxyResult.status === 401) {
       handleAuthExpired()
       const classified = classifyHttpError(401, '')
       useNotificationStore().error(classified.message)
-      throw classifiedError(classified.message)
+      throw classifiedError(classified)
     }
 
     if (proxyResult.status >= 400) {
@@ -178,13 +181,13 @@ export async function request<TResponse, TBody = undefined>(
       const classified = classifyHttpError(proxyResult.status, serverError)
       useNotificationStore().error(classified.message)
       console.error(`[Proxy-API] ${method} ${path} HTTP ${proxyResult.status}:`, serverError)
-      throw classifiedError(classified.message)
+      throw classifiedError(classified)
     }
 
     return parseApiResponse<TResponse>(proxyResult.body)
   } catch (error: unknown) {
     const message = errorMessage(error)
-    if ((error as ClassifiedError)?.classified) throw error
+    if ((error as ClassifiedErrorInfo)?.info) throw error
 
     const lowerMsg = message.toLowerCase()
     let userMessage = message || i18n.global.t('httpError.networkFallback')

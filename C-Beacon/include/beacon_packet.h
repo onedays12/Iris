@@ -24,10 +24,13 @@ UINT32 ParserU32(Parser* p);
 /* 读取大端序 uint64 */
 UINT64 ParserU64(Parser* p);
 
-/* 读取长度前缀字节块到新 ByteBuf（调用方负责释放） */
+/* 读取长度前缀字节块到新 ByteBuf：失败返回空 ByteBuf 且 p->error 已置位，
+ * 调用方须检查 p->error 或等效探测（.data/len）后再使用（调用方负责释放） */
 ByteBuf ParserBytes(Parser* p);
 
-/* 读取长度前缀字符串（调用方负责 HeapFree） */
+/* 读取长度前缀字符串：成功返回堆分配串（调用方负责 HeapFree）；
+ * 解析失败返回 NULL 且 p->error 已置位，调用方必须在解引用前检查
+ * （粘性 latch 保证出错后后续 Parser* 全部短路为空值） */
 CHAR* ParserString(Parser* p);
 
 /* ===== 构建器（写入） ===== */
@@ -58,3 +61,9 @@ ByteBuf PacketMakeFinal(UINT32 task_id, UINT32 command_id, const ByteBuf* payloa
 
 /* 构建心跳数据包：beacon_id + session_key + metadata */
 ByteBuf PacketPackHeartbeat(UINT32 beacon_id, const BYTE8* session_key, SIZE_T session_key_len, const ByteBuf* metadata);
+
+/* 将大端序 uint32 计数修补到输出缓冲区前 4 字节（len<4 时忽略） */
+VOID PacketPatchU32(ByteBuf* out, UINT32 count);
+
+/* 将文本以数组载荷形式打包为 ByteBuf（三处 Pack*Text 平行实现的统一体） */
+ByteBuf PacketPackTextArray(const CHAR* text);

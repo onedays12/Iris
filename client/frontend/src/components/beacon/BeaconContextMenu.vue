@@ -14,6 +14,7 @@ const props = defineProps({
   x: { type: Number, required: true },
   y: { type: Number, required: true },
   beaconid: { type: String, required: true },
+  beaconIds: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['close'])
@@ -23,12 +24,47 @@ const { getBeaconMenuItems, runBeaconAction } = useBeaconActions()
 const menuRef = ref<HTMLElement | null>(null)
 const adjustedX = ref(props.x)
 const adjustedY = ref(props.y)
+const submenuFlipLeft = ref(false)
+const openGroupIndex = ref<number | null>(null)
 const menuItems = computed(() => getBeaconMenuItems(props.beaconid))
+let openTimer: ReturnType<typeof setTimeout> | null = null
+let closeTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearGroupTimers(): void {
+  if (openTimer) {
+    clearTimeout(openTimer)
+    openTimer = null
+  }
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
+}
+
+function onGroupEnter(idx: number): void {
+  clearGroupTimers()
+  const menu = menuRef.value
+  if (menu) {
+    const menuRect = menu.getBoundingClientRect()
+    submenuFlipLeft.value = window.innerWidth - menuRect.right < 240
+  }
+  openTimer = setTimeout(() => {
+    openGroupIndex.value = idx
+  }, 180)
+}
+
+function onGroupLeave(): void {
+  clearGroupTimers()
+  closeTimer = setTimeout(() => {
+    openGroupIndex.value = null
+  }, 120)
+}
 
 async function handleAction(item: BeaconMenuItem) {
   if (item?.disabled) return
   emit('close')
-  await runBeaconAction(props.beaconid, item)
+  const ids = (Array.isArray(props.beaconIds) ? props.beaconIds : []).map(String).filter(Boolean)
+  await runBeaconAction(props.beaconid, item, ids)
 }
 
 function handleClickOutside() {
@@ -64,6 +100,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearGroupTimers()
   document.removeEventListener('click', handleClickOutside)
   document.removeEventListener('contextmenu', handleContextMenuOutside)
 })
@@ -81,14 +118,20 @@ onUnmounted(() => {
       <template v-for="(item, idx) in menuItems" :key="idx">
         <div v-if="item.type === 'divider'" class="divider"></div>
 
-        <div v-else-if="item.type === 'group'" class="menu-group">
+        <div
+          v-else-if="item.type === 'group'"
+          class="menu-group"
+          :class="{ open: openGroupIndex === idx }"
+          @mouseenter="onGroupEnter(idx)"
+          @mouseleave="onGroupLeave"
+        >
           <div class="menu-item menu-parent">
             <span class="menu-icon">{{ item.icon }}</span>
-            <span class="menu-label">{{ t(item.labelKey || item.label || '') }}</span>
+            <span class="menu-label">{{ item.labelKey ? t(item.labelKey) : (item.label || '') }}</span>
             <span class="submenu-arrow">›</span>
           </div>
 
-          <div class="submenu">
+          <div class="submenu" :class="{ 'flip-left': submenuFlipLeft }">
             <div
               v-for="(child, childIdx) in item.children"
               :key="`${item.labelKey || item.label}-${childIdx}`"
@@ -98,7 +141,7 @@ onUnmounted(() => {
               @click="handleAction(child)"
             >
               <span class="menu-icon">{{ child.icon }}</span>
-              <span class="submenu-label">{{ t(child.labelKey || child.label || '') }}</span>
+              <span class="submenu-label">{{ child.labelKey ? t(child.labelKey) : (child.label || '') }}</span>
             </div>
           </div>
         </div>
@@ -111,7 +154,7 @@ onUnmounted(() => {
           @click="handleAction(item)"
         >
           <span class="menu-icon">{{ item.icon }}</span>
-          <span>{{ t(item.labelKey || item.label || '') }}</span>
+          <span>{{ item.labelKey ? t(item.labelKey) : (item.label || '') }}</span>
         </div>
       </template>
     </div>
@@ -124,18 +167,29 @@ onUnmounted(() => {
   z-index: 10000;
   min-width: 210px;
   padding: 8px;
+  overflow: visible;
   background:
     linear-gradient(180deg, var(--glass-highlight), rgba(255, 255, 255, 0.06) 42%, rgba(255, 255, 255, 0.02)),
     radial-gradient(var(--glass-grain) 0.5px, transparent 0.5px),
     var(--glass-popover-bg);
   background-size: auto, 3px 3px, auto;
-  backdrop-filter: blur(var(--glass-blur-md)) saturate(155%);
-  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(155%);
   border: 1px solid var(--glass-border-strong);
   border-radius: 16px;
   box-shadow: var(--shadow-lg);
   animation: fadeIn 0.15s ease;
   color: var(--text-secondary);
+}
+
+.context-menu::before,
+.submenu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(155%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(155%);
 }
 
 .menu-item {
@@ -191,6 +245,9 @@ onUnmounted(() => {
 
 .menu-group {
   position: relative;
+  display: block;
+  width: 100%;
+  overflow: visible;
 }
 
 .menu-parent {
@@ -211,8 +268,9 @@ onUnmounted(() => {
 .submenu {
   display: none;
   position: absolute;
-  left: calc(100% - 2px);
-  top: -6px;
+  left: 100%;
+  margin-left: 6px;
+  top: -8px;
   min-width: 220px;
   padding: 8px;
   border-radius: 16px;
@@ -221,14 +279,19 @@ onUnmounted(() => {
     radial-gradient(var(--glass-grain) 0.5px, transparent 0.5px),
     var(--glass-popover-bg);
   background-size: auto, 3px 3px, auto;
-  backdrop-filter: blur(var(--glass-blur-md)) saturate(155%);
-  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(155%);
   border: 1px solid var(--glass-border-strong);
   box-shadow: var(--shadow-lg);
-  z-index: 10001;
+  z-index: 2;
 }
 
-.menu-group:hover > .submenu {
+.submenu.flip-left {
+  left: auto;
+  margin-left: 0;
+  right: 100%;
+  margin-right: 6px;
+}
+
+.menu-group.open > .submenu {
   display: block;
 }
 

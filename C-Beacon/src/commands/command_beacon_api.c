@@ -1,3 +1,4 @@
+#include "beacon_commands.h"
 #include "beacon_bof.h"
 
 #include <intrin.h>
@@ -206,7 +207,7 @@ static VOID BofSendOutput(BofJobRuntime* runtime, INT Type, const BYTE8* data, I
 
     if (!BofConvertOutputToUtf8(ctx, Type, data, len, &text)) return;
 
-    final = PacketMakeFinal(BofRuntimeGetTaskId(runtime), 70u, &text);
+    final = PacketMakeFinal(BofRuntimeGetTaskId(runtime), BEACON_COMMAND_BOF, &text);
     OutboxEnqueue(&ctx->outbox, final);
     BbFree(&text);
 }

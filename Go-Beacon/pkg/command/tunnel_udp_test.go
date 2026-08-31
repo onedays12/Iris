@@ -108,6 +108,19 @@ func TestTunnelRuntimeKeysByTunnelAndChannel(t *testing.T) {
 
 func TestTunnelPendingPacketsControlBeforeData(t *testing.T) {
 	runtime := newTunnelRuntimeForTest()
+	a, b := net.Pipe()
+	defer b.Close()
+
+	ch := &TunnelChannel{
+		TunnelID:   "tunnel-1",
+		ChannelID:  "channel-1",
+		Proto:      "tcp",
+		TargetConn: a,
+		CreatedAt:  time.Now(),
+	}
+	if err := runtime.Add(ch); err != nil {
+		t.Fatalf("add tunnel channel: %v", err)
+	}
 
 	sendDataPacket(runtime, "tunnel-1", "channel-1", []byte("payload"))
 	sendControlPacket(runtime, "tunnel-1", "channel-1", "close", TunnelReasonCanceled, nil)
@@ -181,6 +194,9 @@ func TestPipeMultiplexedUDPStopsAfterFirstDatagram(t *testing.T) {
 		CreatedAt:  time.Now(),
 	}
 	ch.TouchLastSeen(time.Now())
+	if err := runtime.Add(ch); err != nil {
+		t.Fatalf("add tunnel channel: %v", err)
+	}
 
 	done := make(chan struct{})
 	go func() {

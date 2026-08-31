@@ -27,6 +27,30 @@ export interface BeaconViewDto {
   last_seen: string
   created_at: string
   updated_at: string
+  note?: string
+  group_name?: string
+}
+
+export interface BeaconMetaRequest {
+  beacon_ids: string[]
+  note?: string
+  group_name?: string
+}
+
+export interface BeaconMetaItemDto {
+  beacon_id: string
+  hostname: string
+  note: string
+  group_name: string
+}
+
+export interface BeaconMetaUpdateDto {
+  operator: string
+  action: string
+  beacon_ids: string[]
+  note: string
+  group_name: string
+  items: BeaconMetaItemDto[]
 }
 
 export interface BeaconCommandRequest {
@@ -37,4 +61,12 @@ export interface BeaconCommandRequest {
 
 export interface RemoveBeaconRequest {
   beacon_id: string
+}
+
+export interface RemoveBeaconBatchRequest {
+  beacon_ids: string[]
+}
+
+export interface RemoveBeaconBatchResult {
+  beacon_ids: string[]
 }

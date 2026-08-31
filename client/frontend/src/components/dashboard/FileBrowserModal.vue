@@ -6,21 +6,24 @@
  *
  * 文件操作逻辑委托给 useFileBrowserActions composable；
  * 右键菜单委托给 useFileBrowserMenu composable；
- * 传输监控面板委托给 TransferPanel 子组件。
+ * 传输监控面板委托给 TransferPanel 子组件（本 beacon 视角；全局聚合仍在 BottomDock）。
  */
 
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+import { Events } from '@wailsio/runtime'
 import { useI18n } from 'vue-i18n'
 import { useAgentStore } from '../../stores/agent'
-import { useExplorerStore, normalizePathKey, joinPaths } from '../../stores/explorer'
-import type { ExplorerFileInfo } from '../../stores/explorer'
+import { useExplorerStore, normalizePathKey, joinPaths, defaultExplorerPath, desktopExplorerPath, sortExplorerFiles } from '../../stores/explorer'
+import type { ExplorerFileInfo, ExplorerSortDir, ExplorerSortKey } from '../../stores/explorer'
 import { useModalDragResize } from '../../composables/useModalDragResize'
 import { useFileBrowserMenu } from '../../composables/useFileBrowserMenu'
 import { useFileTransferStore } from '../../stores/fileTransfer'
 import { useFileBrowserActions } from '../../composables/useFileBrowserActions'
 import FileAttributeDialog from './FileAttributeDialog.vue'
 import FileZipDialog from './FileZipDialog.vue'
+import FileExecuteDialog from './FileExecuteDialog.vue'
 import FileContextMenu from './FileContextMenu.vue'
+import FilePreviewModal from './FilePreviewModal.vue'
 import TransferPanel from './TransferPanel.vue'
 
 const { t, locale } = useI18n()
@@ -38,6 +41,8 @@ const emit = defineEmits(['close'])
 const searchQuery = ref('')
 const errorMsg = ref('')
 const currentPath = ref('')
+/** 拖拽文件悬停深度计数:>0 表示文件列表处于拖拽高亮态 */
+const dragDepth = ref(0)
 
 // [新增] 窗口定位与尺寸状态
 const {
@@ -50,6 +55,7 @@ const {
 })
 
 const beaconidRef = computed(() => props.beaconid)
+const isWindowsTarget = computed(() => String(agentStore.getAgentById(props.beaconid)?.os || '').toLowerCase().includes('windows'))
 
 // ─── 右键菜单(委托给 useFileBrowserMenu composable) ───
 // menu 先创建(不依赖 actions),actions 后创建(依赖 menu 的 closeMenu/activeMenuTarget),
@@ -75,8 +81,12 @@ const {
   isUploading,
   triggerUpload,
   handleUploadFile,
+  handleDropUpload,
+  handleDroppedFilePaths,
   // 下载
   handleDownload,
+  // 预览
+  handlePreview,
   // 删除 / 移动 / 复制
   handleDelete,
   handleMoveCopy,
@@ -86,6 +96,13 @@ const {
   closeZipDialog,
   zipDialogVisible,
   zipDialogTarget,
+  // 执行
+  handleExecute,
+  handleExecuteSubmit,
+  closeExecuteDialog,
+  executeDialogVisible,
+  executeDialogTarget,
+  executeCwd,
   // 新建目录
   handleMkdir,
   // 属性
@@ -97,19 +114,36 @@ const {
 } = useFileBrowserActions({
   beaconid: beaconidRef,
   currentPath,
+  isWindows: isWindowsTarget,
   activeMenuTarget,
   closeMenu,
   getMenuTarget: () => getMenuTarget(null),
 })
 
 // 把 actions 注入 menu(menu.handleMenuAction 会调 actions.handleDownload 等)
-setActions({ handleDownload, handleZip, handleMoveCopy, handleDelete, handleMkdir, openAttributeDialog })
+setActions({ handleDownload, handlePreview, handleExecute, handleZip, handleMoveCopy, handleDelete, handleMkdir, openAttributeDialog })
 
 onMounted(() => {
   initWindowPosition()
 })
 
+// 原生拖拽桥:Go 侧把 WindowDropZoneFilesDropped 转发为 iris:dropped-files,
+// 仅认领落在本浏览器列表(data-file-drop-target 的 id=file-list-dropzone)的拖放。
+let unbindDroppedFiles: (() => void) | null = null
+onMounted(() => {
+  unbindDroppedFiles = Events.On('iris:dropped-files', (evt: unknown) => {
+    if (!props.visible) return
+    const raw = (evt as { data?: unknown } | undefined)?.data
+    const payload = (Array.isArray(raw) ? raw[0] : raw) as { files?: string[]; targetId?: string } | undefined
+    if (!payload || payload.targetId !== 'file-list-dropzone') return
+    const paths = Array.isArray(payload.files) ? payload.files.filter((p) => typeof p === 'string') : []
+    if (paths.length) void handleDroppedFilePaths(paths)
+  })
+})
+
 onUnmounted(() => {
+  unbindDroppedFiles?.()
+  unbindDroppedFiles = null
   stopDrag()
   stopResize()
 })
@@ -119,17 +153,28 @@ const currentNode = computed(() => {
   return explorerStore.getCacheNode(props.beaconid, currentPath.value)
 })
 
+const sortKey = ref<ExplorerSortKey>('name')
+const sortDir = ref<ExplorerSortDir>('asc')
+
+function toggleSort(key: ExplorerSortKey) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+    return
+  }
+  sortKey.value = key
+  sortDir.value = key === 'mtime' ? 'desc' : 'asc'
+}
+
+function sortMark(key: ExplorerSortKey) {
+  if (sortKey.value !== key) return ''
+  return sortDir.value === 'asc' ? '▲' : '▼'
+}
+
 // 响应式获取当前目录的文件列表
-const files = computed(() => currentNode.value?.items || [])
-const activeTransfers = computed(() => {
-  return fileTransferStore.getTransfers(props.beaconid)
-})
-
-// ─── 传输面板收起状态(委托给 TransferPanel 子组件,主组件只持有 collapsed 状态) ───
+const files = computed(() => sortExplorerFiles(currentNode.value?.items || [], sortKey.value, sortDir.value))
+const activeTransfers = computed(() => fileTransferStore.getTransfers(props.beaconid))
 const transferPanelCollapsed = ref(false)
-
 const targetAgent = computed(() => agentStore.getAgentById(props.beaconid))
-const isWindowsTarget = computed(() => String(targetAgent.value?.os || '').toLowerCase().includes('windows'))
 const rootShortcutLabel = computed(() => isWindowsTarget.value ? t('fileBrowser.myComputer') : t('fileBrowser.currentDir'))
 const pathPlaceholder = computed(() => isWindowsTarget.value ? t('fileBrowser.pathPlaceholderWin') : t('fileBrowser.pathPlaceholderUnix'))
 const emptyStateText = computed(() => (
@@ -141,6 +186,11 @@ const workingDirectory = computed(() => explorerStore.workingDirectories[props.b
 const rootShortcutActive = computed(() => {
   if (isWindowsTarget.value) return currentPath.value === ''
   return normalizePathKey(currentPath.value) === normalizePathKey(workingDirectory.value)
+})
+const desktopPath = computed(() => desktopExplorerPath(targetAgent.value?.os || '', targetAgent.value?.username || ''))
+const desktopShortcutActive = computed(() => {
+  if (!desktopPath.value) return false
+  return normalizePathKey(currentPath.value) === normalizePathKey(desktopPath.value)
 })
 
 // 正在全局加载中的状态 (用于显示主 Loading)
@@ -169,11 +219,13 @@ function formatSize(bytes: number) {
   return parseFloat((Number(bytes) / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 格式化日期（契约: mod_time 为 Unix 毫秒级时间戳）
+// 格式化日期（契约: mod_time 为 Unix 毫秒）。
+// 旧 beacon 发秒（~1.7e9），直接 new Date(sec) 会显示成 1970；1e12 以下按秒升毫秒。
 function formatDate(timestamp: number) {
   if (!timestamp || timestamp === 0) return '-'
-  const numeric = Number(timestamp)
+  let numeric = Number(timestamp)
   if (!Number.isFinite(numeric)) return '-'
+  if (numeric > 0 && numeric < 1e12) numeric *= 1000
   const d = new Date(numeric)
   return d.toLocaleString(locale.value, {
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -256,13 +308,22 @@ onMounted(() => {
   }
 })
 
+// 目录记忆:每 beacon 独立(explorerStore.uiCurrentPath 按 beaconid 分键);
+// 首开无记忆时按目标系统给默认路径(Win→C:\,Linux→/),不再沿用上一个 beacon 的路径。
+function initialPathFor(beaconid: string): string {
+  const remembered = explorerStore.uiCurrentPath[beaconid]
+  if (remembered) return remembered
+  return defaultExplorerPath(String(targetAgent.value?.os || ''))
+}
+
 // 每次弹窗打开时重新居中
 watch(() => props.visible, (val) => {
   if (val) {
     initWindowPosition()
     startResizeListener()
     if (props.beaconid) {
-      loadDirectory(currentPath.value || '')
+      currentPath.value = initialPathFor(props.beaconid)
+      loadDirectory(currentPath.value)
     }
   } else {
     stopResizeListener()
@@ -371,6 +432,14 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
             <div @click="loadDirectory('')" class="nav-item" :class="{ active: rootShortcutActive }">
               <span class="icon">💻</span> {{ rootShortcutLabel }}
             </div>
+            <div
+              v-if="desktopPath"
+              @click="loadDirectory(desktopPath)"
+              class="nav-item"
+              :class="{ active: desktopShortcutActive }"
+            >
+              <span class="icon">{{ isWindowsTarget ? '🖥️' : '🏠' }}</span> {{ isWindowsTarget ? t('fileBrowser.myDesktop') : t('fileBrowser.myHome') }}
+            </div>
           </div>
           <div class="nav-group" v-if="isWindowsTarget && drives.length">
             <div class="group-title">{{ t('fileBrowser.drives') }}</div>
@@ -387,7 +456,17 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
         </div>
 
         <!-- 文件列表区域 -->
-        <div class="file-list-container" @contextmenu="onContainerContextMenu">
+        <div
+          id="file-list-dropzone"
+          data-file-drop-target
+          class="file-list-container"
+          :class="{ 'drag-over': dragDepth > 0 }"
+          @contextmenu="onContainerContextMenu"
+          @dragover.prevent
+          @dragenter.prevent="dragDepth++"
+          @dragleave.prevent="dragDepth = Math.max(0, dragDepth - 1)"
+          @drop.prevent="dragDepth = 0; handleDropUpload($event)"
+        >
           <div v-if="isGlobalLoading && !files.length" class="loading-state">
             <div class="spinner"></div>
             <span>{{ t('fileBrowser.loadingFs') }}</span>
@@ -406,9 +485,18 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
           <thead>
             <tr>
               <th width="40"></th>
-              <th>{{ t('fileBrowser.colName') }}</th>
+              <th class="sortable" :class="{ sorted: sortKey === 'name' }" @click="toggleSort('name')">
+                {{ t('fileBrowser.colName') }}<span class="sort-mark">{{ sortMark('name') }}</span>
+              </th>
               <th width="100">{{ t('fileBrowser.colSize') }}</th>
-              <th width="180">{{ t('fileBrowser.colModified') }}</th>
+              <th
+                width="180"
+                class="sortable"
+                :class="{ sorted: sortKey === 'mtime' }"
+                @click="toggleSort('mtime')"
+              >
+                {{ t('fileBrowser.colModified') }}<span class="sort-mark">{{ sortMark('mtime') }}</span>
+              </th>
               <th width="50" style="text-align: center;">{{ t('fileBrowser.colActions') }}</th>
             </tr>
           </thead>
@@ -430,7 +518,6 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
                   class="copyable-name"
                   :title="file.name"
                   @click.stop
-                  @dblclick.stop
                 >
                   {{ file.name }}
                 </span>
@@ -454,28 +541,41 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
       </div>
       </div> <!-- /main-layout -->
 
-      <!-- 传输监控底部状态栏：委托给 TransferPanel 子组件 -->
+      <!-- 传输监控底部状态栏：本 beacon 进度；全局聚合仍在 BottomDock 传输 tab -->
       <TransferPanel
         :active-transfers="activeTransfers"
         v-model:collapsed="transferPanelCollapsed"
       />
       </div> <!-- /file-browser-modal -->
 
-      <!-- 右键菜单（委托给子组件） -->
-      <FileContextMenu
-        ref="menuRef"
-        :target="activeMenuTarget || undefined"
-        :pos="menuPos"
-        :is-uploading="isUploading"
-        @action="handleMenuAction"
-        @upload="triggerUpload"
-      />
+      <!-- 右键菜单（委托给子组件）。
+           必须 Teleport 到 body:模态框的 backdrop-filter 会把 position:fixed
+           的包含块收编为模态框自身,菜单坐标(视口系)会整体偏移飞走。 -->
+      <Teleport to="body">
+        <FileContextMenu
+          ref="menuRef"
+          :target="activeMenuTarget || undefined"
+          :pos="menuPos"
+          :is-uploading="isUploading"
+          @action="handleMenuAction"
+          @upload="triggerUpload"
+        />
+      </Teleport>
 
       <FileZipDialog
         :visible="zipDialogVisible"
         :target="zipDialogTarget || undefined"
         @close="closeZipDialog"
         @submit="handleZipSubmit"
+      />
+
+      <FileExecuteDialog
+        :visible="executeDialogVisible"
+        :file-name="executeDialogTarget?.file?.name || ''"
+        :file-path="executeDialogTarget?.file?.path || ''"
+        :cwd="executeCwd"
+        @close="closeExecuteDialog"
+        @submit="handleExecuteSubmit"
       />
 
       <FileAttributeDialog
@@ -485,6 +585,9 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
         @close="closeAttributeDialog"
         @submit="handleAttributeSubmit"
       />
+
+      <!-- 文件预览弹窗（独立可拖拽缩放窗口，Teleport 到 body） -->
+      <FilePreviewModal />
     </div>
   </div>
 </template>
@@ -730,6 +833,15 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
   padding: 10px 0;
 }
 
+/* 拖拽上传悬停高亮:drag-over 走 DOM 事件(浏览器预览),
+   file-drop-target-active 由 Wails runtime 在原生拖拽时自动挂载(桌面主路径) */
+.file-list-container.drag-over,
+.file-list-container.file-drop-target-active {
+  outline: 2px dashed var(--color-primary, #7c6cf6);
+  outline-offset: -4px;
+  background: rgba(124, 108, 246, 0.06);
+}
+
 .file-table {
   width: 100%;
   border-collapse: separate;
@@ -749,6 +861,23 @@ watch(() => explorerStore.uiCurrentPath[props.beaconid], (newPath) => {
   text-transform: uppercase;
   border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   z-index: 20;
+}
+
+.file-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-table th.sortable:hover,
+.file-table th.sortable.sorted {
+  color: #6366f1;
+}
+
+.file-table th .sort-mark {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 9px;
+  min-width: 10px;
 }
 
 .file-row {

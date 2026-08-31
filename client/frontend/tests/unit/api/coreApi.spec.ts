@@ -47,6 +47,8 @@ describe('auth, beacon, and listener API contracts', () => {
     })
     await beaconApi.removeBeacon('b1')
     expect(httpMocks.request).toHaveBeenNthCalledWith(3, 'POST', '/api/v1/beacon/remove', { beacon_id: 'b1' })
+    await beaconApi.removeBeacons(['b1', 'b2'])
+    expect(httpMocks.request).toHaveBeenNthCalledWith(4, 'POST', '/api/v1/beacon/remove_batch', { beacon_ids: ['b1', 'b2'] })
   })
 
   it('rejects malformed beacon list containers', async () => {

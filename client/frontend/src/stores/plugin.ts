@@ -184,11 +184,12 @@ export const usePluginStore = defineStore('plugin', {
           consoleStore.appendToConsole(beaconId, 'output', i18n.global.t('plugins.injectDone'))
           consoleStore.appendToConsole(beaconId, 'output', i18n.global.t('plugins.capturedOutput'))
         }
-        const normalized = normalizePlugin(response)
-        if (normalized) {
-          this.mergePlugin(normalized)
-        }
-        return normalized
+        // mergePlugin 内部会对入参执行 normalizePlugin。
+        // 此处必须传原始 response（snake_case 快照），不能传已 normalize 的 camelCase 对象，
+        // 否则 mergePlugin 二次 normalize 时 postex 的 snake_case 键（dll_by_arch 等）全部丢失，
+        // 导致执行 postex 后插件动作的 DLL 配置被清零、右键菜单中 postex 组消失。
+        this.mergePlugin(response)
+        return normalizePlugin(response)
       } catch (err) {
         const consoleStore = useConsoleStore()
         const beaconId = pickString(pick(payload, ['beacon_id'], ''))

@@ -6,7 +6,6 @@ struct BeaconContext;
 
 #define TUNNEL_MAX_CHANNELS 64
 #define TUNNEL_MAX_CONTROL_PACKETS 256
-#define TUNNEL_MAX_DATA_PACKETS 1000
 
 #define TUNNEL_REASON_NONE 0
 #define TUNNEL_REASON_UNKNOWN 1
@@ -54,6 +53,12 @@ typedef struct TunnelChannel {
     ULONGLONG last_seen;
     UINT64 bytes_in;
     UINT64 bytes_out;
+    /* per-channel 数据队列：worker 入队，满时阻塞背压（不丢最旧）；
+     * 主循环 TunnelPoll 按通道轮询排空。 */
+    TunnelPendingPacket* data_head;
+    TunnelPendingPacket* data_tail;
+    SIZE_T data_count;
+    CONDITION_VARIABLE data_cv; /* 队列满时 worker 在此等待排空/关闭 */
     struct TunnelChannel* next;
 } TunnelChannel;
 
@@ -66,9 +71,10 @@ struct TunnelManager {
     TunnelPendingPacket* control_head;
     TunnelPendingPacket* control_tail;
     SIZE_T control_count;
-    TunnelPendingPacket* data_head;
-    TunnelPendingPacket* data_tail;
-    SIZE_T data_count;
+    SIZE_T data_count;            /* 聚合计数（各通道数据队列之和），harvest 判定用 */
+    TunnelChannel* poll_rotate;   /* 公平轮询游标：下一 tick 从该通道开始排空 */
+    volatile LONG wrote_bytes;    /* 本 tick 已成功写出的下行字节 */
+    volatile LONG pending_start;  /* 本 tick 是否启动了新通道（等 StartAck） */
 };
 
 /* 启动新隧道通道的请求 */
@@ -98,6 +104,7 @@ typedef struct TunnelDataRequest {
 
 VOID TunnelInit(TunnelManager* tm, struct BeaconContext* ctx);
 VOID TunnelFree(TunnelManager* tm);
+VOID TunnelHarvestWait(TunnelManager* tm);
 PacketList TunnelPoll(TunnelManager* tm);
 VOID TunnelAppendJobs(TunnelManager* tm, ByteBuf* out, SIZE_T* count, ULONGLONG now);
 

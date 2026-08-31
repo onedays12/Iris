@@ -2,8 +2,8 @@
  * 认证状态 Store
  * 管理 JWT Token、服务器地址、登录/登出状态。
  *
- * 凭据缓存策略：username/password 仅存内存（非 localStorage），
- * 用于 TeamServer 重启后自动静默重登；client 关闭重开则需手输一次。
+ * 进程内凭据：username/password 仅存内存，供 TeamServer 重启后静默重登。
+ * 「记住密码」：仅在登录成功且勾选后写入 localStorage；失败登录不落盘。
  */
 
 import { defineStore } from 'pinia'
@@ -12,6 +12,8 @@ export interface CachedCredentials {
   username: string
   password: string
 }
+
+const REMEMBER_KEY = 'iris.remember_login'
 
 interface AuthState {
   token: string
@@ -77,6 +79,28 @@ export const useAuthStore = defineStore('auth', {
       sessionStorage.setItem('token', token)
       if (username && password) {
         cachedCredentials = { username, password }
+      }
+    },
+
+    rememberLogin(username: string, password: string): void {
+      localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username, password }))
+    },
+
+    forgetLogin(): void {
+      localStorage.removeItem(REMEMBER_KEY)
+    },
+
+    loadRememberedLogin(): CachedCredentials | null {
+      try {
+        const raw = localStorage.getItem(REMEMBER_KEY)
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as Partial<CachedCredentials>
+        const username = String(parsed.username || '')
+        const password = String(parsed.password || '')
+        if (!username || !password) return null
+        return { username, password }
+      } catch {
+        return null
       }
     },
 

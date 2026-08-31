@@ -5,18 +5,6 @@
 
 #pragma comment(lib, "iphlpapi.lib")
 
-/* 将大端序 32 位计数修补到输出缓冲区的前 4 个字节 */
-static VOID NetPatchCount(ByteBuf* out, UINT32 count)
-{
-    if (out->len < 4) {
-        return;
-    }
-    out->data[0] = (BYTE8)((count >> 24) & 0xffu);
-    out->data[1] = (BYTE8)((count >> 16) & 0xffu);
-    out->data[2] = (BYTE8)((count >> 8) & 0xffu);
-    out->data[3] = (BYTE8)(count & 0xffu);
-}
-
 /* 将 MAC 地址格式化为冒号分隔的十六进制字符串 */
 static VOID NetMacString(const IP_ADAPTER_ADDRESSES* adapter, CHAR* out, SIZE_T out_len)
 {
@@ -196,7 +184,7 @@ ByteBuf CommandNetinfo(VOID)
     HeapFree(GetProcessHeap(), 0, addrs);
 
     /* 将接口数量修补到预留的头部槽位 */
-    NetPatchCount(&out, iface_count);
+    PacketPatchU32(&out, iface_count);
     return out;
 }
 
@@ -284,6 +272,6 @@ ByteBuf CommandNetstat(VOID)
     }
 
     /* 将总连接数修补到头部槽位 */
-    NetPatchCount(&out, conn_count);
+    PacketPatchU32(&out, conn_count);
     return out;
 }

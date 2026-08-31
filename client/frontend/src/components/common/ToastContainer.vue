@@ -5,29 +5,15 @@
  * 渲染并管理页面右上角的 Toast 通知列表，支持不同类型（成功、错误、警告、信息）的提示样式。
  */
 
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
 import { useNotificationStore } from '../../stores/notification'
-import { useEventPanelStore } from '../../stores/eventPanel'
 
 const notificationStore = useNotificationStore()
-const eventPanel = useEventPanelStore()
-const route = useRoute()
-
-const GAP = 24
-
-const offsetRight = computed(() => {
-  if (route.name === 'Login') return GAP
-  const panelWidth = eventPanel.visible
-    ? eventPanel.width + eventPanel.rightOffset
-    : eventPanel.collapsedWidth + eventPanel.rightOffset
-  return panelWidth + GAP
-})
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="toast-container" :style="{ right: `${offsetRight}px` }">
+    <!-- 固定视口右上角;历史版本曾为已删除的右侧事件面板让位,导致通知飘到屏幕中部 -->
+    <div class="toast-container">
       <TransitionGroup name="toast" tag="div" class="toast-list">
         <div
           v-for="n in notificationStore.notifications"

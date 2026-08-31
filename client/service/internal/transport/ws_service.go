@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,18 +37,65 @@ type websocketErrorEvent struct {
 	Message string `json:"message"`
 }
 
-type WebSocketService struct {
-	mu      sync.Mutex
-	conn    *websocket.Conn
-	cancel  context.CancelFunc
-	status  string
-	session uint64
+// EventEmitter 把服务端事件推送给前端 UI。
+// 窄接口使 transport 不依赖 Wails 全局单例,可独立注入测试替身。
+type EventEmitter interface {
+	Emit(name string, data ...any)
 }
 
-func NewWebSocketService() *WebSocketService {
-	return &WebSocketService{
-		status: "closed",
+// wailsEventEmitter 是生产环境的默认出口,转发给 Wails 应用事件总线。
+// transport 中对 Wails 的依赖收敛在此处一个类型内。
+type wailsEventEmitter struct{}
+
+func (wailsEventEmitter) Emit(name string, data ...any) {
+	app := application.Get()
+	if app == nil || app.Event == nil {
+		return
 	}
+	app.Event.Emit(name, data...)
+}
+
+// NewWailsEventEmitter 返回生产环境默认出口(转发给 Wails 应用事件总线)。
+// main.go 组装 FanoutEmitter 时使用;transport 内部对 Wails 的依赖仍收敛在类型上。
+func NewWailsEventEmitter() EventEmitter { return wailsEventEmitter{} }
+
+// WebSocketOption 定制 WebSocketService 构造参数。
+type WebSocketOption func(*WebSocketService)
+
+// WithEventEmitter 注入自定义事件出口,须在首次 Connect 前使用。
+func WithEventEmitter(e EventEmitter) WebSocketOption {
+	return func(s *WebSocketService) { s.emitter = e }
+}
+
+// WithConnectHook 注册连接钩子:每次 Connect 通过空 token 校验后、拨号前,
+// 以 (apiBase, token) 回调。MCP 服务经此同步 GUI 会话凭据;fn 为 nil 安全忽略。
+func WithConnectHook(fn func(apiBase, token string)) WebSocketOption {
+	return func(s *WebSocketService) {
+		s.mu.Lock()
+		s.connectHook = fn
+		s.mu.Unlock()
+	}
+}
+
+type WebSocketService struct {
+	mu          sync.Mutex
+	emitter     EventEmitter // 构造期固定;nil 时静默丢弃事件
+	connectHook func(apiBase, token string)
+	conn        *websocket.Conn
+	cancel      context.CancelFunc
+	status      string
+	session     uint64
+}
+
+func NewWebSocketService(opts ...WebSocketOption) *WebSocketService {
+	s := &WebSocketService{
+		emitter: wailsEventEmitter{},
+		status:  "closed",
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *WebSocketService) Connect(apiBase string, token string) error {
@@ -59,6 +107,13 @@ func (s *WebSocketService) Connect(apiBase string, token string) error {
 	wsURL, err := buildWebSocketURL(apiBase, token)
 	if err != nil {
 		return err
+	}
+
+	s.mu.Lock()
+	hook := s.connectHook
+	s.mu.Unlock()
+	if hook != nil {
+		hook(apiBase, token)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,10 +146,20 @@ func (s *WebSocketService) Connect(apiBase string, token string) error {
 		requestHeader.Set("Origin", origin)
 	}
 
-	conn, _, err := dialer.DialContext(dialCtx, wsURL, requestHeader)
+	conn, resp, err := dialer.DialContext(dialCtx, wsURL, requestHeader)
 	if err != nil {
-		s.finishConnectFailure(session, err)
-		return fmt.Errorf("websocket dial failed: %w", err)
+		status := 0
+		if resp != nil {
+			status = resp.StatusCode
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		dialErr := err
+		if status > 0 {
+			dialErr = fmt.Errorf("%w (status %d)", err, status)
+		}
+		s.finishConnectFailure(session, dialErr)
+		return fmt.Errorf("websocket dial failed: %w", dialErr)
 	}
 
 	if ctx.Err() != nil {
@@ -225,11 +290,10 @@ func (s *WebSocketService) emitStatus(status string, message string, wsURL strin
 }
 
 func (s *WebSocketService) emit(name string, data any) {
-	app := application.Get()
-	if app == nil || app.Event == nil {
+	if s.emitter == nil {
 		return
 	}
-	app.Event.Emit(name, data)
+	s.emitter.Emit(name, data)
 }
 
 func buildWebSocketURL(apiBase string, token string) (string, error) {

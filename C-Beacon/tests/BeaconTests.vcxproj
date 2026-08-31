@@ -100,8 +100,12 @@
     <ClCompile Include="framework\test_support.c" />
     <ClCompile Include="scenarios\crypto_scenarios.c" />
     <ClCompile Include="scenarios\job_scenarios.c" />
+    <ClCompile Include="scenarios\spawn_scenarios.c" />
     <ClCompile Include="scenarios\startup_scenarios.c" />
+    <ClCompile Include="scenarios\syscall_scenarios.c" />
     <ClCompile Include="scenarios\task_scenarios.c" />
+    <ClCompile Include="scenarios\tunnel_scenarios.c" />
+    <ClCompile Include="scenarios\parser_scenarios.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="$(BeaconRoot)\include\**\*.h" />

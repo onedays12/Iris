@@ -1,10 +1,12 @@
-# DLL drop directory
+# DLL 放这里
 
-Place compiled PostEx reflective DLLs here:
+[中文](README.md) · [English](README.en.md)
+
+编译好的 PostEx reflective DLL 放这两个名字：
 
 ```text
 postex_template.x64.dll
 postex_template.x86.dll
 ```
 
-These binaries are intentionally not committed in this template package.
+模板包里故意不带这两份二进制。

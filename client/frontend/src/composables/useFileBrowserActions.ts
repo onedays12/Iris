@@ -9,12 +9,19 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { COMMAND_ID } from '../constants/commands'
 import { useModalStore } from '../stores/modal'
 import { useFileTransferStore } from '../stores/fileTransfer'
 import { useNotificationStore } from '../stores/notification'
+import { usePreviewStore } from '../stores/preview'
+import { useConsoleStore } from '../stores/console'
 import { normalizePathKey, joinPaths } from '../stores/explorer'
 import type { ExplorerFileInfo } from '../stores/explorer'
 import type { FileMenuTarget } from './useFileBrowserMenu'
+import {
+  buildExecuteShellCommand,
+  resolveExecuteCwd,
+} from '../features/files/executeCommand'
 import {
   sendCopyFileCommand,
   sendDownloadCommand,
@@ -25,7 +32,9 @@ import {
   sendUploadCommand,
   sendZipCommand,
 } from '../features/beacon/actions/beaconCommandActions'
-import { uploadFile } from '../features/files/api/fileApi'
+import { uploadFile, uploadFileByBase64 } from '../features/files/api/fileApi'
+import type { StoredFile } from '../features/files/model'
+import { FileService } from '../../bindings/irisclient/service'
 
 // ─── 工具函数（纯函数，不依赖响应式） ───
 
@@ -65,6 +74,8 @@ export interface FileBrowserActionsContext {
   beaconid: Ref<string>
   /** 当前目录路径 */
   currentPath: Ref<string>
+  /** 目标是否为 Windows beacon */
+  isWindows: Ref<boolean>
   /** 当前激活的菜单目标 */
   activeMenuTarget: Ref<FileMenuTarget | null>
   /** 关闭菜单回调 */
@@ -73,11 +84,12 @@ export interface FileBrowserActionsContext {
   getMenuTarget: () => FileMenuTarget
 }
 
-export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget, closeMenu, getMenuTarget }: FileBrowserActionsContext) {
+export function useFileBrowserActions({ beaconid, currentPath, isWindows, activeMenuTarget, closeMenu, getMenuTarget }: FileBrowserActionsContext) {
   const { t } = useI18n()
   const modalStore = useModalStore()
   const fileTransferStore = useFileTransferStore()
   const notificationStore = useNotificationStore()
+  const consoleStore = useConsoleStore()
 
   const uploadInputRef = ref<HTMLInputElement | null>(null)
   const uploadTarget = ref<FileMenuTarget | null>(null)
@@ -89,6 +101,9 @@ export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget,
   const attributeDialogTarget = ref<FileMenuTarget | null>(null)
   const zipDialogVisible = ref(false)
   const zipDialogTarget = ref<FileMenuTarget | null>(null)
+  const executeDialogVisible = ref(false)
+  const executeDialogTarget = ref<FileMenuTarget | null>(null)
+  const executeCwd = ref('')
 
   // ─── 上传 ───
 
@@ -103,37 +118,59 @@ export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget,
     const file = input.files?.[0]
     const target = uploadTarget.value
     input.value = ''
-    if (!file || isUploading.value) {
-      uploadTarget.value = null
-      return
-    }
+    uploadTarget.value = null
+    if (!file || isUploading.value) return
 
+    // 拖在文件夹行上则入该文件夹,其余(含空白区/路径栏)进当前目录
     const basePath = target?.type === 'folder'
       ? (target.file?.path || currentPath.value)
       : (target?.path || currentPath.value)
     if (!basePath) {
       notificationStore.error(t('fileBrowser.needTargetFolder'))
-      uploadTarget.value = null
       return
     }
-    const remotePath = joinPaths(basePath, file.name)
+    await uploadOneFile(file, basePath)
+  }
+
+  /**
+   * 单文件上传管线(文件选择与拖拽上传共用):
+   * 5s 防抖锁 → 服务器暂存区(/files/uploads) → 下发 beacon 上传任务。
+   * stage 负责把内容送进暂存区并返回 StoredFile(File 选择与原生拖拽路径各异)。
+   */
+  async function uploadOneFile(file: File, basePath: string): Promise<void> {
+    await uploadOne(file.name, file.size, basePath, () => uploadFile(file))
+  }
+
+  /**
+   * 原生拖拽上传(Wails dropzone 桥):Windows 上 DOM 收不到 drop,
+   * 拖入文件以本机绝对路径经 Go 事件转发而来,内容用 FileService 读 base64。
+   */
+  async function uploadOneFromPath(path: string, basePath: string): Promise<void> {
+    const name = path.split(/[\\/]/).pop() || path
+    await uploadOne(name, 0, basePath, async () => {
+      const base64 = await FileService.ReadBinaryFileBase64(path)
+      return uploadFileByBase64(name, base64)
+    })
+  }
+
+  async function uploadOne(name: string, sizeHint: number, basePath: string, stage: () => Promise<StoredFile>): Promise<void> {
+    const remotePath = joinPaths(basePath, name)
 
     // [锁定机制] 5 秒时间防抖锁定 (上传)
     const cooldownKey = `upload:${beaconid.value}:${remotePath}`
     const now = Date.now()
     const lastTime = downloadCooldowns.value.get(cooldownKey) || 0
     if (now - lastTime < 5000) {
-      notificationStore.info(t('fileBrowser.uploadingCooldown', { name: file.name }))
-      uploadTarget.value = null
+      notificationStore.info(t('fileBrowser.uploadingCooldown', { name }))
       return
     }
     downloadCooldowns.value.set(cooldownKey, now)
 
     isUploading.value = true
     try {
-      notificationStore.info(t('fileBrowser.preparingUpload', { name: file.name }))
+      notificationStore.info(t('fileBrowser.preparingUpload', { name }))
       // 第一阶段：上传到服务器暂存区
-      const uploaded = await uploadFile(file)
+      const uploaded = await stage()
       const fileId = uploaded.fileId
       if (!fileId) {
         throw new Error(t('fileBrowser.noFileId'))
@@ -146,16 +183,58 @@ export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget,
         beaconid: beaconid.value,
         taskId: '',
         remotePath: remotePath,
-        fileName: file.name,
-        size: file.size,
+        fileName: name,
+        size: uploaded.size || sizeHint,
       })
 
-      notificationStore.success(t('fileBrowser.uploadQueued', { name: file.name }))
+      notificationStore.success(t('fileBrowser.uploadQueued', { name }))
     } catch (err) {
       notificationStore.error(t('fileBrowser.uploadFailed', { message: errorMessage(err) }))
     } finally {
       isUploading.value = false
-      uploadTarget.value = null
+    }
+  }
+
+  /**
+   * 拖拽上传:拖入的本地文件批量上传到当前目录。
+   * 文件夹条目(Chromium 拖目录会产生 0 字节无类型 File)跳过并提示。
+   */
+  async function handleDropUpload(event: DragEvent): Promise<void> {
+    if (isUploading.value) return
+    const dropped = Array.from(event.dataTransfer?.files ?? [])
+    const files = dropped.filter((f) => !(f.type === '' && f.size === 0 && !f.name.includes('.')))
+    const skipped = dropped.length - files.length
+    if (skipped > 0) {
+      notificationStore.info(t('fileBrowser.dropSkippedFolders', { count: skipped }))
+    }
+    if (!files.length) return
+    const basePath = currentPath.value
+    if (!basePath) {
+      notificationStore.error(t('fileBrowser.needTargetFolder'))
+      return
+    }
+    for (const file of files) {
+      await uploadOneFile(file, basePath)
+    }
+  }
+
+  /**
+   * Wails 原生拖拽入口:Go 侧 WindowDropZoneFilesDropped 事件桥转发来的
+   * 本机绝对路径列表,逐个上传到当前目录。
+   */
+  async function handleDroppedFilePaths(paths: string[]): Promise<void> {
+    if (isUploading.value || !paths.length) return
+    const basePath = currentPath.value
+    if (!basePath) {
+      notificationStore.error(t('fileBrowser.needTargetFolder'))
+      return
+    }
+    for (const path of paths) {
+      try {
+        await uploadOneFromPath(path, basePath)
+      } catch {
+        // 单文件失败已在管线内提示,继续处理余下文件
+      }
     }
   }
 
@@ -192,6 +271,15 @@ export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget,
     } finally {
       closeMenu()
     }
+  }
+
+  // ─── 预览 ───
+
+  /** 打开文件预览弹窗（类型/大小预判在 preview store 内完成）。 */
+  function handlePreview(file: ExplorerFileInfo | undefined): void {
+    if (!file || file.is_dir) return
+    closeMenu()
+    usePreviewStore().openPreview(beaconid.value, file.path, file.name, file.size)
   }
 
   // ─── 删除 ───
@@ -359,14 +447,71 @@ export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget,
     zipDialogTarget.value = null
   }
 
+  // ─── 执行 ───
+
+  function handleExecute(target: FileMenuTarget): void {
+    if (target?.type !== 'file' || !target.file?.path) {
+      notificationStore.error(t('fileBrowser.executeNoTarget'))
+      return
+    }
+    const cwd = resolveExecuteCwd(currentPath.value, target.file.path, isWindows.value)
+    if (!cwd) {
+      notificationStore.error(t('fileBrowser.executeNeedCwd'))
+      return
+    }
+    closeMenu()
+    executeDialogTarget.value = target
+    executeCwd.value = cwd
+    executeDialogVisible.value = true
+  }
+
+  function closeExecuteDialog(): void {
+    executeDialogVisible.value = false
+    executeDialogTarget.value = null
+    executeCwd.value = ''
+  }
+
+  async function handleExecuteSubmit(rawArgs: string): Promise<void> {
+    const file = executeDialogTarget.value?.file
+    if (!file?.path) {
+      notificationStore.error(t('fileBrowser.executeNoTarget'))
+      return
+    }
+    const cwd = executeCwd.value || resolveExecuteCwd(currentPath.value, file.path, isWindows.value)
+    if (!cwd) {
+      notificationStore.error(t('fileBrowser.executeNeedCwd'))
+      return
+    }
+    const cmd = buildExecuteShellCommand({
+      isWindows: isWindows.value,
+      cwd,
+      filePath: file.path,
+      args: rawArgs,
+    })
+    const displayName = file.name || file.path
+    closeExecuteDialog()
+
+    try {
+      consoleStore.openConsole(beaconid.value)
+      await consoleStore.sendCommand(beaconid.value, COMMAND_ID.SHELL, [cmd], `shell ${cmd}`)
+      notificationStore.success(t('fileBrowser.executeQueued', { name: displayName }))
+    } catch (err) {
+      notificationStore.error(t('fileBrowser.executeFailed', { message: errorMessage(err) }))
+    }
+  }
+
   return {
     // 上传
     uploadInputRef,
     isUploading,
     triggerUpload,
     handleUploadFile,
+    handleDropUpload,
+    handleDroppedFilePaths,
     // 下载
     handleDownload,
+    // 预览
+    handlePreview,
     // 删除 / 移动 / 复制
     handleDelete,
     handleMoveCopy,
@@ -377,6 +522,13 @@ export function useFileBrowserActions({ beaconid, currentPath, activeMenuTarget,
     closeZipDialog,
     zipDialogVisible,
     zipDialogTarget,
+    // 执行
+    handleExecute,
+    handleExecuteSubmit,
+    closeExecuteDialog,
+    executeDialogVisible,
+    executeDialogTarget,
+    executeCwd,
     // 新建目录
     handleMkdir,
     // 属性

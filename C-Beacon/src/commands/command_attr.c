@@ -1,14 +1,5 @@
 #include "beacon_commands.h"
 
-/* 将原始文本字节以数组载荷形式打包到 ByteBuf 中 */
-static ByteBuf AttrPackTextArray(const CHAR* text)
-{
-    ByteBuf out;
-    BbInit(&out);
-    PacketArrayBytes(&out, text, text ? strlen(text) : 0);
-    return out;
-}
-
 /* 构建包含给定消息的错误响应 ByteBuf */
 static ByteBuf AttrError(const CHAR* text)
 {
@@ -239,7 +230,7 @@ ByteBuf CommandSetattr(Parser* p)
         ByteBuf text;
         BbInit(&text);
         BbPrintf(&text, "Successfully updated attributes for: %s", actual_utf8 ? actual_utf8 : "");
-        result = AttrPackTextArray((const CHAR*)text.data);
+        result = PacketPackTextArray((const CHAR*)text.data);
         BbFree(&text);
         HeapFree(GetProcessHeap(), 0, (actual_utf8));
     }

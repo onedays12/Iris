@@ -28,6 +28,11 @@ function wailsCustomJsFallback(): Plugin {
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [vue(), wailsCustomJsFallback(), wails(bindingsRoot)],
+  // 开发服务器钉死 IPv4:wails3 beta.15 的 Go 资产代理拨 tcp4 127.0.0.1,
+  // 而 Windows 上 Node 把 localhost 解析成 ::1 只绑 IPv6,导致 wails.localhost 502。
+  server: {
+    host: '127.0.0.1',
+  },
   // 生产构建剥离调试日志 (保留 console.error/warn 作为运行时错误上报)。
   // 源码层已无 log/debug/info, 此为构建期兜底, 防止后续误加回调试输出。
   esbuild: mode === 'production'

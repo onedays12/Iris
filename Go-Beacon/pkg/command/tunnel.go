@@ -23,8 +23,11 @@ type TunnelStartCommand struct {
 const (
 	tunnelTCPReadBufferSize = 16 * 1024
 	tunnelUDPReadBufferSize = 32 * 1024
-	tunnelReadPollInterval  = 500 * time.Millisecond
+	tunnelReadPollInterval  = 10 * time.Millisecond
 	tunnelUDPIdleTimeout    = 15 * time.Second
+	// 同 tick 收割参数（对齐 C 版 TUNNEL_HARVEST_WAIT_MS / TUNNEL_HARVEST_BULK_BYTES）
+	tunnelHarvestWait      = 10 * time.Millisecond
+	tunnelHarvestBulkBytes = 64 * 1024
 )
 
 func (c *TunnelStartCommand) Execute(p *packet.Parser, acp int) ([][]byte, error) {
@@ -85,6 +88,8 @@ func startTunnelChannel(runtime *TunnelRuntime, originalTaskID uint32, req Tunne
 		sendControlPacket(runtime, req.TunnelID, req.ChannelID, "close", reason, nil)
 		return
 	}
+	// 标记本 tick 启动了新通道（同 tick 收割判定用）。
+	runtime.MarkPendingStart()
 	sendStartAckPacket(runtime, req)
 	defer runtime.Remove(req.TunnelID, req.ChannelID)
 
@@ -140,9 +145,9 @@ func sendDataPacket(runtime *TunnelRuntime, tunnelID, channelID string, data []b
 	if err != nil {
 		return
 	}
-	// 封装为 FinalPacket (TaskId=0, CommandId=62: Data) 并存入队列
+	// 封装为 FinalPacket (TaskId=0, CommandId=62: Data) 并存入 per-channel 队列
 	finalPkt := packet.MakeFinalPacket(0, CommandTunnelData, payload)
-	runtime.PushDataPacket(finalPkt)
+	runtime.PushDataPacket(tunnelID, channelID, finalPkt)
 }
 
 func dialTarget(req TunnelStart) (net.Conn, int32, error) {

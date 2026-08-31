@@ -16,7 +16,7 @@ import type { Ref } from 'vue'
 import type { ExplorerFileInfo } from '../stores/explorer'
 
 const MENU_WIDTH = 168
-const MENU_HEIGHT = 286
+const MENU_HEIGHT = 326
 
 export interface FileMenuTarget {
   type: 'blank' | 'folder' | 'file'
@@ -26,6 +26,8 @@ export interface FileMenuTarget {
 
 export interface FileBrowserMenuActions {
   handleDownload: (file: ExplorerFileInfo | undefined) => void
+  handlePreview: (file: ExplorerFileInfo | undefined) => void
+  handleExecute: (target: FileMenuTarget) => void
   handleZip: (target: FileMenuTarget) => void
   handleMoveCopy: (action: 'move' | 'copy', target: FileMenuTarget) => void
   handleDelete: (target: FileMenuTarget) => void
@@ -81,8 +83,14 @@ export function useFileBrowserMenu({ currentPath }: FileBrowserMenuOptions) {
     if (!target) return
 
     switch (action) {
+      case 'execute':
+        actions.handleExecute(target)
+        break
       case 'download':
         actions.handleDownload(target.file)
+        break
+      case 'preview':
+        actions.handlePreview(target.file)
         break
       case 'zip':
         actions.handleZip(target)

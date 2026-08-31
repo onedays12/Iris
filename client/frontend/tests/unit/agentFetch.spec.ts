@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 vi.mock('../../src/features/beacon/api/beaconApi.js', () => ({
   listBeacons: vi.fn(),
   removeBeacon: vi.fn(),
+  removeBeacons: vi.fn(),
 }))
 
 import * as beaconApi from '../../src/features/beacon/api/beaconApi'
@@ -44,5 +45,31 @@ describe('agent fetch reconciliation', () => {
     await store.fetchAgents()
 
     expect(store.agents.map(a => a.beaconid)).toEqual(['a1'])
+  })
+})
+
+describe('agent batch remove', () => {
+  it('uses the single-remove API for one id and drops the row locally', async () => {
+    vi.mocked(beaconApi.removeBeacon).mockResolvedValue({ ok: true, message: 'ok' })
+    const store = useAgentStore()
+    store.addAgent({ beacon_id: 'a1', hostname: 'h1', os: 'windows' })
+    store.addAgent({ beacon_id: 'a2', hostname: 'h2', os: 'windows' })
+
+    await expect(store.removeBeacons(['a1'])).resolves.toBe(true)
+    expect(beaconApi.removeBeacon).toHaveBeenCalledWith('a1')
+    expect(beaconApi.removeBeacons).not.toHaveBeenCalled()
+    expect(store.agents.map(a => a.beaconid)).toEqual(['a2'])
+  })
+
+  it('uses the batch-remove API for multiple ids', async () => {
+    vi.mocked(beaconApi.removeBeacons).mockResolvedValue({ beacon_ids: ['a1', 'a2'] })
+    const store = useAgentStore()
+    store.addAgent({ beacon_id: 'a1', hostname: 'h1', os: 'windows' })
+    store.addAgent({ beacon_id: 'a2', hostname: 'h2', os: 'windows' })
+    store.addAgent({ beacon_id: 'a3', hostname: 'h3', os: 'windows' })
+
+    await expect(store.removeBeacons(['a1', 'a2', 'a1'])).resolves.toBe(true)
+    expect(beaconApi.removeBeacons).toHaveBeenCalledWith(['a1', 'a2'])
+    expect(store.agents.map(a => a.beaconid)).toEqual(['a3'])
   })
 })

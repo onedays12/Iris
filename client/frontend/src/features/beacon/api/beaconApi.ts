@@ -2,7 +2,15 @@ import { expectArray, expectRecord, expectStringField } from '../../../shared/ap
 import { request } from '../../../shared/api/httpClient'
 import type { ApiOperationResult } from '../../../shared/api/types'
 import { buildBeaconCommandArgs } from './commandArgs'
-import type { BeaconCommandRequest, BeaconViewDto, RemoveBeaconRequest } from './types'
+import type {
+  BeaconCommandRequest,
+  BeaconMetaRequest,
+  BeaconMetaUpdateDto,
+  BeaconViewDto,
+  RemoveBeaconBatchRequest,
+  RemoveBeaconBatchResult,
+  RemoveBeaconRequest,
+} from './types'
 
 function parseBeaconList(value: unknown): BeaconViewDto[] {
   const list = expectArray(value, 'Beacon list')
@@ -32,4 +40,24 @@ export async function sendCommand(
 export async function removeBeacon(beaconid: string): Promise<ApiOperationResult> {
   const payload: RemoveBeaconRequest = { beacon_id: String(beaconid) }
   return request<ApiOperationResult, RemoveBeaconRequest>('POST', '/api/v1/beacon/remove', payload)
+}
+
+export async function removeBeacons(beaconIds: string[]): Promise<RemoveBeaconBatchResult> {
+  return request<RemoveBeaconBatchResult, RemoveBeaconBatchRequest>('POST', '/api/v1/beacon/remove_batch', {
+    beacon_ids: beaconIds,
+  })
+}
+
+export async function setBeaconNote(beaconIds: string[], note: string): Promise<BeaconMetaUpdateDto> {
+  return request<BeaconMetaUpdateDto, BeaconMetaRequest>('POST', '/api/v1/beacon/note', {
+    beacon_ids: beaconIds,
+    note,
+  })
+}
+
+export async function setBeaconGroup(beaconIds: string[], groupName: string): Promise<BeaconMetaUpdateDto> {
+  return request<BeaconMetaUpdateDto, BeaconMetaRequest>('POST', '/api/v1/beacon/group', {
+    beacon_ids: beaconIds,
+    group_name: groupName,
+  })
 }

@@ -7,9 +7,17 @@
 #define CASCADE_FRAME_MAGIC   0x43415331u /* CAS1 */
 #define CASCADE_FRAME_VERSION 1u
 
-/* WSAEWOULDBLOCK 重试上限与重试间隔（TCP 非阻塞读写） */
-#define CASCADE_WOULDBLOCK_MAX_RETRIES    500
+/* WOULDBLOCK 轮询间隔：单次等待时长，预算由 CASCADE_IO_BLOCK_WINDOW_MS 表达 */
 #define CASCADE_WOULDBLOCK_RETRY_SLEEP_MS 10
+
+/*
+ * TCP 非阻塞读写的“无进度”容忍窗口（ms）。
+ * 旧实现等价于 MAX_RETRIES(500) × SLEEP(10) 的隐式 5 秒上限——用循环次数表达
+ * 时间预算会被误读为纯重试健壮性；现改为显式时钟窗口，语义逐位等价：
+ * 连续 WOULDBLOCK 持续到窗口上限即放弃，任意一次进度（收发成功）即重置，
+ * 因此慢速但活跃的对端仍可无限期推进。
+ */
+#define CASCADE_IO_BLOCK_WINDOW_MS (5 * 1000)
 
 /* 管道无数据时的轮询间隔 */
 #define CASCADE_PIPE_POLL_SLEEP_MS 20
@@ -20,21 +28,28 @@
 
 /* ===== 底层 I/O 辅助函数（供 ops 实现复用） ===== */
 
-/* 接收指定字节数，处理 WSAEWOULDBLOCK 并自动重试 */
-BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
+/* HELLO 握手等阻塞读的总 deadline（ms）：对端连接后不发数据时不得挂死主循环 */
+#define CASCADE_HELLO_DEADLINE_MS (30 * 1000)
+
+/*
+ * 带总 deadline 的接收循环：用于握手阶段的主线程阻塞读。
+ * 与 CascadeRecvAll 的区别在于：WSAEWOULDBLOCK 重试不再是无上限的
+ * “500 次 ×10ms”，而是受统一时钟约束——对端 connect 成功后静默不出声时，
+ * 最多 CASCADE_HELLO_DEADLINE_MS 即放弃，避免注册路径冻结 beacon 主循环。
+ */
+static BOOL CascadeRecvAllDeadline(SOCKET s, BYTE8* buf, SIZE_T len, DWORD deadline_ms)
 {
     SIZE_T off = 0;
-    INT retries = 0;
+    ULONGLONG deadline = GetTickCount64() + deadline_ms;
 
     while (off < len) {
         INT n = recv(s, (CHAR*)buf + off, (INT)(len - off), 0);
         if (n > 0) {
             off += (SIZE_T)n;
-            retries = 0;
         } else if (n == 0) {
             return FALSE;
         } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
-            if (++retries > CASCADE_WOULDBLOCK_MAX_RETRIES) return FALSE;
+            if (GetTickCount64() >= deadline) return FALSE;
             Sleep(CASCADE_WOULDBLOCK_RETRY_SLEEP_MS);
         } else {
             return FALSE;
@@ -43,19 +58,42 @@ BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
     return TRUE;
 }
 
-/* 发送指定字节数，处理 WSAEWOULDBLOCK 并自动重试 */
+/* 接收指定字节数：无进度窗口内 WOULDBLOCK 自动重试（见 CASCADE_IO_BLOCK_WINDOW_MS） */
+BOOL CascadeRecvAll(SOCKET s, BYTE8* buf, SIZE_T len)
+{
+    SIZE_T off = 0;
+    ULONGLONG progress_at = GetTickCount64();
+
+    while (off < len) {
+        INT n = recv(s, (CHAR*)buf + off, (INT)(len - off), 0);
+        if (n > 0) {
+            off += (SIZE_T)n;
+            progress_at = GetTickCount64();
+        } else if (n == 0) {
+            return FALSE;
+        } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
+            if (GetTickCount64() - progress_at >= CASCADE_IO_BLOCK_WINDOW_MS) return FALSE;
+            Sleep(CASCADE_WOULDBLOCK_RETRY_SLEEP_MS);
+        } else {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/* 发送指定字节数：无进度窗口内 WOULDBLOCK 自动重试（见 CASCADE_IO_BLOCK_WINDOW_MS） */
 BOOL CascadeSendAll(SOCKET s, const BYTE8* buf, SIZE_T len)
 {
     SIZE_T off = 0;
-    INT retries = 0;
+    ULONGLONG progress_at = GetTickCount64();
 
     while (off < len) {
         INT n = send(s, (const CHAR*)buf + off, (INT)(len - off), 0);
         if (n > 0) {
             off += (SIZE_T)n;
-            retries = 0;
+            progress_at = GetTickCount64();
         } else if (n == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK) {
-            if (++retries > CASCADE_WOULDBLOCK_MAX_RETRIES) return FALSE;
+            if (GetTickCount64() - progress_at >= CASCADE_IO_BLOCK_WINDOW_MS) return FALSE;
             Sleep(CASCADE_WOULDBLOCK_RETRY_SLEEP_MS);
         } else {
             return FALSE;
@@ -277,10 +315,12 @@ INT CascadeFrameReaderFeed(CascadeFrameReader* reader, const BYTE8* data, SIZE_T
 }
 
 /*
- * 阻塞式帧读取，用于 HELLO 握手阶段。
+ * 阻塞式帧读取（内部实现）。
  * 先读 4 字节长度，再读 12 字节固定头部，最后读 body。
+ * hello_deadline_ms > 0 时启用总 deadline（仅 TCP 后端生效；0 = 无上限，
+ * 保持数据面泵送路径的既有行为——数据面已有空闲清理与事件驱动机制约束）。
  */
-BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
+static BOOL CascadeIoReadFrameImpl(CascadeIo* io, UINT16* cmd, ByteBuf* body, DWORD hello_deadline_ms)
 {
     const CascadeIoOps* ops;
     BYTE8 hdr[4];
@@ -289,6 +329,7 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
     UINT32 magic;
     UINT16 version;
     UINT32 body_len;
+    ULONGLONG deadline = 0; /* 握手总时钟；仅 hello_deadline_ms 且 TCP 时启用 */
 
     if (!io || !cmd || !body) return FALSE;
     BbInit(body);
@@ -296,14 +337,42 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
     ops = CascadeIoOpsForKind(io->kind);
     if (!ops || !ops->ReadRaw) return FALSE;
 
-    if (!ops->ReadRaw(io, hdr, sizeof(hdr))) return FALSE;
+    /* 握手 deadline 只对 TCP 后端有意义（pipe 后端 ReadRaw 自带 overlapped 语义） */
+    if (hello_deadline_ms && io->kind == CASCADE_IO_TCP) {
+        deadline = GetTickCount64() + hello_deadline_ms;
+        SIZE_T off = 0;
+        while (off < sizeof(hdr)) {
+            INT n = recv(io->sock, (CHAR*)hdr + off, (INT)(sizeof(hdr) - off), 0);
+            if (n > 0) {
+                off += (SIZE_T)n;
+            } else if (n == 0) {
+                return FALSE;
+            } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
+                if (GetTickCount64() >= deadline) return FALSE;
+                Sleep(CASCADE_WOULDBLOCK_RETRY_SLEEP_MS);
+            } else {
+                return FALSE;
+            }
+        }
+        /* 剩余头部与 body 已确认对端活跃，正常短读走通用路径 */
+        length = BeReadU32(hdr);
+        if (length < sizeof(fixed) || length > CASCADE_MAX_FRAME_SIZE) {
+            return FALSE;
+        }
+        if (!CascadeRecvAllDeadline(io->sock, fixed, sizeof(fixed),
+                                    (DWORD)(deadline - GetTickCount64()))) {
+            return FALSE;
+        }
+    } else {
+        if (!ops->ReadRaw(io, hdr, sizeof(hdr))) return FALSE;
 
-    length = BeReadU32(hdr);
-    if (length < sizeof(fixed) || length > CASCADE_MAX_FRAME_SIZE) {
-        return FALSE;
+        length = BeReadU32(hdr);
+        if (length < sizeof(fixed) || length > CASCADE_MAX_FRAME_SIZE) {
+            return FALSE;
+        }
+
+        if (!ops->ReadRaw(io, fixed, sizeof(fixed))) return FALSE;
     }
-
-    if (!ops->ReadRaw(io, fixed, sizeof(fixed))) return FALSE;
 
     magic = BeReadU32(fixed);
     version = BeReadU16(fixed + 4);
@@ -319,7 +388,13 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
         if (!BbReserve(body, body_len)) {
             return FALSE;
         }
-        if (!ops->ReadRaw(io, body->data, body_len)) {
+        if (hello_deadline_ms && io->kind == CASCADE_IO_TCP) {
+            if (!CascadeRecvAllDeadline(io->sock, body->data, body_len,
+                                        (DWORD)(deadline - GetTickCount64()))) {
+                BbFree(body);
+                return FALSE;
+            }
+        } else if (!ops->ReadRaw(io, body->data, body_len)) {
             BbFree(body);
             return FALSE;
         }
@@ -327,6 +402,18 @@ BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
     }
 
     return TRUE;
+}
+
+/* 数据面帧读取（行为不变） */
+BOOL CascadeIoReadFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
+{
+    return CascadeIoReadFrameImpl(io, cmd, body, 0);
+}
+
+/* 握手帧读取：HELLO 全程受 CASCADE_HELLO_DEADLINE_MS 约束，防止静默对端挂死注册路径 */
+BOOL CascadeIoReadHelloFrame(CascadeIo* io, UINT16* cmd, ByteBuf* body)
+{
+    return CascadeIoReadFrameImpl(io, cmd, body, CASCADE_HELLO_DEADLINE_MS);
 }
 
 /*

@@ -681,3 +681,78 @@ VOID DebugPrintf(const CHAR* fmt, ...)
     (VOID)fmt;
 }
 #endif
+
+/*
+ * 以反斜杠分隔符合并两个路径段。
+ * left 为空时返回 right 的副本；left 未以 \ 或 / 结尾时补一个分隔符。
+ * filebrowser/zip 两份平行实现的统一体。
+ */
+WCHAR* PathJoinWide(const WCHAR* left, const WCHAR* right)
+{
+    SIZE_T left_len = left ? wcslen(left) : 0;
+    SIZE_T right_len = right ? wcslen(right) : 0;
+    INT need_sep;
+    WCHAR* out;
+
+    if (left_len == 0) {
+        return HeapStrDupW(right ? right : L"");
+    }
+
+    need_sep = left[left_len - 1] != L'\\' && left[left_len - 1] != L'/';
+    out = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                            (left_len + (need_sep ? 1u : 0u) + right_len + 1u) * sizeof(WCHAR));
+    if (!out) {
+        return NULL;
+    }
+    wcscpy_s(out, left_len + 1u, left);
+    if (need_sep) {
+        out[left_len++] = L'\\';
+    }
+    if (right_len) {
+        wcscpy_s(out + left_len, right_len + 1u, right);
+    }
+    return out;
+}
+
+/*
+ * 将路径解析为完整的绝对路径；失败或空输入时退回原串副本。
+ * 与 zip 版本的差异：本函数不做尾部斜杠剥离（各调用方自行处理），
+ * filebrowser 版本本就未剥离，行为保持一致。
+ */
+WCHAR* PathFullWide(const WCHAR* path)
+{
+    DWORD need;
+    WCHAR* out;
+
+    if (!path || !*path) {
+        return HeapStrDupW(L"");
+    }
+
+    need = GetFullPathNameW(path, 0, NULL, NULL);
+    if (need == 0) {
+        return HeapStrDupW(path);
+    }
+
+    out = (WCHAR*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                            ((SIZE_T)need + 1) * sizeof(WCHAR));
+    if (!out) {
+        return NULL;
+    }
+    if (GetFullPathNameW(path, need, out, NULL) == 0) {
+        HeapFree(GetProcessHeap(), 0, out);
+        return HeapStrDupW(path);
+    }
+    return out;
+}
+
+/* 将 Win32 文件属性转换为 Unix 风格模式字符串（fs/filebrowser 平行实现的统一体） */
+VOID FsModeStringFromAttrs(DWORD attrs, CHAR out[16])
+{
+    if (attrs & FILE_ATTRIBUTE_DIRECTORY) {
+        strcpy_s(out, 16, "drwxrwxrwx");
+    } else if (attrs & FILE_ATTRIBUTE_READONLY) {
+        strcpy_s(out, 16, "-r--r--r--");
+    } else {
+        strcpy_s(out, 16, "-rw-rw-rw-");
+    }
+}

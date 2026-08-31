@@ -32,6 +32,9 @@ export const BEACON_ACTION = Object.freeze({
   CASCADE_CONNECT_TCP: 'cascade-connect-tcp',
   CASCADE_LINK_SMB: 'cascade-link-smb',
   EDIT_SLEEP: 'edit-sleep',
+  ADD_NOTE: 'add-note',
+  SET_GROUP: 'set-group',
+  NEW_GROUP: 'new-group',
   EXIT: 'exit',
   DELETE_SESSION: 'delete-session',
 })
@@ -68,6 +71,7 @@ export interface BeaconMenuItem {
   pluginName?: string
   pluginAction?: BeaconMenuPluginAction
   children?: BeaconMenuItem[]
+  groupName?: string
 }
 
 // ─── 平台归一化工具 ───
@@ -314,16 +318,29 @@ function disableBeaconItems(items: BeaconMenuItem[], reason: string, reasonKey =
  * @param plugins - 已加载的插件列表
  * @returns 菜单项数组
  */
-export function buildBeaconMenuItems(targetAgent: unknown, plugins: unknown[] = []): BeaconMenuItem[] {
+export function buildBeaconMenuItems(targetAgent: unknown, plugins: unknown[] = [], groupNames: string[] = []): BeaconMenuItem[] {
   const targetRecord = asRecord(targetAgent)
   const targetOs = String(targetRecord?.os ?? '')
   const pluginMenuGroups = targetAgent ? buildPluginMenuGroups(targetAgent, plugins) : []
+  const groupChildren: BeaconMenuItem[] = [
+    { labelKey: 'beaconMenu.ungrouped', label: '未分组', icon: '∅', action: BEACON_ACTION.SET_GROUP, groupName: '' },
+    ...groupNames.map((name) => ({
+      label: name,
+      icon: '📂',
+      action: BEACON_ACTION.SET_GROUP,
+      groupName: name,
+    })),
+    { labelKey: 'beaconMenu.newGroup', label: '新建分组…', icon: '+', action: BEACON_ACTION.NEW_GROUP },
+  ]
 
   const items: BeaconMenuItem[] = [
     { labelKey: 'beaconMenu.openConsole', label: '打开控制台', icon: '⌨️', action: BEACON_ACTION.CONSOLE },
     { labelKey: 'beaconMenu.browseFiles', label: '查看文件目录', icon: '📁', action: BEACON_ACTION.FILES },
     { labelKey: 'beaconMenu.processList', label: '进程列表浏览', icon: '🔍', action: BEACON_ACTION.PROCESSES },
     { labelKey: 'beaconMenu.networkBrowser', label: '网络浏览器', icon: '🌐', action: BEACON_ACTION.NETWORK },
+    { type: 'divider' },
+    { labelKey: 'beaconMenu.addNote', label: '添加备注', icon: '📝', action: BEACON_ACTION.ADD_NOTE },
+    { type: 'group', labelKey: 'beaconMenu.selectGroup', label: '选择分组', icon: '📂', children: groupChildren },
     ...(pluginMenuGroups.length ? [{ type: 'divider' }] : []),
     ...pluginMenuGroups,
     { type: 'divider' },

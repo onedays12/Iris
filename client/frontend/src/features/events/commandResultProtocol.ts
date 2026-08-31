@@ -11,6 +11,7 @@ export const COMMAND_RESULT_TYPE = {
   POSTEX_FRAME: 'postex_frame',
   POSTEX_OUTPUT: 'postex_output',
   POSTEX_DEAD: 'postex_dead',
+  PREVIEW: 'preview',
   DOWNLOAD: 'download',
   UPLOAD: 'upload',
   CASCADE: 'cascade',

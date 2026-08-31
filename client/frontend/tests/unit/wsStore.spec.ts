@@ -57,4 +57,14 @@ describe('WebSocket connection lifecycle', () => {
     expect(store.manualDisconnect).toBe(true)
     expect(store.status).toBe('closed')
   })
+
+  it('skips backoff and silent-reauths on a 401 handshake', () => {
+    const store = useWSStore()
+    const spy = vi.spyOn(store, 'attemptSilentReauth').mockResolvedValue()
+    store.status = 'error'
+    store.recoverAfterConnectFailure('websocket dial failed: bad handshake (status 401)')
+    expect(spy).toHaveBeenCalledOnce()
+    expect(store.reconnectTimer).toBeNull()
+    spy.mockRestore()
+  })
 })

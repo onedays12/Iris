@@ -114,7 +114,7 @@ function formatSize(bytes: number) {
           <div class="item-main">
             <span class="icon">{{ transfer.direction === 'upload' ? '📤' : '📥' }}</span>
             <span class="name" :title="transfer.remotePath">{{ transfer.fileName || transfer.remotePath }}</span>
-            <span class="status-text">{{ transfer.status === 'completed' ? t('transfer.statusCompleted') : transfer.status === 'cancelled' ? t('transfer.statusCancelled') : transfer.status === 'error' ? t('transfer.statusFailed') : transfer.progress + '%' }}</span>
+            <span class="status-text">{{ transfer.status === 'completed' ? t('transfer.statusCompleted') : transfer.status === 'cancelled' ? t('transfer.statusCancelled') : transfer.status === 'error' ? t('transfer.statusFailed') : transfer.status === 'stale' ? t('transfer.statusStale') : transfer.progress + '%' }}</span>
           </div>
           <div class="item-progress">
             <div class="progress-fill" :style="{ width: transfer.progress + '%' }"></div>
@@ -307,6 +307,16 @@ function formatSize(bytes: number) {
 
 .compact-item.completed .progress-fill {
   background: #52c41a;
+}
+
+/* stale:进度信号中断、状态未知,用琥珀色警示而非假装进行中 */
+.compact-item.stale .progress-fill {
+  background: #faad14;
+}
+
+.compact-item.stale .status-text {
+  color: #faad14;
+  opacity: 1;
 }
 
 .compact-item.error .progress-fill {

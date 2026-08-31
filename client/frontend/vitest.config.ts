@@ -19,6 +19,9 @@ export default defineConfig({
       // Individual specs that need real binding call shapes can vi.mock() locally.
       '../../../bindings/irisclient/service': resolve(__dirname, 'tests/unit/__mocks__/bindings-service.ts'),
       '../../bindings/irisclient/service': resolve(__dirname, 'tests/unit/__mocks__/bindings-service.ts'),
+      // 子路径动态导入(downloadSave 等)绕过 barrel alias,单独挡住
+      '../../../bindings/irisclient/service/fileservice': resolve(__dirname, 'tests/unit/__mocks__/bindings-fileservice.ts'),
+      '../../bindings/irisclient/service/fileservice': resolve(__dirname, 'tests/unit/__mocks__/bindings-fileservice.ts'),
     },
   },
   test: {

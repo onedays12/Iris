@@ -8,7 +8,8 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { login } from '../features/auth/api/authApi'
+import { login, operatorNameErrorKey } from '../features/auth/api/authApi'
+import type { ClassifiedErrorInfo } from '../shared/api/types'
 import { useAuthStore } from '../stores/auth'
 import { useWSStore } from '../stores/ws'
 import { Browser } from '@wailsio/runtime'
@@ -18,17 +19,37 @@ const router = useRouter()
 const authStore = useAuthStore()
 const wsStore = useWSStore()
 
-const username = ref('admin')
-const password = ref('')
+const remembered = authStore.loadRememberedLogin()
+const username = ref(remembered?.username || '')
+const password = ref(remembered?.password || '')
+const rememberPassword = ref(Boolean(remembered))
 const serverUrl = ref(authStore.apiBase || 'https://127.0.0.1:8080')
 const isLoading = ref(false)
 const isWSConnecting = ref(false)
 const showSkipButton = ref(false)
 const errorMsg = ref('')
 
+/**
+ * 登录失败的分层文案:按 HTTP 语义分类映射,
+ * 401=统一密码错误、409=操作员名被占用(在线或宽限期)、429=来源 IP 限速锁定。
+ */
+function loginErrorMessage(err: unknown): string {
+  const kind = (err as ClassifiedErrorInfo)?.info?.kind
+  if (kind === 'auth') return t('login.wrongPassword')
+  if (kind === 'conflict') return t('login.usernameTaken')
+  if (kind === 'rateLimited') return t('login.rateLimited')
+  return (err instanceof Error ? err.message : String(err)) || t('login.failed')
+}
+
 async function handleLogin() {
-  if (!username.value || !password.value) {
+  if (!password.value) {
     errorMsg.value = t('login.requiredFields')
+    return
+  }
+  // 操作员名先按契约本地校验(1-32 字节/无控制字符),违规不打扰服务端。
+  const nameErrorKey = operatorNameErrorKey(username.value)
+  if (nameErrorKey) {
+    errorMsg.value = t(nameErrorKey)
     return
   }
 
@@ -38,35 +59,40 @@ async function handleLogin() {
   try {
     // 1. 先保存服务器地址
     authStore.setApiBase(serverUrl.value)
-    
-    // 2. 发起登录
-    const data = await login(username.value, password.value)
-    
+
+    // 2. 发起登录(用户名区分大小写,原样发送;统一密码校验在服务端)
+    const data = await login(username.value.trim(), password.value)
+
     if (data && data.token) {
-      // 1. 存储 Token 并缓存凭据（供 TS 重启后自动重登）
-      authStore.setToken(data.token, username.value, password.value)
-      
+      // 1. 存储 Token 并缓存凭据（供 TS 重启后宽限期外自动重登）
+      authStore.setToken(data.token, username.value.trim(), password.value)
+      if (rememberPassword.value) {
+        authStore.rememberLogin(username.value.trim(), password.value)
+      } else {
+        authStore.forgetLogin()
+      }
+
       // 2. 等待 App.vue 的 token watcher 建立 WebSocket
       isWSConnecting.value = true
       showSkipButton.value = false
-      
+
       // setToken 会触发 App.vue 中的全局监听器建立 WebSocket
       await wsStore.waitForConnection()
-      
+
       // 4. 跳转到仪表盘
       router.push('/dashboard')
     } else {
       throw new Error(t('login.noCredential'))
     }
   } catch (err) {
-    errorMsg.value = (err instanceof Error ? err.message : String(err)) || t('login.failed')
+    errorMsg.value = loginErrorMessage(err)
     // 如果是 WS 阶段出错，显示跳过按钮
     if (isWSConnecting.value) {
       showSkipButton.value = true
     }
     // 注意：如果是 403，通常 token 是对的，所以不一定需要 logout
     if (!isWSConnecting.value) {
-       authStore.logout() 
+       authStore.logout()
     }
     wsStore.disconnect()
   } finally {
@@ -135,6 +161,11 @@ function openAuthorHome() {
             >
           </div>
         </div>
+
+        <label class="remember-row">
+          <input v-model="rememberPassword" type="checkbox" class="remember-check">
+          <span>{{ t('login.rememberPassword') }}</span>
+        </label>
 
         <div class="error-info" v-if="errorMsg">
           <span class="error-icon">⚠️</span>
@@ -335,8 +366,38 @@ function openAuthorHome() {
   outline: 3px solid var(--color-primary-dim);
 }
 
+.remember-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.remember-row:hover {
+  border-color: var(--color-primary);
+}
+
+.remember-check {
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
 .login-btn {
-  margin-top: 12px;
+  margin-top: 4px;
   padding: 14px;
   background: var(--color-primary);
   color: white;

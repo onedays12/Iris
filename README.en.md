@@ -8,7 +8,11 @@ IrisC2 is a C2 framework for authorized security testing, red team exercises, at
 
 ## Project Status
 
-The main framework is in place, and the core capabilities from the early roadmap have largely landed. More advanced features such as privilege escalation and lateral movement will come later, once I've studied the relevant techniques more thoroughly. The plan going forward is to keep updating the Wiki, refine Go-Beacon, fill in docs and examples, and polish stability and UX over time.
+The main framework is in place, and the core capabilities from the early roadmap have largely landed. Roadmap:
+
+- **v0.4.x** — continued polish of the Client / Server experience; Beacon stays unchanged for now.
+- **v0.5** — start building a plugin authoring framework, plus credential-extraction and persistence tooling. These tools are destructive in nature and will not ship with public Releases for the time being; the community is encouraged to write their own plugins on top of the existing plugin system, and you can reach out privately if you genuinely need them.
+- Defense evasion techniques for the Beacon will be open-sourced without reservation.
 
 Server is currently distributed only via Releases as binaries — its source code is not public yet. Once the project reaches 200 stars, I will open-source the Server source.
 
@@ -30,7 +34,7 @@ Client source code is located in `client/`, built with Wails 3 (Go + Vue/TypeScr
 
 ## How It Works
 
-- Client provides the operator interface, task submission, result viewing, and plugin entry points.
+- Client provides the operator interface, task submission, result viewing, and plugin entry points, with an embedded MCP Server that lets agents drive listeners, Beacons, commands, files, and events directly.
 - Server handles authentication, listeners, payload generation, tasking, files, screenshots, tunneling, and event synchronization.
 - Beacon runs in authorized target environments, communicates with listeners according to the C2 Profile, and executes tasks.
 - Stager is used in staged payload scenarios: it downloads the stage first, then starts the Beacon stage.
@@ -60,18 +64,25 @@ GitHub may not preview the large LFS-backed demo video directly on the repositor
 - Supports Beacon context menus and plugin action entry points.
 - Supports BOF/OBJ and PostEx plugin actions (including `spawn-dll` / `inject-dll`, architecture-aware DLL selection, and manifest linting).
 - Displays structured PostEx frames (metadata / progress / artifact / error) and routes artifacts into the downloads page.
+- Embedded MCP Server that lets agents drive listeners, Beacons, commands, files, and events directly.
+- Workbench BottomDock: console, events, and transfers docked at the bottom of the window.
+- Remote file preview (text / image whitelist, in-memory relay, never written to disk).
+- Beacon notes, grouping, and checkbox multi-select deletion; file browser supports execution, native drag-and-drop upload, and a per-Beacon transfer panel.
+- Remember-password on login (written only after a successful login).
 
 Build details: [client/README.md](client/README.md).
 
 ### Server
 
-- Username/password + JWT auth; one active session per username, new login replaces the old.
+- Username/password + JWT auth; login uses a CS-style unified password with username occupation and disconnect grace.
 - REST APIs and a WebSocket event channel.
 - HTTP/HTTPS listeners and External TCP listeners; TCP can enable SSL/TLS when configured.
 - C2 Profiles control Beacon sleep, jitter, sleep obfuscation, HTTP transforms, stager behavior, and more.
 - Supports stagerless and staged payload generation, with both C and Go Beacon templates.
 - Task persistence, pending task recovery, task status tracking, and result collection.
 - PostEx `spawn_dll` / `inject_dll`, structured frame events, and artifact downloads.
+- Remote file preview (text / image whitelist, in-memory relay, never written to disk) — no Beacon changes required.
+- Session notes, grouping, and batch-delete APIs; `GET /transfers/active` transfer reconciliation snapshot.
 - File upload / Beacon file download / chunked transfer / screenshots / tunneling.
 - Windows 7-compatible TLS cipher fallback; SQLite local persistence; basic decoy responses.
 
@@ -90,6 +101,8 @@ Beacon source code is in `C-Beacon/`. Current capabilities:
 - Initial registration, heartbeat refresh, and session key update.
 - Sleep time / jitter / sleep obfuscation (none / ekko / zilean / gargle).
 - Command execution, file system operations, file transfer, file browsing, process/job/identity, network info, and screenshots.
+- Indirect syscalls: recycled / halos gate with randomized invocation.
+- PPID spoofing: target process name or PID configured in the profile; syscalls can be toggled via TSCF.
 - Tunneling: SOCKS / port-forward-style tunnel start / control / data / close.
 - Extension execution: BOF/OBJ loading, relocation, execution, output collection, and task cancellation.
 - PostEx: `spawn-dll` / `inject-dll`, async job polling, and metadata/progress/artifact/error frames.
@@ -109,6 +122,8 @@ Go-Beacon source code is in `Go-Beacon/`, implemented in Go, and supports Window
   - Windows x64: COFF format, VirtualAlloc + NtCreateThreadEx, with VEH crash recovery.
   - Linux x64: ELF format, mmap + direct call, with GOT/trampoline external symbol resolution.
 - Configuration is written in TSCF v2 TLV format, produced by `tools/patch_profile.go`.
+- Tunneling aligned with C-Beacon, with batched callbacks.
+- Windows builds are windowless; no console window is spawned at runtime.
 
 Build and template deployment: [Go-Beacon/README.md](Go-Beacon/README.md).
 

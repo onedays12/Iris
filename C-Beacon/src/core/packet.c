@@ -85,16 +85,27 @@ ByteBuf ParserBytes(Parser* p)
     return b;
 }
 
-/* 从解析器读取长度前缀字符串，去除尾部空字符 */
+/*
+ * 从解析器读取长度前缀字符串，去除尾部空字符。
+ * 契约：成功返回堆分配字符串（调用方 HeapFree）；解析失败返回 NULL，
+ * 此时 p->error 已置位——不再静默回退空串，避免调用方把协议截断当成
+ * "文件打开失败"之类的下游误导文案。粘性 latch 保证后续 Parser* 调用
+ * 全部短路为空值。
+ */
 CHAR* ParserString(Parser* p)
 {
-    ByteBuf b = ParserBytes(p);
+    ByteBuf b;
     CHAR* s;
     SIZE_T n;
 
     if (p->error[0]) {
+        return NULL;
+    }
+
+    b = ParserBytes(p);
+    if (p->error[0]) {
         BbFree(&b);
-        return HeapStrDupA("");
+        return NULL;
     }
 
     /* 去除尾部空终止符 */
@@ -109,7 +120,7 @@ CHAR* ParserString(Parser* p)
     }
 
     BbFree(&b);
-    return s ? s : HeapStrDupA("");
+    return s; /* 分配失败时为 NULL */
 }
 
 /* 向输出缓冲区追加原始字节 */
@@ -196,4 +207,23 @@ ByteBuf PacketPackHeartbeat(UINT32 beacon_id, const BYTE8* session_key, SIZE_T s
         PacketArrayBytes(&p, metadata->data, metadata->len);
     }
     return p;
+}
+
+/* 将大端序 uint32 计数修补到输出缓冲区前 4 字节（len<4 时忽略） */
+VOID PacketPatchU32(ByteBuf* out, UINT32 count)
+{
+    if (!out || out->len < 4 || !out->data) {
+        return;
+    }
+    BeWriteU32(out->data, count);
+}
+
+/* 将文本以数组载荷形式打包为 ByteBuf */
+ByteBuf PacketPackTextArray(const CHAR* text)
+{
+    ByteBuf out;
+
+    BbInit(&out);
+    PacketArrayBytes(&out, text, text ? strlen(text) : 0);
+    return out;
 }

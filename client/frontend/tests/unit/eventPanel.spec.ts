@@ -153,3 +153,26 @@ describe('eventPanel store', () => {
     expect(formatEventSummary(EVENT_TYPE.LISTENER_STATE_CHANGED, { id: 'l-1' })).toBe('监听器状态变更')
   })
 })
+
+describe('eventPanel transfer progress summary', () => {
+  it('renders upload acked_chunks in the progress summary', () => {
+    const summary = formatEventSummary(
+      'COMMAND_EVENT',
+      { beacon_id: 'b1', command_id: 29, phase: 'progress', status: 'uploading',
+        data: { direction: 'upload', file_name: 'aigc.exe', total_chunks: 20, acked_chunks: 15 } },
+      null, '29', 'progress', 'uploading', 'upload',
+    )
+    expect(summary).toContain('15 / 20 chunks')
+    expect(summary).not.toContain('0 / 20')
+  })
+
+  it('still renders download received_chunks', () => {
+    const summary = formatEventSummary(
+      'COMMAND_EVENT',
+      { beacon_id: 'b1', command_id: 28, phase: 'progress', status: 'receiving',
+        data: { direction: 'download', file_name: 'loot.zip', total_chunks: 10, received_chunks: 4 } },
+      null, '28', 'progress', 'receiving', 'download',
+    )
+    expect(summary).toContain('4 / 10 chunks')
+  })
+})

