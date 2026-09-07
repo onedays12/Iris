@@ -256,8 +256,7 @@ async function executeTask() {
       const result = await generateShellcode({
         mode: 'front',
         pe_base64: peBase64,
-        loader_name: 'ReflectiveLoader',
-      } as unknown as ShellcodeGenerateRequest) as ShellcodeGenerateResult & { message?: string; error?: string }
+      }) as ShellcodeGenerateResult & { message?: string; error?: string }
 
       const shellcode = result?.shellcode
       if (!shellcode) {

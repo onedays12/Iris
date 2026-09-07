@@ -44,15 +44,6 @@ static VOID ZipCrc32Init(VOID)
     g_crc32_ready = 1;
 }
 
-/* 将 C 字符串以数据包就绪数组形式打包到 ByteBuf 中 */
-static ByteBuf PacketPackTextArray(const CHAR* text)
-{
-    ByteBuf out;
-    BbInit(&out);
-    PacketArrayBytes(&out, text, text ? strlen(text) : 0);
-    return out;
-}
-
 /* 将错误消息格式化到上下文错误缓冲区 */
 static INT ZipSetError(ZipContext* ctx, const CHAR* fmt, ...)
 {

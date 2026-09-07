@@ -7,7 +7,6 @@
  */
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { getPreviewKind } from '../../features/preview/model'
 
 const props = defineProps({
   /** 菜单目标：{ type: 'blank'|'folder'|'file', file?, path? } */
@@ -70,7 +69,7 @@ defineExpose({ menuRef })
           <span class="m-icon">📥</span> {{ t('fileMenu.download') }}
         </div>
         <div
-          v-if="target.type === 'file' && getPreviewKind(target.file?.name || '')"
+          v-if="target.type === 'file'"
           class="menu-item"
           @click="onAction('preview')"
         >

@@ -16,11 +16,20 @@ struct BofJobRuntime {
     DWORD bss_entry_capacity;       /* BSS 段偏移表容量 */
     BSSEntry* bss_entries;          /* BSS 段偏移表 */
     COFFAPIFUNC ldr_api[16];        /* 延迟初始化的 Ldr API 表 */
-    CHAR last_error[256];           /* 当前 BOF 最后错误信息 */
+    CHAR last_error[1024];          /* 当前 BOF 最后错误信息 */
 
     volatile LONG exception_seen;   /* BOF 入口异常标志 */
     DWORD exception_code;           /* BOF 入口异常代码 */
     PVOID exception_address;        /* BOF 入口异常地址 */
+    DWORD exception_op;             /* AV 访问类型: 0=READ 1=WRITE 8=EXEC, 0xFFFFFFFF=非AV */
+    PVOID exception_fault_addr;     /* AV 目标地址 (ExceptionInformation[1]) */
+    DWORD64 exception_rip;          /* 异常时 RIP 及关键寄存器现场 */
+    DWORD64 exception_rax;
+    DWORD64 exception_rcx;
+    DWORD64 exception_rdx;
+    DWORD64 exception_r8;
+    DWORD64 exception_r9;
+    DWORD64 exception_rsp;
 
     PVOID image_base;               /* BOF 映射基址，用于返回地址反查 */
     SIZE_T image_size;              /* BOF 映射大小 */

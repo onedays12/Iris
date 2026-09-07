@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.4.1
+
+### Client
+
+- 新增 — PoolParty 插件：线程池注入变体 2–8，七个 BOF 动作
+- 新增 — 文件预览解除文本/图片白名单，任意文件可按文本打开，带编码选择器
+- 新增 — Payload shellcode 生成按 beacon 架构选择，生成 → 执行链路贯通
+- 修复 — 插件控制台执行 BOF 时回显动作参数值（按字段声明顺序拼位置参数，空值用 "" 占位）
+- 修复 — Linux CI 补装 wails beta.15 所需的 GTK4 / WebKitGTK 6.0
+- 若干优化
+
+### Server
+
+- 新增 — 预览任意文件：保留原始字节，不再限文本/图片白名单（Beacon 不用改）
+- 变更 — payload shellcode 生成参数化并精简管线，配合客户端按架构选择
+- 若干优化
+
+### C-Beacon
+
+- 新增 — BOF 异常现场日志：崩点访问类型、指令字节、寄存器与栈指针一起回传，能分清是 BOF 代码还是 loader 的锅
+- 修复 — COFF loader 两处重定位缺陷：__ImageBase 不再计入 BSS（MSVC 镜像相对寻址不再越界读）；x64 REL32/REL32_1~5 保留指令内 addend（结构体字段偏移不再错指向结构体基址）。MSVC 编译的复杂 BOF 不再随机 0xC0000005、字符串乱码、目录枚举空名
+- 修复 — BOF 入口线程改用 BofEntryThreadProc 正确传参
+- 修复 — 消除 PacketPackTextArray 重复符号的链接错误
+- 变更 — http / tcp_external 默认加密密钥统一
+- 若干优化
+
 ## v0.4.0
 
 ### Client

@@ -162,7 +162,12 @@ export const usePluginStore = defineStore('plugin', {
             consoleStore.appendToConsole(beaconId, 'output', i18n.global.t('plugins.pushingPostEx'))
           } else {
             if (artifact) {
-              consoleStore.appendToConsole(beaconId, 'input', `bof "${artifact}"`.trim())
+              // 回显动作字段值（BOF 是位置参数；values 按字段声明顺序写入，空值以 "" 占位保持对位）
+              const rawValues = (payload.values && typeof payload.values === 'object') ? payload.values as Record<string, unknown> : {}
+              const argText = Object.values(rawValues)
+                .map((v) => `"${String(v ?? '').replace(/"/g, "'")}"`)
+                .join(' ')
+              consoleStore.appendToConsole(beaconId, 'input', `bof "${artifact}" ${argText}`.trim())
             } else {
               consoleStore.appendToConsole(beaconId, 'input', 'bof')
             }

@@ -63,10 +63,11 @@ GitHub may not preview the large LFS-backed demo video directly on the repositor
 - Manages listeners, payloads, Beacons, tasks, files, screenshots, and tunnels.
 - Supports Beacon context menus and plugin action entry points.
 - Supports BOF/OBJ and PostEx plugin actions (including `spawn-dll` / `inject-dll`, architecture-aware DLL selection, and manifest linting).
+- PoolParty plugin: thread-pool injection variants 2–8 (seven BOF actions).
 - Displays structured PostEx frames (metadata / progress / artifact / error) and routes artifacts into the downloads page.
 - Embedded MCP Server that lets agents drive listeners, Beacons, commands, files, and events directly.
 - Workbench BottomDock: console, events, and transfers docked at the bottom of the window.
-- Remote file preview (text / image whitelist, in-memory relay, never written to disk).
+- Remote file preview: open any file as text (with an encoding picker), in-memory relay, never written to disk.
 - Beacon notes, grouping, and checkbox multi-select deletion; file browser supports execution, native drag-and-drop upload, and a per-Beacon transfer panel.
 - Remember-password on login (written only after a successful login).
 
@@ -81,7 +82,7 @@ Build details: [client/README.md](client/README.md).
 - Supports stagerless and staged payload generation, with both C and Go Beacon templates.
 - Task persistence, pending task recovery, task status tracking, and result collection.
 - PostEx `spawn_dll` / `inject_dll`, structured frame events, and artifact downloads.
-- Remote file preview (text / image whitelist, in-memory relay, never written to disk) — no Beacon changes required.
+- Remote file preview: raw bytes preserved, no text/image whitelist, in-memory relay, never written to disk — no Beacon changes required.
 - Session notes, grouping, and batch-delete APIs; `GET /transfers/active` transfer reconciliation snapshot.
 - File upload / Beacon file download / chunked transfer / screenshots / tunneling.
 - Windows 7-compatible TLS cipher fallback; SQLite local persistence; basic decoy responses.
@@ -189,6 +190,7 @@ Built-in example plugins:
 client/plugins/
 ├── execution-injection/
 ├── linux-elf-bof/
+├── poolparty/
 └── postex-template/
 ```
 

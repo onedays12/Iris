@@ -19,6 +19,7 @@ import type {
   PayloadGenerateResult,
   PayloadOs,
   PayloadStageMode,
+  ShellcodeArch,
   ShellcodeGenerateRequest,
   ShellcodeGenerateResult,
 } from '../../features/payload/api/types'
@@ -42,7 +43,13 @@ const shellcodeFileInputRef = ref<HTMLInputElement | null>(null)
 const shellcodeFilePath = ref('')
 const shellcodeSelectedFile = ref<File | null>(null)
 const shellcodeMode = ref('front')
-const shellcodeLoaderName = ref('ReflectiveLoader')
+const shellcodeArch = ref<ShellcodeArch>('auto')
+const shellcodeExportName = ref('')
+const shellcodeExportHash = ref('')
+const shellcodeUserDataHex = ref('')
+const shellcodeUserDataFile = ref<File | null>(null)
+const shellcodeUserDataPath = ref('')
+const shellcodeUserDataInputRef = ref<HTMLInputElement | null>(null)
 
 const activeListener = computed(() => {
   return listenerStore.listeners.find(l => l.id === modalStore.activeGenerateBeaconListenerId)
@@ -136,7 +143,6 @@ const beaconTypeOptions = [
 const shellcodeModeOptions: { labelKey: string; value: string; descriptionKey: string; label?: string }[] = [
   { labelKey: 'genBeacon.shellcodeFront', value: 'front', descriptionKey: 'genBeacon.shellcodeFrontDesc' },
   { labelKey: 'genBeacon.shellcodePost', value: 'post', descriptionKey: 'genBeacon.shellcodePostDesc' },
-  { labelKey: 'genBeacon.shellcodeEmbed', value: 'embed', descriptionKey: 'genBeacon.shellcodeEmbedDesc' },
 ]
 
 const isInternal = computed(() => activeListenerType.value === 'internal')
@@ -151,7 +157,11 @@ const isGoTcpBlocked = computed(() =>
 )
 
 const isShellcodeMode = computed(() => generationMode.value === 'shellcode')
-const needsShellcodeLoaderName = computed(() => shellcodeMode.value === 'embed')
+const shellcodeArchOptions: { labelKey: string; value: ShellcodeArch }[] = [
+  { labelKey: 'genBeacon.shellcodeArchAuto', value: 'auto' },
+  { labelKey: 'genBeacon.shellcodeArchX64', value: 'x64' },
+  { labelKey: 'genBeacon.shellcodeArchX86', value: 'x86' },
+]
 const currentShellcodeModeMeta = computed(() => {
   return shellcodeModeOptions.find(item => item.value === shellcodeMode.value) || shellcodeModeOptions[0]
 })
@@ -386,17 +396,40 @@ function triggerShellcodeFileInput() {
   }
 }
 
+function triggerUserDataFileInput() {
+  if (generating.value || generatingShellcode.value) return
+  shellcodeUserDataInputRef.value?.click()
+}
+
+async function handleUserDataFileSelected(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  target.value = ''
+  if (!file) return
+  shellcodeUserDataFile.value = file
+  shellcodeUserDataPath.value = file.name
+}
+
 async function generateShellcodeFromFile(file: File) {
   generatingShellcode.value = true
   try {
     const peBase64 = await readFileAsBase64(file)
-    const result = await generateShellcode({
-      mode: shellcodeMode.value as 'front' | 'post' | 'embed',
+    const request: ShellcodeGenerateRequest = {
+      mode: shellcodeMode.value as 'front' | 'post',
       pe_base64: peBase64,
-      loader_name: needsShellcodeLoaderName.value
-        ? String(shellcodeLoaderName.value || 'ReflectiveLoader')
-        : undefined,
-    } as unknown as ShellcodeGenerateRequest) as ShellcodeGenerateResult & { message?: string; error?: string }
+      arch: shellcodeArch.value,
+      export_name: shellcodeExportName.value.trim() || undefined,
+      export_hash: shellcodeExportHash.value.trim() || undefined,
+    }
+    if (shellcodeUserDataFile.value && shellcodeUserDataHex.value.trim()) {
+      throw new Error(t('payload.shellcodeUserDataConflict'))
+    }
+    if (shellcodeUserDataFile.value) {
+      request.user_data_base64 = await readFileAsBase64(shellcodeUserDataFile.value)
+    } else if (shellcodeUserDataHex.value.trim()) {
+      request.user_data_hex = shellcodeUserDataHex.value.trim()
+    }
+    const result = await generateShellcode(request) as ShellcodeGenerateResult & { message?: string; error?: string }
 
     // 契约: request() 已解包 {ok, data} 信封, shellcode 为顶层字段
     const shellcode = result?.shellcode
@@ -555,7 +588,12 @@ watch(generationMode, (mode) => {
   shellcodeFilePath.value = ''
   shellcodeSelectedFile.value = null
   shellcodeMode.value = 'front'
-  shellcodeLoaderName.value = 'ReflectiveLoader'
+  shellcodeArch.value = 'auto'
+  shellcodeExportName.value = ''
+  shellcodeExportHash.value = ''
+  shellcodeUserDataHex.value = ''
+  shellcodeUserDataFile.value = null
+  shellcodeUserDataPath.value = ''
 })
 
 watch(generationMode, (mode) => {
@@ -567,7 +605,7 @@ watch(generationMode, (mode) => {
 
 <template>
 <div class="modal-overlay">
-    <div class="modal-container glass-card animate-slide-up">
+    <div class="modal-container glass-card animate-slide-up" :class="{ 'is-shellcode': isShellcodeMode }">
       <div class="modal-header">
         <div class="header-tag">PAYLOAD GENERATOR</div>
         <h2>{{ modalTitle }}</h2>
@@ -688,16 +726,8 @@ watch(generationMode, (mode) => {
           </div>
         </div>
 
-        <div v-else class="config-sections">
-          <div class="form-group">
-            <label>{{ t('genBeacon.fieldShellcodeMode') }}</label>
-            <select v-model="shellcodeMode" class="glass-select">
-              <option v-for="item in shellcodeModeOptions" :key="item.value" :value="item.value">{{ t(item.labelKey) }}</option>
-            </select>
-            <p class="help-text">{{ t(currentShellcodeModeMeta.descriptionKey) }}</p>
-          </div>
-
-          <div class="form-group">
+        <div v-else class="config-sections shellcode-fields">
+          <div class="form-group span-full">
             <label>{{ t('genBeacon.fieldPeFile') }}</label>
             <div class="path-input-group">
               <input
@@ -713,15 +743,70 @@ watch(generationMode, (mode) => {
             <p class="help-text">{{ t('genBeacon.supportedExts') }}</p>
           </div>
 
-          <div v-if="needsShellcodeLoaderName" class="form-group">
-            <label>{{ t('genBeacon.fieldLoaderName') }}</label>
+          <div class="form-group">
+            <label>{{ t('genBeacon.fieldShellcodeMode') }}</label>
+            <select v-model="shellcodeMode" class="glass-select">
+              <option v-for="item in shellcodeModeOptions" :key="item.value" :value="item.value">{{ t(item.labelKey) }}</option>
+            </select>
+            <p class="help-text">{{ t(currentShellcodeModeMeta.descriptionKey) }}</p>
+          </div>
+
+          <div class="form-group">
+            <label>{{ t('genBeacon.fieldShellcodeArch') }}</label>
+            <select v-model="shellcodeArch" class="glass-select">
+              <option v-for="item in shellcodeArchOptions" :key="item.value" :value="item.value">{{ t(item.labelKey) }}</option>
+            </select>
+            <p class="help-text">{{ t('genBeacon.shellcodeArchHint') }}</p>
+          </div>
+
+          <div class="form-group">
+            <label>{{ t('genBeacon.fieldExportName') }}</label>
             <input
-              v-model="shellcodeLoaderName"
+              v-model="shellcodeExportName"
               type="text"
               class="form-control"
-              :placeholder="t('genBeacon.loaderPlaceholder')"
+              :placeholder="t('genBeacon.exportNamePlaceholder')"
             >
-            <p class="help-text">{{ t('genBeacon.loaderHint') }}</p>
+            <p class="help-text">{{ t('genBeacon.exportNameHint') }}</p>
+          </div>
+
+          <div class="form-group">
+            <label>{{ t('genBeacon.fieldExportHash') }}</label>
+            <input
+              v-model="shellcodeExportHash"
+              type="text"
+              class="form-control"
+              :placeholder="t('genBeacon.exportHashPlaceholder')"
+              :disabled="Boolean(shellcodeExportName.trim())"
+            >
+            <p class="help-text">{{ t('genBeacon.exportHashHint') }}</p>
+          </div>
+
+          <div class="form-group">
+            <label>{{ t('genBeacon.fieldUserDataHex') }}</label>
+            <input
+              v-model="shellcodeUserDataHex"
+              type="text"
+              class="form-control"
+              :placeholder="t('genBeacon.userDataHexPlaceholder')"
+            >
+            <p class="help-text">{{ t('genBeacon.userDataHexHint') }}</p>
+          </div>
+
+          <div class="form-group">
+            <label>{{ t('genBeacon.fieldUserDataFile') }}</label>
+            <div class="path-input-group">
+              <input
+                type="text"
+                :value="shellcodeUserDataPath"
+                class="form-control"
+                :placeholder="t('genBeacon.userDataFilePlaceholder')"
+                readonly
+                @click="triggerUserDataFileInput"
+              >
+              <button class="browse-btn" type="button" @click="triggerUserDataFileInput">{{ t('genBeacon.chooseFile') }}</button>
+            </div>
+            <p class="help-text">{{ t('genBeacon.userDataFileHint') }}</p>
           </div>
         </div>
 
@@ -738,6 +823,12 @@ watch(generationMode, (mode) => {
           accept=".exe,.dll"
           style="display: none"
           @change="handleShellcodeFileSelected"
+        >
+        <input
+          ref="shellcodeUserDataInputRef"
+          type="file"
+          style="display: none"
+          @change="handleUserDataFileSelected"
         >
         <button class="btn btn-ghost" @click="modalStore.closeGenerateBeacon()" :disabled="isBusy">
           {{ t('common.cancel') }}
@@ -767,6 +858,9 @@ watch(generationMode, (mode) => {
 .modal-container {
   width: 100%;
   max-width: 520px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(180deg, var(--glass-highlight), rgba(255, 255, 255, 0.10) 38%, rgba(255, 255, 255, 0.04)),
     radial-gradient(var(--glass-grain) 0.5px, transparent 0.5px),
@@ -778,6 +872,10 @@ watch(generationMode, (mode) => {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+}
+
+.modal-container.is-shellcode {
+  max-width: 760px;
 }
 
 .modal-header {
@@ -814,7 +912,33 @@ h2 {
   padding: 0 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.shellcode-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 16px;
+}
+
+.shellcode-fields .span-full {
+  grid-column: 1 / -1;
+}
+
+.shellcode-fields .form-group {
+  min-width: 0;
+}
+
+.shellcode-fields .form-group label {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 640px) {
+  .shellcode-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .info-banner {
@@ -951,6 +1075,11 @@ h2 {
 
 .form-control:focus {
   border-color: var(--color-primary);
+}
+
+.form-control:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .help-text {

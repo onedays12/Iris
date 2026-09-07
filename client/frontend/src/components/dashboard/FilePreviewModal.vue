@@ -15,6 +15,7 @@ import { useFileTransferStore } from '../../stores/fileTransfer'
 import { usePreviewStore } from '../../stores/preview'
 import { useModalDragResize } from '../../composables/useModalDragResize'
 import { sendDownloadCommand } from '../../features/beacon/actions/beaconCommandActions'
+import { PREVIEW_ENCODINGS, type PreviewEncoding } from '../../features/preview/model'
 
 const { t } = useI18n()
 const agentStore = useAgentStore()
@@ -222,9 +223,26 @@ watch(() => previewStore.visible, (visible) => {
           </div>
 
           <div class="modal-footer">
-            <span v-if="previewStore.kind === 'text' && previewStore.status === 'ready'" class="size-tag">
-              {{ previewStore.content.length }} chars
-            </span>
+            <div class="footer-meta">
+              <label
+                v-if="previewStore.kind === 'text' && previewStore.status === 'ready'"
+                class="encoding-picker"
+              >
+                <span>{{ t('preview.encoding') }}</span>
+                <select
+                  class="encoding-select"
+                  :value="previewStore.encoding"
+                  @change="previewStore.setEncoding(($event.target as HTMLSelectElement).value as PreviewEncoding)"
+                >
+                  <option v-for="item in PREVIEW_ENCODINGS" :key="item.value" :value="item.value">
+                    {{ item.label }}
+                  </option>
+                </select>
+              </label>
+              <span v-if="previewStore.kind === 'text' && previewStore.status === 'ready'" class="size-tag">
+                {{ previewStore.content.length }} chars
+              </span>
+            </div>
             <div class="footer-actions">
               <button
                 v-if="previewStore.status === 'ready' && previewStore.kind === 'text'"
@@ -468,6 +486,32 @@ watch(() => previewStore.visible, (visible) => {
   flex-shrink: 0;
 }
 
+.footer-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.encoding-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.encoding-select {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.8);
+  color: #1e293b;
+  font-size: 12px;
+  outline: none;
+}
+
 .size-tag {
   font-size: 11px;
   color: #94a3b8;
@@ -591,6 +635,16 @@ watch(() => previewStore.visible, (visible) => {
 :global(html[data-ui-theme="dark"] .preview-modal .btn-secondary:hover:not(:disabled)) {
   background: rgba(99, 102, 241, 0.25);
   color: #c4b5fd;
+}
+
+:global(html[data-ui-theme="dark"] .preview-modal .encoding-picker) {
+  color: #94a3b8;
+}
+
+:global(html[data-ui-theme="dark"] .preview-modal .encoding-select) {
+  background: rgba(15, 23, 42, 0.7);
+  color: #e5e7eb;
+  border-color: rgba(148, 163, 184, 0.2);
 }
 
 :global(html[data-ui-theme="dark"] .preview-modal .btn-ghost) {

@@ -37,6 +37,31 @@ func TestNormalizeManifestCommandArgsKeepsShort(t *testing.T) {
 	}
 }
 
+func TestBuildPluginArgsFileFieldMapsToBytes(t *testing.T) {
+	action := PluginAction{
+		Fields: []PluginActionField{
+			{Name: "op", Type: "string"},
+			{Name: "blob", Type: "file"},
+		},
+	}
+	got, err := buildPluginArgs(action, map[string]any{
+		"values": map[string]any{
+			"op":   "load",
+			"blob": "QQ==",
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildPluginArgs: %v", err)
+	}
+	want := []args.BeaconCommandArg{
+		{Kind: "string", Value: "load"},
+		{Kind: "bytes", Value: "QQ=="},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args = %#v, want %#v", got, want)
+	}
+}
+
 func TestBuildPostExSpawnPluginArgs(t *testing.T) {
 	action := PluginAction{
 		ID:          "spawn",
@@ -371,10 +396,59 @@ func TestLoadPostExTemplatePluginPackage(t *testing.T) {
 	if plugin.Status != "ready" {
 		t.Fatalf("expected ready plugin, got %s: %s", plugin.Status, plugin.LastError)
 	}
-	if len(plugin.Manifest.Actions) != 2 {
-		t.Fatalf("expected 2 actions, got %d", len(plugin.Manifest.Actions))
+		if len(plugin.Manifest.Actions) != 2 {
+			t.Fatalf("expected 2 actions, got %d", len(plugin.Manifest.Actions))
+		}
 	}
-}
+
+	func TestLoadPoolPartyPluginPackage(t *testing.T) {
+		root := filepath.Join("..", "..", "..", "plugins", "poolparty")
+		if _, err := os.Stat(filepath.Join(root, "plugin.json")); err != nil {
+			t.Skipf("poolparty plugin is not available: %v", err)
+		}
+
+		manager := &PluginManager{}
+		plugin, err := manager.loadPlugin(root)
+		if err != nil {
+			t.Fatalf("loadPlugin returned error: %v", err)
+		}
+		if plugin == nil {
+			t.Fatalf("expected plugin instance")
+		}
+		if plugin.Status != "ready" {
+			t.Fatalf("expected ready plugin, got %s: %s", plugin.Status, plugin.LastError)
+		}
+		if plugin.Manifest.Name != "poolparty" {
+			t.Fatalf("name = %q, want poolparty", plugin.Manifest.Name)
+		}
+		if len(plugin.Manifest.Actions) != 7 {
+			t.Fatalf("expected 7 actions, got %d", len(plugin.Manifest.Actions))
+		}
+
+		wantIDs := []string{"tp_work", "tp_wait", "tp_io", "tp_alpc", "tp_job", "tp_direct", "tp_timer"}
+		named := map[string]bool{"tp_wait": true, "tp_io": true, "tp_alpc": true, "tp_job": true}
+		for i, action := range plugin.Manifest.Actions {
+			if action.ID != wantIDs[i] {
+				t.Fatalf("actions[%d].ID = %q, want %q", i, action.ID, wantIDs[i])
+			}
+			if action.CommandID != 0 && action.CommandID != defaultExecutionBOFCommandID {
+				t.Fatalf("action %s command_id = %d, want 70 or omitted", action.ID, action.CommandID)
+			}
+			if len(action.Arch) != 1 || action.Arch[0] != "amd64" {
+				t.Fatalf("action %s arch = %#v, want [amd64]", action.ID, action.Arch)
+			}
+			if len(action.Fields) < 2 || action.Fields[0].Name != "pid" || action.Fields[1].Name != "shellcode" {
+				t.Fatalf("action %s fields = %#v, want pid then shellcode", action.ID, action.Fields)
+			}
+			if named[action.ID] {
+				if len(action.Fields) != 3 || action.Fields[2].Name != "name" {
+					t.Fatalf("action %s should have optional name as field[2]", action.ID)
+				}
+			} else if len(action.Fields) != 2 {
+				t.Fatalf("action %s should have exactly pid+shellcode", action.ID)
+			}
+		}
+	}
 
 func writeTestPostExDLL(t *testing.T) string {
 	t.Helper()

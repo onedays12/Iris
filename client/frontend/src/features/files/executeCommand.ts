@@ -45,8 +45,9 @@ export function buildExecuteShellCommand(opts: {
   const body = extra ? `${file} ${extra}` : file
   if (!cwd) return body
   if (opts.isWindows) {
-    // start "" 让 cmd 把第一个引号参数当窗口标题，真正的文件路径才能带空格/括号。
-    return `cd /d ${quoteWindowsCmdPath(cwd)} && start "" ${body}`
+    // start /b ""：空标题让带空格/括号的路径不被当成窗口标题；
+    // /b 不新建控制台。裸 start "" 会 CREATE_NEW_CONSOLE，目标机弹出可见 cmd。
+    return `cd /d ${quoteWindowsCmdPath(cwd)} && start /b "" ${body}`
   }
   return `cd ${quoteUnixShellPath(cwd)} && ${body}`
 }

@@ -4,6 +4,8 @@ import zhCN from '../../src/locales/zh-CN.json'
 import { i18n } from '../../src/i18n/index'
 import {
   PREVIEW_MAX_BYTES,
+  decodePreviewBytes,
+  detectPreviewEncoding,
   getPreviewKind,
   isPreviewTooLarge,
 } from '../../src/features/preview/model'
@@ -11,7 +13,7 @@ import { usePreviewStore } from '../../src/stores/preview'
 
 const mocks = vi.hoisted(() => ({
   createPreview: vi.fn(),
-  fetchPreviewText: vi.fn(),
+  fetchPreviewBytes: vi.fn(),
   fetchPreviewImageBase64: vi.fn(),
   releasePreview: vi.fn(),
 }))
@@ -29,113 +31,17 @@ beforeEach(() => {
   mocks.releasePreview.mockResolvedValue(undefined)
 })
 
-describe('preview type whitelist (mirrors TeamServer codec.go)', () => {
-  it('classifies text extensions', () => {
+function utf8Bytes(text: string): Uint8Array {
+  return new TextEncoder().encode(text)
+}
+
+describe('preview type classification', () => {
+  it('classifies known text and source files as text', () => {
     expect(getPreviewKind('flag.txt')).toBe('text')
     expect(getPreviewKind('config.json')).toBe('text')
     expect(getPreviewKind('run.ps1')).toBe('text')
-    expect(getPreviewKind('a.yaml')).toBe('text')
-    expect(getPreviewKind('notes.md')).toBe('text')
-    expect(getPreviewKind('data.csv')).toBe('text')
-  })
-
-  it('classifies script and source-code extensions', () => {
-    // C/C++ 及其他语言源码
     expect(getPreviewKind('main.c')).toBe('text')
-    expect(getPreviewKind('util.cpp')).toBe('text')
-    expect(getPreviewKind('header.HPP')).toBe('text')
-    expect(getPreviewKind('server.go')).toBe('text')
-    expect(getPreviewKind('App.java')).toBe('text')
-    expect(getPreviewKind('service.cs')).toBe('text')
-    expect(getPreviewKind('lib.rs')).toBe('text')
-
-    // 脚本类
-    expect(getPreviewKind('deploy.bash')).toBe('text')
-    expect(getPreviewKind('login.zsh')).toBe('text')
-    expect(getPreviewKind('mod.psm1')).toBe('text')
-    expect(getPreviewKind('profile.psd1')).toBe('text')
-    expect(getPreviewKind('init.lua')).toBe('text')
-    expect(getPreviewKind('build.pl')).toBe('text')
-    expect(getPreviewKind('index.php')).toBe('text')
-    expect(getPreviewKind('app.rb')).toBe('text')
-    expect(getPreviewKind('launch.pyw')).toBe('text')
-
-    // 前端类
-    expect(getPreviewKind('style.css')).toBe('text')
-    expect(getPreviewKind('theme.scss')).toBe('text')
-    expect(getPreviewKind('vars.less')).toBe('text')
     expect(getPreviewKind('App.vue')).toBe('text')
-    expect(getPreviewKind('comp.jsx')).toBe('text')
-    expect(getPreviewKind('comp.tsx')).toBe('text')
-
-    // 汇编
-    expect(getPreviewKind('stager.asm')).toBe('text')
-    expect(getPreviewKind('include.inc')).toBe('text')
-  })
-
-  it('classifies config, markup, web-template and build extensions', () => {
-    // 配置/数据/文档
-    expect(getPreviewKind('web.config')).toBe('text')
-    expect(getPreviewKind('README.markdown')).toBe('text')
-    expect(getPreviewKind('doc.rst')).toBe('text')
-    expect(getPreviewKind('guide.adoc')).toBe('text')
-    expect(getPreviewKind('thesis.tex')).toBe('text')
-    expect(getPreviewKind('Cargo.lock')).toBe('text')
-    expect(getPreviewKind('events.jsonl')).toBe('text')
-    expect(getPreviewKind('trace.ndjson')).toBe('text')
-    expect(getPreviewKind('fix.diff')).toBe('text')
-    expect(getPreviewKind('change.patch')).toBe('text')
-    expect(getPreviewKind('driver.inf')).toBe('text')
-    expect(getPreviewKind('host.plist')).toBe('text')
-    expect(getPreviewKind('sshd.service')).toBe('text')
-    expect(getPreviewKind('backup.timer')).toBe('text')
-    expect(getPreviewKind('main.tf')).toBe('text')
-    expect(getPreviewKind('env.tfvars')).toBe('text')
-    expect(getPreviewKind('api.proto')).toBe('text')
-
-    // Web 模板/服务端页面
-    expect(getPreviewKind('shell.aspx')).toBe('text')
-    expect(getPreviewKind('legacy.asp')).toBe('text')
-    expect(getPreviewKind('widget.ascx')).toBe('text')
-    expect(getPreviewKind('view.cshtml')).toBe('text')
-    expect(getPreviewKind('site.master')).toBe('text')
-    expect(getPreviewKind('page.jsp')).toBe('text')
-    expect(getPreviewKind('run.cgi')).toBe('text')
-    expect(getPreviewKind('mail.erb')).toBe('text')
-    expect(getPreviewKind('tpl.ejs')).toBe('text')
-    expect(getPreviewKind('layout.pug')).toBe('text')
-
-    // 其他语言源码
-    expect(getPreviewKind('Form.vb')).toBe('text')
-    expect(getPreviewKind('Lib.fs')).toBe('text')
-    expect(getPreviewKind('App.kt')).toBe('text')
-    expect(getPreviewKind('Main.scala')).toBe('text')
-    expect(getPreviewKind('app.dart')).toBe('text')
-    expect(getPreviewKind('router.exs')).toBe('text')
-    expect(getPreviewKind('math.erl')).toBe('text')
-    expect(getPreviewKind('Main.hs')).toBe('text')
-    expect(getPreviewKind('core.clj')).toBe('text')
-    expect(getPreviewKind('app.nim')).toBe('text')
-    expect(getPreviewKind('main.zig')).toBe('text')
-    expect(getPreviewKind('plot.jl')).toBe('text')
-    expect(getPreviewKind('stats.r')).toBe('text')
-
-    // 构建/工程/汇编补充
-    expect(getPreviewKind('kernel.s')).toBe('text')
-    expect(getPreviewKind('script.ld')).toBe('text')
-    expect(getPreviewKind('resolve.idc')).toBe('text')
-    expect(getPreviewKind('app.rc')).toBe('text')
-    expect(getPreviewKind('exports.def')).toBe('text')
-    expect(getPreviewKind('app.manifest')).toBe('text')
-    expect(getPreviewKind('kernel.vcxproj')).toBe('text')
-    expect(getPreviewKind('common.props')).toBe('text')
-    expect(getPreviewKind('app.targets')).toBe('text')
-    expect(getPreviewKind('build.gradle')).toBe('text')
-    expect(getPreviewKind('pipeline.groovy')).toBe('text')
-    expect(getPreviewKind('toolchain.cmake')).toBe('text')
-    expect(getPreviewKind('Makefile.mk')).toBe('text')
-    expect(getPreviewKind('rule.bzl')).toBe('text')
-    expect(getPreviewKind('Image.dockerfile')).toBe('text')
   })
 
   it('classifies image extensions case-insensitively', () => {
@@ -145,16 +51,15 @@ describe('preview type whitelist (mirrors TeamServer codec.go)', () => {
     expect(getPreviewKind('icon.ico')).toBe('image')
   })
 
-  it('rejects unsupported / extensionless files', () => {
-    expect(getPreviewKind('payload.exe')).toBeNull()
-    expect(getPreviewKind('archive.zip')).toBeNull()
-    expect(getPreviewKind('lib.dll')).toBeNull()
-    expect(getPreviewKind('report.docx')).toBeNull()
-    expect(getPreviewKind('notes.pdf')).toBeNull()
-    expect(getPreviewKind('libc.so')).toBeNull()
-    expect(getPreviewKind('noext')).toBeNull()
-    expect(getPreviewKind('.hidden')).toBeNull()
-    expect(getPreviewKind('')).toBeNull()
+  it('opens unknown and extensionless files as text', () => {
+    expect(getPreviewKind('payload.exe')).toBe('text')
+    expect(getPreviewKind('archive.zip')).toBe('text')
+    expect(getPreviewKind('lib.dll')).toBe('text')
+    expect(getPreviewKind('report.docx')).toBe('text')
+    expect(getPreviewKind('notes.pdf')).toBe('text')
+    expect(getPreviewKind('noext')).toBe('text')
+    expect(getPreviewKind('.hidden')).toBe('text')
+    expect(getPreviewKind('')).toBe('text')
   })
 
   it('enforces the 2MB size limit', () => {
@@ -165,13 +70,40 @@ describe('preview type whitelist (mirrors TeamServer codec.go)', () => {
   })
 })
 
+describe('preview encoding', () => {
+  it('decodes UTF-8 with and without BOM', () => {
+    const raw = utf8Bytes('hello 世界')
+    expect(decodePreviewBytes(raw, 'utf-8')).toBe('hello 世界')
+    const bom = new Uint8Array([0xEF, 0xBB, 0xBF, ...raw])
+    expect(decodePreviewBytes(bom, 'utf-8')).toBe('hello 世界')
+    expect(detectPreviewEncoding(bom)).toBe('utf-8')
+  })
+
+  it('decodes Unicode (UTF-16LE) including BOM', () => {
+    const leBom = new Uint8Array([0xFF, 0xFE, 0x68, 0x00, 0x69, 0x00])
+    expect(detectPreviewEncoding(leBom)).toBe('utf-16le')
+    expect(decodePreviewBytes(leBom, 'utf-16le')).toBe('hi')
+  })
+
+  it('decodes GBK bytes as 中文', () => {
+    const gbk = new Uint8Array([0xD6, 0xD0, 0xCE, 0xC4])
+    expect(decodePreviewBytes(gbk, 'gbk')).toBe('中文')
+  })
+
+  it('maps non-ASCII bytes to ? in ASCII mode', () => {
+    const mixed = new Uint8Array([0x41, 0xD6, 0x42])
+    expect(decodePreviewBytes(mixed, 'ascii')).toBe('A?B')
+  })
+})
+
 describe('preview store', () => {
-  it('rejects unsupported types without calling the API', async () => {
+  it('opens unknown types as text and calls the API', async () => {
+    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text' })
     const store = usePreviewStore()
     await store.openPreview('b1', 'C:\\x\\payload.exe', 'payload.exe', 1024)
-    expect(mocks.createPreview).not.toHaveBeenCalled()
-    expect(store.visible).toBe(false)
-    expect(store.status).toBe('idle')
+    expect(mocks.createPreview).toHaveBeenCalledWith('b1', 'C:\\x\\payload.exe')
+    expect(store.visible).toBe(true)
+    expect(store.kind).toBe('text')
   })
 
   it('rejects files over 2MB without calling the API', async () => {
@@ -188,7 +120,7 @@ describe('preview store', () => {
       remotePath: 'C:\\x\\flag.txt',
       fileName: 'flag.txt',
       kind: 'text',
-      mime: 'text/plain; charset=utf-8',
+      mime: 'application/octet-stream',
       status: 'receiving',
     })
     const store = usePreviewStore()
@@ -211,19 +143,32 @@ describe('preview store', () => {
   it('ignores events for a non-active preview', async () => {
     const store = usePreviewStore()
     await store.handlePreviewEvent({ preview_id: 'pv-other', status: 'ready' })
-    expect(mocks.fetchPreviewText).not.toHaveBeenCalled()
+    expect(mocks.fetchPreviewBytes).not.toHaveBeenCalled()
     expect(mocks.fetchPreviewImageBase64).not.toHaveBeenCalled()
   })
 
-  it('fetches and renders text content on ready', async () => {
-    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text', mime: 'text/plain; charset=utf-8' })
-    mocks.fetchPreviewText.mockResolvedValue('hello world')
+  it('fetches raw bytes and renders text on ready', async () => {
+    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text', mime: 'application/octet-stream' })
+    mocks.fetchPreviewBytes.mockResolvedValue(utf8Bytes('hello world'))
     const store = usePreviewStore()
     await store.openPreview('b1', 'C:\\x\\flag.txt', 'flag.txt', 100)
-    await store.handlePreviewEvent({ preview_id: 'pv-1', status: 'ready', mime: 'text/plain; charset=utf-8' })
-    expect(mocks.fetchPreviewText).toHaveBeenCalledWith('pv-1')
+    await store.handlePreviewEvent({ preview_id: 'pv-1', status: 'ready' })
+    expect(mocks.fetchPreviewBytes).toHaveBeenCalledWith('pv-1')
     expect(store.status).toBe('ready')
     expect(store.content).toBe('hello world')
+    expect(store.encoding).toBe('utf-8')
+  })
+
+  it('redecodes locally when encoding changes', async () => {
+    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text' })
+    mocks.fetchPreviewBytes.mockResolvedValue(new Uint8Array([0xD6, 0xD0, 0xCE, 0xC4]))
+    const store = usePreviewStore()
+    await store.openPreview('b1', 'C:\\x\\gbk.txt', 'gbk.txt', 4)
+    await store.handlePreviewEvent({ preview_id: 'pv-1', status: 'ready' })
+    store.setEncoding('gbk')
+    expect(store.content).toBe('中文')
+    store.setEncoding('ascii')
+    expect(store.content).toBe('????')
   })
 
   it('renders image content as a data URL on ready', async () => {
@@ -238,7 +183,7 @@ describe('preview store', () => {
   })
 
   it('maps too_large failure to a friendly message', async () => {
-    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text', mime: 'text/plain; charset=utf-8' })
+    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text' })
     const store = usePreviewStore()
     await store.openPreview('b1', 'C:\\x\\big.log', 'big.log', 100)
     await store.handlePreviewEvent({ preview_id: 'pv-1', status: 'failed', reason: 'too_large' })
@@ -247,7 +192,7 @@ describe('preview store', () => {
   })
 
   it('maps read_error failure', async () => {
-    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text', mime: 'text/plain; charset=utf-8' })
+    mocks.createPreview.mockResolvedValue({ previewId: 'pv-1', kind: 'text' })
     const store = usePreviewStore()
     await store.openPreview('b1', 'C:\\x\\flag.txt', 'flag.txt', 100)
     await store.handlePreviewEvent({ preview_id: 'pv-1', status: 'failed', reason: 'read_error' })

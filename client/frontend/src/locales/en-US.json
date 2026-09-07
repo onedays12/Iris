@@ -465,7 +465,6 @@
   },
   "preview": {
     "loading": "Previewing…",
-    "unsupported": "This file type cannot be previewed; please download it",
     "tooLargeHint": "File exceeds the 2MB preview limit; use download instead",
     "tooLarge": "File exceeds 2MB; please use download",
     "readError": "Failed to read the file",
@@ -474,6 +473,7 @@
     "copied": "Copied",
     "copyFailed": "Copy failed",
     "download": "Download",
+    "encoding": "Encoding",
     "imageHint": "Scroll to zoom · Drag to pan · Double-click to reset"
   },
   "dock": {
@@ -557,8 +557,6 @@
     "shellcodeFrontDesc": "Prepends bootstrap and RDI shellcode before the PE, then appends the PE content",
     "shellcodePost": "post",
     "shellcodePostDesc": "Writes bootstrap into the PE entry point and appends RDI shellcode after the PE",
-    "shellcodeEmbed": "embed",
-    "shellcodeEmbedDesc": "Finds a loader function exported by the DLL and replaces the DOS header with a jump stub",
     "archAmd64": "amd64 (64-bit)",
     "archX86": "x86 (32-bit)",
     "extTcpNoGo": "C implementation, External TCP does not support Go-Beacon",
@@ -591,9 +589,23 @@
     "pePlaceholder": "Select a local PE file (.exe / .dll)...",
     "chooseFile": "Choose File",
     "supportedExts": "Supported extensions: .exe, .dll",
-    "fieldLoaderName": "Loader Name",
-    "loaderPlaceholder": "Enter the exported Loader name...",
-    "loaderHint": "Only required for embed mode. Defaults to ReflectiveLoader.",
+    "fieldShellcodeArch": "Target architecture",
+    "shellcodeArchAuto": "Auto (from PE Machine)",
+    "shellcodeArchX64": "x64",
+    "shellcodeArchX86": "x86",
+    "shellcodeArchHint": "Must match the input PE. Auto detects from the PE Machine field.",
+    "fieldExportName": "DLL export name",
+    "exportNamePlaceholder": "Optional, e.g. DllInstall",
+    "exportNameHint": "When set, the ROR13 hash is used to call that export. Otherwise DllMain / EXE entry runs.",
+    "fieldExportHash": "Export hash",
+    "exportHashPlaceholder": "Optional, decimal or 0x hex",
+    "exportHashHint": "Export name wins. Use this hash only when the name is empty.",
+    "fieldUserDataHex": "User data (hex)",
+    "userDataHexPlaceholder": "Optional, e.g. 0102aabb",
+    "userDataHexHint": "User bytes passed to the DLL export. Do not combine with a file.",
+    "fieldUserDataFile": "User data file",
+    "userDataFilePlaceholder": "Optional, read user data from a file...",
+    "userDataFileHint": "Cannot be used together with hex. Passed to the export as pointer + length.",
     "cascadeInternalBeacon": "Cascade Internal Beacon",
     "internalGoDetail": "Go-Beacon currently only has a Windows amd64 / exe template, hosted by a parent Beacon that relays communication; Stager mode is not supported.",
     "internalCDetail": "C-Beacon is fixed to Windows / amd64 or x86 / exe, hosted by a parent Beacon that relays communication; Stager mode is not supported.",
@@ -1218,7 +1230,9 @@
     "stageModeInvalid": "Unsupported payload stage_mode",
     "beaconTypeInvalid": "Payload beacon_type must be c or go",
     "cFormatStagerOnly": "Payload format=c only supports stager mode",
-    "shellcodeModeInvalid": "Unsupported shellcode mode"
+    "shellcodeModeInvalid": "Unsupported shellcode mode",
+    "shellcodeArchInvalid": "Shellcode arch must be auto, x64, or x86",
+    "shellcodeUserDataConflict": "user_data_base64 and user_data_hex cannot both be set"
   },
   "listenerForm": {
     "hostEmpty": "{label} cannot be empty",
@@ -1270,7 +1284,9 @@
     "typeLabel": "Type",
     "noArgsHint": "This action requires no extra arguments and will execute directly.",
     "executing": "Executing...",
-    "execute": "Execute"
+    "execute": "Execute",
+    "chooseFile": "Choose file",
+    "chooseFilePlaceholder": "Select a local file..."
   },
   "sidebar": {
     "nav": "Navigation",

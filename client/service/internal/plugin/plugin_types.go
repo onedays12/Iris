@@ -38,8 +38,9 @@ type PluginActionField struct {
 	Required      bool           `json:"required"`
 	Help          LocalizedText  `json:"help"`
 	Options       []string       `json:"options,omitempty"`
-	Role          string         `json:"role,omitempty"`
-	PostExArg     string         `json:"postex_arg,omitempty"`
+		Role          string         `json:"role,omitempty"`
+		PostExArg     string         `json:"postex_arg,omitempty"`
+		Accept        string         `json:"accept,omitempty"`
 }
 
 type PluginAction struct {
@@ -143,8 +144,9 @@ func clonePluginActions(actions []PluginAction) []PluginAction {
 				Required:      field.Required,
 				Help:          field.Help.Clone(),
 				Options:       append([]string{}, field.Options...),
-				Role:          field.Role,
-				PostExArg:     field.PostExArg,
+					Role:          field.Role,
+					PostExArg:     field.PostExArg,
+					Accept:        field.Accept,
 			})
 		}
 		out = append(out, cloned)

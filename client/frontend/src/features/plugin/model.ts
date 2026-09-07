@@ -51,6 +51,7 @@ export interface PluginActionField {
   options: string[]
   role: string
   postexArg: string
+  accept: string
 }
 
 export interface PluginPostExConfig {
@@ -157,6 +158,7 @@ function normalizePluginActionField(field: unknown): PluginActionField | null {
     options: Array.isArray(options) ? options.map(item => pickString(item)).filter(Boolean) : [],
     role: pickString(pick(field, ['role'], '')).toLowerCase(),
     postexArg: pickString(pick(field, ['postex_arg'], '')),
+    accept: pickString(pick(field, ['accept'], '')),
   }
 }
 

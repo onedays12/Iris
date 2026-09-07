@@ -6,15 +6,6 @@
  * 命令以后台 Job 运行，stdout/stderr 经管道捕获后按原 task_id 回传。
  */
 
-/* 将 exec 命令输出以数组前缀字节打包到 ByteBuf 中 */
-static ByteBuf PacketPackTextArray(const CHAR* text)
-{
-    ByteBuf out;
-    BbInit(&out);
-    PacketArrayBytes(&out, text, text ? strlen(text) : 0);
-    return out;
-}
-
 typedef struct ShellJobArgs {
     BeaconContext* ctx;
     BeaconJob* job;

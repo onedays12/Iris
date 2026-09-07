@@ -257,6 +257,13 @@ export class PluginActionField {
              */
             this["postex_arg"] = undefined;
         }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["accept"] = undefined;
+        }
 
         Object.assign(this, $$source);
     }

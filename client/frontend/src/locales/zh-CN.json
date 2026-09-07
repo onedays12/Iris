@@ -465,7 +465,6 @@
   },
   "preview": {
     "loading": "预览中…",
-    "unsupported": "该文件类型不支持预览，请使用下载",
     "tooLargeHint": "文件超过 2MB 预览上限，请改用下载",
     "tooLarge": "文件超过 2MB，请使用下载",
     "readError": "文件读取失败",
@@ -474,6 +473,7 @@
     "copied": "已复制",
     "copyFailed": "复制失败",
     "download": "下载",
+    "encoding": "编码",
     "imageHint": "滚轮缩放 · 拖拽平移 · 双击复位"
   },
   "dock": {
@@ -557,8 +557,6 @@
     "shellcodeFrontDesc": "在 PE 前拼接 bootstrap 和 RDI shellcode，再追加 PE 内容",
     "shellcodePost": "post",
     "shellcodePostDesc": "将 bootstrap 写入 PE 起始位置，并在 PE 后追加 RDI shellcode",
-    "shellcodeEmbed": "embed",
-    "shellcodeEmbedDesc": "查找 DLL 导出的 loader 函数，将 DOS 头替换为跳转 stub",
     "archAmd64": "amd64 (64位)",
     "archX86": "x86 (32位)",
     "extTcpNoGo": "C 实现，External TCP 不支持 Go-Beacon",
@@ -591,9 +589,23 @@
     "pePlaceholder": "请选择本地 PE 文件（.exe / .dll）...",
     "chooseFile": "选择文件",
     "supportedExts": "支持的后缀类型: .exe, .dll",
-    "fieldLoaderName": "Loader 名称",
-    "loaderPlaceholder": "请输入导出的 Loader 名称...",
-    "loaderHint": "仅 embed 模式需要。默认值为 ReflectiveLoader。",
+    "fieldShellcodeArch": "目标架构",
+    "shellcodeArchAuto": "自动（按 PE Machine）",
+    "shellcodeArchX64": "x64",
+    "shellcodeArchX86": "x86",
+    "shellcodeArchHint": "必须和输入 PE 架构一致。留空/自动时按 PE Machine 探测。",
+    "fieldExportName": "DLL 导出名",
+    "exportNamePlaceholder": "可选，例如 DllInstall",
+    "exportNameHint": "填写后按 ROR13 计算 hash 并调用该导出；不填则走 DllMain / EXE 入口。",
+    "fieldExportHash": "导出 Hash",
+    "exportHashPlaceholder": "可选，十进制或 0x 十六进制",
+    "exportHashHint": "导出名优先。没有导出名时才用这个 hash。",
+    "fieldUserDataHex": "User data（hex）",
+    "userDataHexPlaceholder": "可选，例如 0102aabb",
+    "userDataHexHint": "传给 DLL 导出的用户数据。与文件二选一。",
+    "fieldUserDataFile": "User data 文件",
+    "userDataFilePlaceholder": "可选，从文件读取用户数据...",
+    "userDataFileHint": "与 hex 不能同时填。数据以指针+长度交给导出函数。",
     "cascadeInternalBeacon": "Cascade Internal Beacon",
     "internalGoDetail": "Go-Beacon 目前仅有 Windows amd64 / exe 模板，由父级 Beacon 承载并转发通信，不支持 Stager 模式。",
     "internalCDetail": "C-Beacon 固定使用 Windows / amd64 或 x86 / exe，由父级 Beacon 承载并转发通信，不支持 Stager 模式。",
@@ -1218,7 +1230,9 @@
     "stageModeInvalid": "Payload stage_mode 不受支持",
     "beaconTypeInvalid": "Payload beacon_type 只允许 c 或 go",
     "cFormatStagerOnly": "Payload format=c 仅支持 stager 模式",
-    "shellcodeModeInvalid": "Shellcode mode 不受支持"
+    "shellcodeModeInvalid": "Shellcode mode 不受支持",
+    "shellcodeArchInvalid": "Shellcode arch 只允许 auto、x64 或 x86",
+    "shellcodeUserDataConflict": "user_data_base64 与 user_data_hex 不能同时填写"
   },
   "listenerForm": {
     "hostEmpty": "{label}不能为空",
@@ -1270,7 +1284,9 @@
     "typeLabel": "类型",
     "noArgsHint": "该动作不需要额外参数，确认后将直接执行。",
     "executing": "执行中...",
-    "execute": "执行"
+    "execute": "执行",
+    "chooseFile": "选择文件",
+    "chooseFilePlaceholder": "请选择本机文件..."
   },
   "sidebar": {
     "nav": "导航",

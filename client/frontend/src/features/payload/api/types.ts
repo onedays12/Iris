@@ -23,11 +23,18 @@ export interface PayloadGenerateResult {
   stage_url?: string
 }
 
-export type ShellcodeMode = 'front' | 'post' | 'embed'
+export type ShellcodeMode = 'front' | 'post'
+export type ShellcodeArch = 'auto' | 'x64' | 'x86'
 
-export type ShellcodeGenerateRequest =
-  | { mode: 'front' | 'post'; pe_base64: string; loader_name?: never }
-  | { mode: 'embed'; pe_base64: string; loader_name?: string }
+export interface ShellcodeGenerateRequest {
+  mode: ShellcodeMode
+  pe_base64: string
+  arch?: ShellcodeArch | 'amd64'
+  export_name?: string
+  export_hash?: string | number
+  user_data_base64?: string
+  user_data_hex?: string
+}
 
 export interface ShellcodeGenerateResult {
   shellcode: string

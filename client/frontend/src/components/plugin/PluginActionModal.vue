@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useModalStore } from '../../stores/modal'
 import { useNotificationStore } from '../../stores/notification'
@@ -35,6 +35,12 @@ const activeAgent = computed(() => agentStore.getAgentById(activeBeaconId.value)
 
 const TEXT_FIELD_TYPES = new Set(['string', 'int8', 'int16', 'int32', 'int64', 'short', 'bytes', 'text', 'input'])
 const BOOL_FIELD_TYPES = new Set(['bool', 'boolean', 'checkbox'])
+const FILE_FIELD_TYPES = new Set(['file', 'filepath'])
+
+type PluginFileValue = { name: string; data: string }
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const pendingFileField = ref('')
 
 function getFieldType(field: RawPluginField) {
   return String(field?.type || 'string').trim().toLowerCase()
@@ -46,6 +52,41 @@ function isTextField(field: RawPluginField) {
 
 function isBooleanField(field: RawPluginField) {
   return BOOL_FIELD_TYPES.has(getFieldType(field))
+}
+
+function isFileField(field: RawPluginField) {
+  return FILE_FIELD_TYPES.has(getFieldType(field))
+}
+
+function isWideField(field: RawPluginField) {
+  return getFieldType(field) === 'textarea' || isFileField(field)
+}
+
+function emptyFileValue(): PluginFileValue {
+  return { name: '', data: '' }
+}
+
+function asFileValue(value: unknown): PluginFileValue {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>
+    return {
+      name: String(record.name || ''),
+      data: String(record.data || ''),
+    }
+  }
+  return emptyFileValue()
+}
+
+function readFileAsBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      resolve(result.includes(',') ? result.split(',')[1] : result)
+    }
+    reader.onerror = () => reject(reader.error || new Error(t('fileApi.readLocalFailed')))
+    reader.readAsDataURL(file)
+  })
 }
 
 function normalizeBooleanDefault(value: unknown) {
@@ -70,6 +111,9 @@ function normalizeFieldDefault(field: RawPluginField) {
   const defaultValue = archDefault !== undefined ? archDefault : (field.defaultValue ?? '')
   if (isBooleanField(field)) {
     return normalizeBooleanDefault(defaultValue)
+  }
+  if (isFileField(field)) {
+    return emptyFileValue()
   }
   return defaultValue === undefined || defaultValue === null ? '' : defaultValue
 }
@@ -151,6 +195,13 @@ function validateFields(action: RawPluginAction) {
     const fieldName = String(field.name || '').trim()
     if (!fieldName) continue
     if (isBooleanField(field)) continue
+    if (isFileField(field)) {
+      if (field.required && !asFileValue(formValues[fieldName]).data) {
+        notificationStore.warn(t('pluginAction.fillField', { name: displayText(field.label, fieldName) }))
+        return false
+      }
+      continue
+    }
     if (field.required && String(formValues[fieldName] ?? '').trim() === '') {
       notificationStore.warn(t('pluginAction.fillField', { name: displayText(field.label, fieldName) }))
       return false
@@ -161,7 +212,15 @@ function validateFields(action: RawPluginAction) {
 
 function serializeValues(values: Record<string, unknown>) {
   const result: Record<string, string> = {}
+  const action = normalizedAction()
+  const fileFields = new Set(
+    action.fields.filter((field: RawPluginField) => isFileField(field)).map((field: RawPluginField) => String(field.name || '')),
+  )
   Object.entries(values).forEach(([key, value]) => {
+    if (fileFields.has(key)) {
+      result[key] = asFileValue(value).data
+      return
+    }
     if (typeof value === 'boolean') {
       result[key] = value ? 'true' : 'false'
       return
@@ -173,6 +232,33 @@ function serializeValues(values: Record<string, unknown>) {
     result[key] = String(value)
   })
   return result
+}
+
+function triggerFilePick(field: RawPluginField) {
+  const fieldName = String(field?.name || '').trim()
+  if (!fieldName || submitting.value) return
+  pendingFileField.value = fieldName
+  const input = fileInputRef.value
+  if (!input) return
+  const accept = String(field.accept || '').trim()
+  if (accept) input.setAttribute('accept', accept)
+  else input.removeAttribute('accept')
+  input.click()
+}
+
+async function handleFilePicked(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  const fieldName = pendingFileField.value
+  target.value = ''
+  pendingFileField.value = ''
+  if (!file || !fieldName) return
+  try {
+    const data = await readFileAsBase64(file)
+    formValues[fieldName] = { name: file.name, data }
+  } catch (err) {
+    notificationStore.error((err instanceof Error ? err.message : String(err)) || t('fileApi.readLocalFailed'))
+  }
 }
 
 function makeStringArg(value: unknown) {
@@ -275,9 +361,14 @@ async function submit() {
             <div class="summary-line dim" v-if="normalizedAction().commandId">{{ t('pluginAction.commandIdLabel') }}: {{ normalizedAction().commandId }}</div>
           </div>
 
-          <!-- 动态渲染插件定义的输入字段 -->
-          <template v-if="normalizedAction().fields.length">
-            <div v-for="field in normalizedAction().fields" :key="field.name" class="form-group">
+          <!-- 动态渲染插件定义的输入字段：紧凑控件左右并排，宽控件独占一行 -->
+          <div v-if="normalizedAction().fields.length" class="fields-grid">
+            <div
+              v-for="field in normalizedAction().fields"
+              :key="field.name"
+              class="form-group"
+              :class="{ 'span-full': isWideField(field) }"
+            >
               <label class="field-label">{{ displayText(field.label, field.name) }}</label>
 
               <input
@@ -317,11 +408,22 @@ async function submit() {
                 <span>{{ displayText(field.help) || field.placeholder || t('pluginAction.enabled') }}</span>
               </label>
 
+              <div v-else-if="isFileField(field)" class="path-input-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  :value="asFileValue(formValues[field.name]).name"
+                  :placeholder="field.placeholder || t('pluginAction.chooseFilePlaceholder')"
+                  readonly
+                  @click="triggerFilePick(field)"
+                />
+                <button class="browse-btn" type="button" @click="triggerFilePick(field)">{{ t('pluginAction.chooseFile') }}</button>
+              </div>
+
               <p v-if="displayText(field.help)" class="help-text">{{ displayText(field.help) }}</p>
               <p v-else-if="field.required" class="help-text required">{{ t('pluginAction.required') }}</p>
-              <p v-if="field.type" class="help-text type">{{ t('pluginAction.typeLabel') }}: {{ String(field.type) }}</p>
             </div>
-          </template>
+          </div>
 
           <div v-else class="empty-hint">
             {{ t('pluginAction.noArgsHint') }}
@@ -329,6 +431,12 @@ async function submit() {
         </div>
 
         <footer class="modal-footer">
+          <input
+            ref="fileInputRef"
+            type="file"
+            style="display: none"
+            @change="handleFilePicked"
+          >
           <button class="btn btn-secondary" type="button" @click="close">{{ t('common.cancel') }}</button>
           <button class="btn btn-primary" type="button" @click="submit" :disabled="submitting">
             {{ submitting ? t('pluginAction.executing') : t('pluginAction.execute') }}
@@ -352,7 +460,7 @@ async function submit() {
 }
 
 .plugin-action-modal {
-  width: min(680px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
@@ -445,10 +553,27 @@ async function submit() {
   color: var(--text-muted);
 }
 
+.fields-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 16px;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+}
+
+.form-group.span-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .fields-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .field-label {
@@ -464,6 +589,22 @@ async function submit() {
   color: var(--text-primary);
   padding: 10px 12px;
   outline: none;
+}
+
+.path-input-group {
+  display: flex;
+  gap: 12px;
+}
+
+.browse-btn {
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--text-primary);
+  padding: 0 16px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .form-control.textarea {

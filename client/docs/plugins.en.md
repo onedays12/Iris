@@ -222,9 +222,10 @@ Field meaning:
 | `int16` / `short` | single line | `short` |
 | `int32` | single line | `int32` |
 | `int64` | single line | `string` |
-| `bytes` | single line | `bytes` |
+| `bytes` | single line | `bytes` (typed hex/base64) |
+| `file` | readonly path + file picker | `bytes` (local file contents, base64) |
 
-Do not use `text`. Dispatch will say unsupported arg kind. `options` is a string array only.
+`file` may set `accept` (e.g. `.bin,.pfx`) for the picker only. Do not send the path string to the BOF. Do not use `text`. Dispatch will say unsupported arg kind. `options` is a string array only.
 
 ## Packing
 

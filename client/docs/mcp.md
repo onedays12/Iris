@@ -68,7 +68,7 @@ GUI 那条 WS 不受影响。凭据跟 GUI 会话同生共死：重登、静默�
 | 载荷 | `generate_beacon` | 生成真实二进制，落盘，回绝对路径 + sha256 + 大小 |
 | 文件 | `upload_local_file`、`list_downloads`、`download_file` | 本机进 TeamServer 仓，beacon 去取，产物再拉回本机 |
 | 截图 | `request_screenshot`、`list_screenshots`、`save_screenshot` | 下任务、列清单、取回落盘 |
-| 预览 | `preview_remote_file` | 远端文本/图片白名单预览，≤2MB，一次调用拿完 |
+| 预览 | `preview_remote_file` | 远端任意文件预览（图片按原图，其余按文本），≤2MB，一次调用拿完 |
 
 ### `send_beacon_command`
 
@@ -105,7 +105,7 @@ GUI 那条 WS 不受影响。凭据跟 GUI 会话同生共死：重登、静默�
 
 ### `preview_remote_file`
 
-文本（`kind=text`）直接回 `content`。图片写到 `%TEMP%\iris-mcp-downloads\previews\`，回 `path_local`。超过 2MB，或不在白名单里，工具错误里会带 reason，让你改走 DOWNLOAD。内容走 CommandDownload 分块，按心跳回。没写 `timeout_ms` 就等 30 秒。
+文本（`kind=text`）直接回 `content`（原始字节按 UTF-8 尽力解码）。图片写到 `%TEMP%\iris-mcp-downloads\previews\`，回 `path_local`。超过 2MB 工具错误里会带 reason，让你改走 DOWNLOAD。内容走 CommandDownload 分块，按心跳回。没写 `timeout_ms` 就等 30 秒。
 
 手头测过：`C:\Windows\win.ini` 首行 `; for 16-bit app support`，mime `text/plain; charset=utf-8`。
 
@@ -167,7 +167,7 @@ HTTP 侧把任意 MCP 客户端指到 `http://127.0.0.1:9333` 就行。
 | 端口不通 | Client 没开，或者口被占了。换 `IRIS_MCP_LISTEN`，或者把口让出来再开 Client。 |
 | `wait_for_event` 超时 | beacon sleep 太长，先 SLEEP 把心跳打短；`since_seq` 取得太晚，漏帧了；`beacon_id` 写错，字段在嵌套 `data` 里。 |
 | create / generate 说 listener not found，或生成失败 | 监听器没 started。os / arch / format 组合不支持（stager 只认 windows+http stager；c 格式只在 stager 场景）。 |
-| preview 报 too_large / 类型不支持 | 超 2MB，或扩展名不在白名单。改 DOWNLOAD。白名单在 client `frontend/src/features/preview/model.ts` 和 TeamServer `server/transfer/codec.go`，两边要一起改。 |
+| preview 报 too_large | 超 2MB。改 DOWNLOAD。图片扩展名映射在 client `frontend/src/features/preview/model.ts` 和 TeamServer `server/transfer/codec.go`，两边要一起改。 |
 | 预览、下载 404 | TTL 过了（预览 5 分钟，下载暂存看 server 策略）。再发一次。 |
 | 409 conflict（create_preview） | 服务端活跃预览上限 10。把旧的 DELETE 掉，或者等一会儿。 |
 | stdio 桥回 HTTP 错误帧（-32000） | 常驻 Client 没开，桥转发不了。先起 Client。 |
@@ -179,7 +179,7 @@ HTTP 侧把任意 MCP 客户端指到 `http://127.0.0.1:9333` 就行。
 
 - 命令 ID：`frontend/src/constants/commands.ts` ↔ `service/mcp/commands.go`（快照测试会比）
 - 参数类型化：`features/beacon/api/commandArgs.ts` ↔ `buildBeaconCommandArgs`
-- 预览扩展名：`frontend/src/features/preview/model.ts` ↔ TeamServer `server/transfer/codec.go`（`npm run check:preview-mirror`）
+- 预览图片 MIME：`frontend/src/features/preview/model.ts` ↔ TeamServer `server/transfer/codec.go`（`npm run check:preview-mirror`）
 - WS 帧 type 键：`parse_frame.go` 的 `frameTypeKeys`，规范键是小写 `type`
 - COMMAND_EVENT 的嵌套：任务级字段（beacon_id / task_id）在 `payload.data`，结果元数据（preview_id / status / reason / text）在 `payload.data.data`。`matchFilters`、`previewEventMeta` 都按两级找。新工具要吃帧字段，先跑 `diag-preview-frame.mjs` 看真帧，别拿单测夹具脑补。以前出过假帧扁平、真帧嵌套，谓词永远命不中。
 

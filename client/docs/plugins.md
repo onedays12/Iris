@@ -222,9 +222,10 @@ inject-dll: [6, wait_ms, max_runtime_ms, idle_timeout_ms, description, module_ar
 | `int16` / `short` | 单行 | `short` |
 | `int32` | 单行 | `int32` |
 | `int64` | 单行 | `string` |
-| `bytes` | 单行 | `bytes` |
+| `bytes` | 单行 | `bytes`（手填 hex/base64 字符串） |
+| `file` | 路径只读 + 选择文件 | `bytes`（本机读文件内容，base64） |
 
-别用 `text`，执行会报 unsupported arg kind。`options` 只认字符串数组。
+`file` 可选再写 `accept`（如 `.bin,.pfx`），只影响文件选择器。别把路径字符串发给 BOF。别用 `text`，执行会报 unsupported arg kind。`options` 只认字符串数组。
 
 ## 打包
 

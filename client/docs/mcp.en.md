@@ -68,7 +68,7 @@ This port is loopback-only and has no auth. Any local process that connects owns
 | Payload | `generate_beacon` | real binary on disk, returns abs path + sha256 + size |
 | Files | `upload_local_file`, `list_downloads`, `download_file` | local file into TeamServer store, beacon fetches it, product comes back |
 | Screenshot | `request_screenshot`, `list_screenshots`, `save_screenshot` | dispatch, list, save to disk |
-| Preview | `preview_remote_file` | remote text/image whitelist preview, ≤2MB, one call |
+| Preview | `preview_remote_file` | remote preview of any file (images as-is, everything else as text), ≤2MB, one call |
 
 ### `send_beacon_command`
 
@@ -105,7 +105,7 @@ Inner `type` values you will see: `BEACON_REGISTERED`, `BEACON_TICK`, `USER_ONLI
 
 ### `preview_remote_file`
 
-Text (`kind=text`) comes back as `content`. Images go to `%TEMP%\iris-mcp-downloads\previews\` and you get `path_local`. Over 2MB, or not on the whitelist, the tool error has a reason and tells you to use DOWNLOAD. Payload rides CommandDownload chunks on the heartbeat. No `timeout_ms` means 30s.
+Text (`kind=text`) comes back as `content` (raw bytes, UTF-8 best-effort). Images go to `%TEMP%\iris-mcp-downloads\previews\` and you get `path_local`. Over 2MB, the tool error has a reason and tells you to use DOWNLOAD. Payload rides CommandDownload chunks on the heartbeat. No `timeout_ms` means 30s.
 
 We have seen `C:\Windows\win.ini` start with `; for 16-bit app support`, mime `text/plain; charset=utf-8`.
 
@@ -167,7 +167,7 @@ Dump real preview WS frames: `frontend/scripts/diag-preview-frame.mjs`. Trust th
 | Port dead | Client is not running, or the port is taken. Change `IRIS_MCP_LISTEN`, or free the port and start Client. |
 | `wait_for_event` times out | beacon sleep is long: SLEEP it down first. `since_seq` was taken too late and you missed frames. `beacon_id` is wrong; the field lives under nested `data`. |
 | create / generate says listener not found, or generate fails | listener is not started. os / arch / format combo is unsupported (stager is windows+http stager only; c format is stager-only). |
-| preview says too_large / type unsupported | over 2MB, or extension not on the whitelist. Use DOWNLOAD. Whitelist is `frontend/src/features/preview/model.ts` and TeamServer `server/transfer/codec.go`. Change both. |
+| preview says too_large | over 2MB. Use DOWNLOAD. Image MIME map is `frontend/src/features/preview/model.ts` and TeamServer `server/transfer/codec.go`. Change both. |
 | preview / download 404 | TTL expired (preview 5 min; download staging follows server policy). Send again. |
 | 409 conflict (`create_preview`) | server cap of 10 active previews. DELETE an old one, or wait. |
 | stdio bridge returns HTTP error frame (-32000) | the long-lived Client is not up, so the bridge cannot forward. Start Client first. |
@@ -179,7 +179,7 @@ If you touch one of these, touch the other. Tests help.
 
 - Command IDs: `frontend/src/constants/commands.ts` ↔ `service/mcp/commands.go` (snapshot test)
 - Arg typing: `features/beacon/api/commandArgs.ts` ↔ `buildBeaconCommandArgs`
-- Preview extensions: `frontend/src/features/preview/model.ts` ↔ TeamServer `server/transfer/codec.go` (`npm run check:preview-mirror`)
+- Preview image MIME: `frontend/src/features/preview/model.ts` ↔ TeamServer `server/transfer/codec.go` (`npm run check:preview-mirror`)
 - WS frame type keys: `frameTypeKeys` in `parse_frame.go`. Canonical key is lowercase `type`
 - COMMAND_EVENT nesting: task fields (`beacon_id` / `task_id`) live in `payload.data`. Result metadata (`preview_id` / `status` / `reason` / `text`) lives in `payload.data.data`. `matchFilters` and `previewEventMeta` search both levels. New tools that read frame fields should dump a real frame with `diag-preview-frame.mjs`. Do not invent the shape from a unit fixture. We already had a fake flat frame vs a nested real frame, and predicates never hit.
 

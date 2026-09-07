@@ -15,6 +15,7 @@ export interface PluginActionFieldDto {
   options?: string[]
   role?: string
   postex_arg?: string
+  accept?: string
 }
 
 export interface PluginPostExActionDto {

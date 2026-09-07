@@ -655,7 +655,7 @@ VOID ProfileLoad(Profile* p)
     strcpy_s(p->http.uri, sizeof(p->http.uri), "/index.php");
     strcpy_s(p->http.user_agent, sizeof(p->http.user_agent), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     strcpy_s(p->http.content_type, sizeof(p->http.content_type), "application/octet-stream");
-    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "10edff51257a9c29e4cb8e36eb73fa3c");
+    strcpy_s(p->http.encrypt_key, sizeof(p->http.encrypt_key), "f625bca4076922b1f573adaf6af4b3ef");
     strcpy_s(p->encrypt_key, sizeof(p->encrypt_key), p->http.encrypt_key);
     SetDefaultHttpTransform(p);
 
@@ -669,7 +669,7 @@ VOID ProfileLoad(Profile* p)
     p->tcp_external.reconnect_count = 3;
     p->tcp_external.reconnect_time_ms = 3000;
     p->tcp_external.ssl = 1;
-    strcpy_s(p->tcp_external.encrypt_key, sizeof(p->tcp_external.encrypt_key), "4d137aadf252d2f89dd46173ab54ef8f");
+    strcpy_s(p->tcp_external.encrypt_key, sizeof(p->tcp_external.encrypt_key), "f625bca4076922b1f573adaf6af4b3ef");
 
     strcpy_s(p->tcp_internal.bind_host, sizeof(p->tcp_internal.bind_host), "0.0.0.0");
     p->tcp_internal.bind_port = 4444;

@@ -9,6 +9,7 @@ import type {
   PayloadGenerateResult,
   PayloadOs,
   PayloadStageMode,
+  ShellcodeArch,
   ShellcodeGenerateRequest,
   ShellcodeGenerateResult,
   ShellcodeMode,
@@ -19,7 +20,8 @@ const PAYLOAD_ARCH = new Set<PayloadArch>(['amd64', 'x86', 'arm', 'arm64'])
 const PAYLOAD_FORMAT = new Set<PayloadFormat>(['exe', 'dll', 'bin', 'shellcode', 'c', 'elf', 'macho'])
 const STAGE_MODE = new Set<PayloadStageMode>(['stagerless', 'stager'])
 const BEACON_TYPE = new Set<BeaconType>(['c', 'go'])
-const SHELLCODE_MODE = new Set<ShellcodeMode>(['front', 'post', 'embed'])
+const SHELLCODE_MODE = new Set<ShellcodeMode>(['front', 'post'])
+const SHELLCODE_ARCH = new Set<string>(['auto', 'x64', 'x86', 'amd64'])
 
 function parsePayloadResult(value: unknown): PayloadGenerateResult {
   const record = expectRecord(value, 'Payload')
@@ -64,13 +66,24 @@ export async function generateShellcode(params: ShellcodeGenerateRequest): Promi
   const mode = String(params.mode || 'front').trim().toLowerCase() as ShellcodeMode
   if (!SHELLCODE_MODE.has(mode)) throw new Error(i18n.global.t('payload.shellcodeModeInvalid'))
 
-  const payload: ShellcodeGenerateRequest = mode === 'embed'
-    ? {
-        mode,
-        pe_base64: String(params.pe_base64 || ''),
-        loader_name: String(('loader_name' in params && params.loader_name) || 'ReflectiveLoader'),
-      }
-    : { mode, pe_base64: String(params.pe_base64 || '') }
+  const payload: ShellcodeGenerateRequest = {
+    mode,
+    pe_base64: String(params.pe_base64 || ''),
+  }
+  const arch = String(params.arch || 'auto').trim().toLowerCase()
+  if (!SHELLCODE_ARCH.has(arch)) throw new Error(i18n.global.t('payload.shellcodeArchInvalid'))
+  if (arch && arch !== 'auto') payload.arch = arch === 'amd64' ? 'x64' : arch as ShellcodeArch
+  const exportName = String(params.export_name || '').trim()
+  if (exportName) payload.export_name = exportName
+  const exportHash = params.export_hash
+  if (exportHash !== undefined && exportHash !== null && String(exportHash).trim() !== '') {
+    payload.export_hash = typeof exportHash === 'number' ? exportHash : String(exportHash).trim()
+  }
+  const userDataBase64 = String(params.user_data_base64 || '').trim()
+  const userDataHex = String(params.user_data_hex || '').trim()
+  if (userDataBase64 && userDataHex) throw new Error(i18n.global.t('payload.shellcodeUserDataConflict'))
+  if (userDataBase64) payload.user_data_base64 = userDataBase64
+  if (userDataHex) payload.user_data_hex = userDataHex
 
   return parseShellcodeResult(await request<unknown, ShellcodeGenerateRequest>('POST', '/api/v1/payload/shellcode', payload))
 }

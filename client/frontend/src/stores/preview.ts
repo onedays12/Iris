@@ -3,9 +3,11 @@
  *
  * 状态机: idle → creating(创建任务) → receiving(等待/拉取内容) → ready | failed
  *
- * - openPreview: 入口预判(类型白名单 + 2MB 上限) → 创建预览任务 → 弹窗进入「预览中…」
+ * - openPreview: 入口预判(2MB 上限) → 创建预览任务 → 弹窗进入「预览中…」
+ *   图片按扩展名走原图；其余一律按文本打开。
  * - handlePreviewEvent: 由 commandEventHandler 收到 phase=preview 事件后调用
- *   (ready → 拉取内容; failed → 按 reason 提示)
+ *   (ready → 拉取原始字节; failed → 按 reason 提示)
+ * - setEncoding: 仅重解码本地字节，不重新拉取
  * - close: 释放 server 内存(DELETE, fire-and-forget)并复位
  * - 单例: 打开新预览前自动释放旧预览
  */
@@ -15,13 +17,16 @@ import { i18n } from '../i18n/index'
 import { useNotificationStore } from './notification'
 import {
   createPreview,
+  fetchPreviewBytes,
   fetchPreviewImageBase64,
-  fetchPreviewText,
   releasePreview,
 } from '../features/preview/api'
 import {
+  decodePreviewBytes,
+  detectPreviewEncoding,
   getPreviewKind,
   isPreviewTooLarge,
+  type PreviewEncoding,
   type PreviewKind,
 } from '../features/preview/model'
 
@@ -38,6 +43,9 @@ interface PreviewState {
   mime: string
   /** 文本内容或图片 data URL */
   content: string
+  /** 文本预览的原始字节，切换编码时本地重解码 */
+  rawBytes: Uint8Array | null
+  encoding: PreviewEncoding
   size: number
   errorMessage: string
 }
@@ -58,6 +66,8 @@ const IDLE_STATE: PreviewState = {
   kind: '',
   mime: '',
   content: '',
+  rawBytes: null,
+  encoding: 'utf-8',
   size: 0,
   errorMessage: '',
 }
@@ -92,20 +102,17 @@ export const usePreviewStore = defineStore('preview', {
     },
 
     /**
-     * 打开预览：预判类型与大小后创建预览任务。
-     * 不支持的类型 / 超限文件直接提示，不发起请求。
+     * 打开预览：预判大小后创建预览任务。
+     * 超限文件直接提示，不发起请求。任意扩展名均可查看。
      */
     async openPreview(beaconId: string, path: string, fileName: string, size: number): Promise<void> {
       const t = i18n.global.t
-      const kind = getPreviewKind(fileName)
-      if (!kind) {
-        useNotificationStore().warn(t('preview.unsupported'))
-        return
-      }
       if (isPreviewTooLarge(size)) {
         useNotificationStore().warn(t('preview.tooLargeHint'))
         return
       }
+
+      const kind = getPreviewKind(fileName)
 
       // 单例：打开新预览前释放旧的
       if (this.visible && this.previewId) {
@@ -132,6 +139,15 @@ export const usePreviewStore = defineStore('preview', {
       }
     },
 
+    /** 仅重解码本地原始字节，不重新拉取。 */
+    setEncoding(encoding: PreviewEncoding): void {
+      if (this.kind !== 'text') return
+      this.encoding = encoding
+      if (this.rawBytes) {
+        this.content = decodePreviewBytes(this.rawBytes, encoding)
+      }
+    },
+
     /**
      * 处理 phase=preview 的 WS 事件（由 commandEventHandler 分发）。
      * preview_id 与当前活跃预览不一致时忽略（迟到事件）。
@@ -152,7 +168,10 @@ export const usePreviewStore = defineStore('preview', {
             const mime = String(record.mime || this.mime || 'image/png')
             this.content = `data:${mime};base64,${base64}`
           } else {
-            this.content = await fetchPreviewText(previewId)
+            const bytes = await fetchPreviewBytes(previewId)
+            this.rawBytes = bytes
+            this.encoding = detectPreviewEncoding(bytes)
+            this.content = decodePreviewBytes(bytes, this.encoding)
           }
           this.mime = String(record.mime || this.mime || '')
           this.status = 'ready'

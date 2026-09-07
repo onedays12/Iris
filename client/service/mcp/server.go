@@ -12,7 +12,7 @@ import (
 )
 
 // ServerVersion 与 client 各发布面的版本保持同步(见 chore: bump version 提交惯例)。
-var ServerVersion = "0.4.0"
+var ServerVersion = "0.4.1"
 
 const (
 	// DefaultListenAddr 为 MCP HTTP 入口默认地址(避开 CDP 的 9222)。

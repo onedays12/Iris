@@ -45,21 +45,21 @@ describe('buildExecuteShellCommand', () => {
       cwd: 'C:\\Users\\Public',
       filePath: 'C:\\Users\\Public\\irisclient.exe',
       args: '',
-      })).toBe('cd /d "C:\\Users\\Public" && start "" "C:\\Users\\Public\\irisclient.exe"')
+      })).toBe('cd /d "C:\\Users\\Public" && start /b "" "C:\\Users\\Public\\irisclient.exe"')
 
     expect(buildExecuteShellCommand({
       isWindows: true,
       cwd: 'C:\\Program Files',
       filePath: 'C:\\Program Files\\a.exe',
       args: '--silent /S',
-    })).toBe('cd /d "C:\\Program Files" && start "" "C:\\Program Files\\a.exe" --silent /S')
+    })).toBe('cd /d "C:\\Program Files" && start /b "" "C:\\Program Files\\a.exe" --silent /S')
 
     expect(buildExecuteShellCommand({
       isWindows: true,
       cwd: 'C:\\Users\\Administrator\\Desktop',
       filePath: 'C:\\Users\\Administrator\\Desktop\\images (1).jpeg',
       args: '',
-    })).toBe('cd /d "C:\\Users\\Administrator\\Desktop" && start "" "C:\\Users\\Administrator\\Desktop\\images (1).jpeg"')
+    })).toBe('cd /d "C:\\Users\\Administrator\\Desktop" && start /b "" "C:\\Users\\Administrator\\Desktop\\images (1).jpeg"')
   })
 
   it('cds then runs the quoted Unix file', () => {

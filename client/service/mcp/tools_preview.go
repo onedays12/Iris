@@ -57,9 +57,9 @@ func previewReadyPred(previewID string) func(FrameRecord) bool {
 func registerPreviewTools(s *Server) {
 	msdk.AddTool(s.srv, &msdk.Tool{
 		Name: "preview_remote_file",
-		Description: "读取 beacon 主机上文本/图片文件的预览内容(白名单受限、2MB 上限,内存中转不落盘)。" +
-			"文本直接返回 UTF-8 内容;图片落盘本地 PNG/JPEG 并返回路径。" +
-			"不支持的类型或超限时报错并提示改用 DOWNLOAD。",
+			Description: "读取 beacon 主机上任意文件的预览内容(图片按原图,其余按文本;2MB 上限,内存中转不落盘)。" +
+				"文本直接返回内容;图片落盘本地 PNG/JPEG 并返回路径。" +
+				"超限时报错并提示改用 DOWNLOAD。",
 	}, func(ctx context.Context, req *msdk.CallToolRequest, in previewRemoteIn) (*msdk.CallToolResult, any, error) {
 		beacon := strings.TrimSpace(in.BeaconID)
 		path := strings.TrimSpace(in.RemotePath)

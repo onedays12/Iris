@@ -1,4 +1,33 @@
 #include "beacon_bof_internal.h"
+#ifdef BOF_LOADER_DEBUG
+DWORD g_dbg_got_sizing = 0;
+DWORD g_dbg_got_used = 0;
+#endif
+
+/* MSVC emits lea reg,[__ImageBase] + ADDR32NB to statics (image-relative).
+ * MinGW uses __image_base__. Neither is a BSS common; treating them as BSS
+ * sends the lea target past the mapped image and the ADDR32NB load faults. */
+static BOOL BofIsImageBaseSymbol(PCHAR name)
+{
+    const char *a;
+    const char *b;
+    static const char *kNames[] = { "__ImageBase", "___ImageBase", "__image_base__", NULL };
+    DWORD i;
+
+    if (!name)
+        return FALSE;
+    for (i = 0; kNames[i]; i++) {
+        a = name;
+        b = kNames[i];
+        while (*a && *b && *a == *b) {
+            a++;
+            b++;
+        }
+        if (*a == '\0' && *b == '\0')
+            return TRUE;
+    }
+    return FALSE;
+}
 
 /* 验证 COFF 文件头的完整性和合法性 */
 static BOOL BofValidateCoff(PCOFFEE pCoffee, DWORD dwBofSize, PCHAR reason, SIZE_T reasonSize)
@@ -97,7 +126,7 @@ static SIZE_T BofParseTotalSize(BofJobRuntime* runtime, PCOFFEE pCoffee,
                 coff_symbol->SectionNumber == 0x0) {
                 if (BofHashString(symbol_name, COFF_PREP_SYMBOL_SIZE, FALSE) == COFF_PREP_SYMBOL)
                     number_of_func++;
-                else {
+                else if (!BofIsImageBaseSymbol(symbol_name)) {
                     *pstBSSSize += coff_symbol->Value;
                     runtime->bss_entry_count++;
                 }
@@ -112,6 +141,9 @@ static SIZE_T BofParseTotalSize(BofJobRuntime* runtime, PCOFFEE pCoffee,
     *stTotalSize += 0x4;
     runtime->bss_entry_capacity = runtime->bss_entry_count;
 
+#ifdef BOF_LOADER_DEBUG
+    g_dbg_got_sizing = number_of_func;
+#endif
     return sizeof(PVOID) * number_of_func;
 }
 
@@ -295,10 +327,15 @@ static BOOL BofProcessSection(BeaconContext* ctx, BofJobRuntime* runtime, PCOFFE
 
             if ((coff_symbol->StorageClass == IMAGE_SYM_CLASS_EXTERNAL) &&
                 coff_symbol->SectionNumber == 0x0) {
-                if (!BofProcessSymbol(runtime, symbol_name, coff_symbol, &function_ptr, &bss_entry_offset))
-                    return FALSE;
-                if (!function_ptr && bss_entry_offset)
-                    bss_addr = (ULONG_PTR)pCoffee->BSS + bss_entry_offset;
+                if (BofIsImageBaseSymbol(symbol_name)) {
+                    /* Direct REL32/ADDR* to the mapped image, not a GOT slot. */
+                    bss_addr = (ULONG_PTR)pCoffee->ImageBase;
+                } else {
+                    if (!BofProcessSymbol(runtime, symbol_name, coff_symbol, &function_ptr, &bss_entry_offset))
+                        return FALSE;
+                    if (!function_ptr && bss_entry_offset)
+                        bss_addr = (ULONG_PTR)pCoffee->BSS + bss_entry_offset;
+                }
             }
 
 #if _WIN64
@@ -315,19 +352,25 @@ static BOOL BofProcessSection(BeaconContext* ctx, BofJobRuntime* runtime, PCOFFE
 
                 } else if (pCoffee->Reloc->Type >= IMAGE_REL_AMD64_REL32 &&
                            pCoffee->Reloc->Type <= IMAGE_REL_AMD64_REL32_5) {
+                    /* MSVC stores field offsets in the instruction addend
+                     * (e.g. WIN32_FIND_DATAW.cFileName = +0x2C) AND the
+                     * in-section offset in coff_symbol->Value. Dropping
+                     * either one mis-aims lea/cmp at the struct base. */
+                    UINT32 Addend = *(PUINT32)reloc_addr;
                     if (bss_addr != 0) {
-                        Offset = (UINT32)(bss_addr -
+                        Offset = (UINT32)(bss_addr + Addend -
                             (ULONG_PTR)(pCoffee->Reloc->Type - 4) -
                             ((ULONG_PTR)reloc_addr + 4));
                     } else if ((coff_symbol->StorageClass == IMAGE_SYM_CLASS_STATIC &&
                                 coff_symbol->Value != 0) ||
                                (coff_symbol->StorageClass == IMAGE_SYM_CLASS_EXTERNAL &&
                                 coff_symbol->SectionNumber != 0x0)) {
-                        Offset = (UINT32)((ULONG_PTR)coff_symbol->Value +
+                        Offset = (UINT32)(Addend +
+                            (ULONG_PTR)coff_symbol->Value +
                             (ULONG_PTR)(symbol_sec_addr) - (ULONG_PTR)(reloc_addr) -
                             sizeof(UINT32) - (ULONG_PTR)(pCoffee->Reloc->Type - 4));
                     } else {
-                        Offset = (UINT32)((ULONG_PTR)*(PUINT32)(reloc_addr) +
+                        Offset = (UINT32)((ULONG_PTR)Addend +
                             (ULONG_PTR)(symbol_sec_addr) - (ULONG_PTR)(reloc_addr) -
                             sizeof(UINT32) - (ULONG_PTR)(pCoffee->Reloc->Type - 4));
                     }
@@ -454,6 +497,9 @@ static BOOL BofProcessSection(BeaconContext* ctx, BofJobRuntime* runtime, PCOFFE
         }
     }
 
+#ifdef BOF_LOADER_DEBUG
+    g_dbg_got_used = number_of_func;
+#endif
     return TRUE;
 }
 

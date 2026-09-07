@@ -63,10 +63,11 @@ GitHub 仓库页面可能不会直接预览较大的 LFS 视频。可以直接�
 - 管理 Listener、Payload、Beacon、任务、文件、截图、隧道。
 - 支持 Beacon 右键菜单和插件动作入口。
 - 支持 BOF/OBJ 与 PostEx 插件动作（含 `spawn-dll` / `inject-dll`、按架构选 DLL、manifest lint）。
+- PoolParty 插件：线程池注入变体 2–8（七个 BOF 动作）。
 - 支持 PostEx metadata / progress / artifact / error 等结构化 frame 展示，artifact 接入下载页面。
 - 内嵌 MCP Server，Agent 可直接驱动监听器、Beacon、命令、文件和事件。
 - 工作台 BottomDock：控制台、事件、传输集中收纳在窗口底部。
-- 远程文件预览：文本 / 图片白名单，内存中转，不落盘。
+- 远程文件预览：任意文件可按文本打开（带编码选择器），内存中转，不落盘。
 - Beacon 备注与分组、勾选批量删除；文件浏览器支持执行、原生拖拽上传和本 Beacon 传输面板。
 - 登录支持记住密码（登录成功才写入）。
 
@@ -81,7 +82,7 @@ GitHub 仓库页面可能不会直接预览较大的 LFS 视频。可以直接�
 - 支持 stagerless 与 staged payload 生成，支持 C/Go 两类 Beacon 模板。
 - 任务持久化、pending 任务恢复、任务状态跟踪、结果回传。
 - PostEx `spawn_dll` / `inject_dll`、结构化 frame 事件、artifact 下载。
-- 远程文件预览（文本 / 图片白名单，内存中转，不落盘），Beacon 无需改动。
+- 远程文件预览：保留原始字节，不限文本/图片，内存中转，不落盘，Beacon 无需改动。
 - 会话备注、分组、批量删除 API；`GET /transfers/active` 传输对账快照。
 - 文件上传 / Beacon 文件下载 / 分块传输 / 截图 / 隧道转发。
 - Windows 7 兼容 TLS cipher fallback；SQLite 本地持久化；基础伪装响应。
@@ -189,6 +190,7 @@ Client 构建产物在 `client/bin/`。启动后填 Server 地址、用户名、
 client/plugins/
 ├── execution-injection/
 ├── linux-elf-bof/
+├── poolparty/
 └── postex-template/
 ```
 

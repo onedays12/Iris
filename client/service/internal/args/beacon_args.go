@@ -98,8 +98,8 @@ func BuildBeaconCommandArg(kind string, value any) (BeaconCommandArg, error) {
 			return BeaconCommandArg{Kind: "int32", Value: int32(0)}, nil
 		case "short", "int16":
 			return BeaconCommandArg{Kind: "short", Value: int16(0)}, nil
-		case "bytes":
-			return BeaconCommandArg{Kind: "bytes", Value: ""}, nil
+			case "bytes", "file", "filepath":
+				return BeaconCommandArg{Kind: "bytes", Value: ""}, nil
 		case "int64":
 			return BeaconCommandArg{Kind: "string", Value: ""}, nil
 		default:
@@ -114,8 +114,8 @@ func BuildBeaconCommandArg(kind string, value any) (BeaconCommandArg, error) {
 			return BeaconCommandArg{}, err
 		}
 		return BeaconCommandArg{Kind: "bool", Value: b}, nil
-	case "bytes":
-		return BeaconCommandArg{Kind: "bytes", Value: StringifyValue(value)}, nil
+		case "bytes", "file", "filepath":
+			return BeaconCommandArg{Kind: "bytes", Value: StringifyValue(value)}, nil
 	case "short", "int16":
 		n, err := ParseInt16Value(value)
 		if err != nil {

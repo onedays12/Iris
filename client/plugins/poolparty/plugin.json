@@ -1,0 +1,393 @@
+{
+  "schema_version": 2,
+  "name": "poolparty",
+  "display_name": {
+    "zh": "PoolParty",
+    "en": "PoolParty"
+  },
+  "version": "1.0.0",
+  "description": {
+    "zh": "通过目标进程线程池注入 x64 shellcode（变体 2–8）。需要 OpenProcess + DuplicateHandle 权限，目标须为 x64 且已有线程池。",
+    "en": "Inject x64 shellcode via the target process thread pool (variants 2–8). Needs OpenProcess + DuplicateHandle. Target must be x64 with an existing thread pool."
+  },
+  "capabilities": {
+    "command_ids": [
+      70
+    ]
+  },
+  "hashes": {
+    "bin/variant2_tpwork_insertion.x64.o": "50a82880fc974060668ed532bb478e86161a66e2f198112643c1a4fcc2331878",
+    "bin/variant3_tpwait_insertion.x64.o": "4737e4a10f9451a5f514bf1040e61c1919db0173a0dc8f3ef74dbc67418096d6",
+    "bin/variant4_tpio_insertion.x64.o": "c4fe365184ad0b371f7db3af8e3f92918f7040bb404c320c0c3fa092cacf9d7d",
+    "bin/variant5_tpalpc_insertion.x64.o": "cc2d55592bee8347f8a3dac9a9389eeed2ff9af88177f052e7443590204a7ce3",
+    "bin/variant6_tpjob_insertion.x64.o": "c4477b8eefaabf091b6fea11fe2413d38a1bbca6de1ba00e7086d47588733665",
+    "bin/variant7_tpdirect_insertion.x64.o": "63da2f188e68a8e0ebf47a05a59479c6d17475e60a6722ccc02be1510ebd4d84",
+    "bin/variant8_tptimer_insertion.x64.o": "14eee5590bbbab5661d343dae53c809d6eac8e32a194f527049ab03375cef129"
+  },
+  "actions": [
+    {
+      "id": "tp_work",
+      "label": {
+        "zh": "TP_WORK注入",
+        "en": "TP_WORK Injection"
+      },
+      "description": {
+        "zh": "把 TP_WORK 插入目标线程池高优先级队列。目标须为 x64。",
+        "en": "Insert a TP_WORK item into the target thread pool high-priority queue. x64 target only."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant2_tpwork_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        }
+      ]
+    },
+    {
+      "id": "tp_wait",
+      "label": {
+        "zh": "TP_WAIT注入",
+        "en": "TP_WAIT Injection"
+      },
+      "description": {
+        "zh": "用 Event + TP_WAIT 向目标 IOCP 投完成包。空名字使用匿名事件。",
+        "en": "Queue a completion packet via Event + TP_WAIT. Empty name uses an anonymous event."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant3_tpwait_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        },
+        {
+          "name": "name",
+          "label": {
+            "zh": "事件名",
+            "en": "Event name"
+          },
+          "type": "string",
+          "placeholder": "",
+          "required": false,
+          "help": {
+            "zh": "留空则创建匿名 Event，不进入对象命名空间。",
+            "en": "Leave empty for an anonymous Event (not in the object namespace)."
+          }
+        }
+      ]
+    },
+    {
+      "id": "tp_io",
+      "label": {
+        "zh": "TP_IO注入",
+        "en": "TP_IO Injection"
+      },
+      "description": {
+        "zh": "用重叠写文件 + TP_IO 向目标 IOCP 投包。空名字写到 %TEMP% 随机 .tmp 并在打完后删除。",
+        "en": "Queue via overlapped file write + TP_IO. Empty name writes a random %TEMP% .tmp and deletes it afterwards."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant4_tpio_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        },
+        {
+          "name": "name",
+          "label": {
+            "zh": "文件名",
+            "en": "File name"
+          },
+          "type": "string",
+          "placeholder": "",
+          "required": false,
+          "help": {
+            "zh": "留空则使用 %TEMP% 下随机 .tmp；相对路径相对 Beacon 当前目录。打完会尝试删除。",
+            "en": "Empty uses a random .tmp under %TEMP%. Relative paths are vs Beacon CWD. Deleted after trigger."
+          }
+        }
+      ]
+    },
+    {
+      "id": "tp_alpc",
+      "label": {
+        "zh": "TP_ALPC注入",
+        "en": "TP_ALPC Injection"
+      },
+      "description": {
+        "zh": "用命名 ALPC 端口向目标 IOCP 投包。空名字使用 \\RPC Control\\<随机>；短名自动加此前缀。",
+        "en": "Queue via a named ALPC port. Empty name uses \\RPC Control\\<random>; a short name gets that prefix."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant5_tpalpc_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        },
+        {
+          "name": "name",
+          "label": {
+            "zh": "ALPC 端口名",
+            "en": "ALPC port name"
+          },
+          "type": "string",
+          "placeholder": "",
+          "required": false,
+          "help": {
+            "zh": "留空则 \\RPC Control\\<16 位 hex>。短名自动加 \\RPC Control\\。以 \\ 开头则当完整 NT 路径。",
+            "en": "Empty → \\RPC Control\\<16-hex>. Short names get \\RPC Control\\ prepended. A leading \\ is treated as a full NT path."
+          }
+        }
+      ]
+    },
+    {
+      "id": "tp_job",
+      "label": {
+        "zh": "TP_JOB注入",
+        "en": "TP_JOB Injection"
+      },
+      "description": {
+        "zh": "用 Job 完成通知向目标 IOCP 投包。会把当前 Beacon 进程 Assign 进该 Job。空名字使用匿名 Job。",
+        "en": "Queue via a job completion notification. Assigns the current Beacon process into the job. Empty name uses an anonymous job."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant6_tpjob_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        },
+        {
+          "name": "name",
+          "label": {
+            "zh": "Job 名",
+            "en": "Job name"
+          },
+          "type": "string",
+          "placeholder": "",
+          "required": false,
+          "help": {
+            "zh": "留空则创建匿名 Job。无论是否命名，都会把当前 Beacon 进程塞进该 Job，且不会摘出来。",
+            "en": "Empty creates an anonymous job. Either way the current Beacon process is assigned into it and not removed."
+          }
+        }
+      ]
+    },
+    {
+      "id": "tp_direct",
+      "label": {
+        "zh": "TP_DIRECT注入",
+        "en": "TP_DIRECT Injection"
+      },
+      "description": {
+        "zh": "直接 ZwSetIoCompletion 向目标 IOCP 投 TP_DIRECT。无命名内核对象，链路最短。",
+        "en": "Post a TP_DIRECT packet with ZwSetIoCompletion. No named kernel objects; shortest path."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant7_tpdirect_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        }
+      ]
+    },
+    {
+      "id": "tp_timer",
+      "label": {
+        "zh": "TP_TIMER注入",
+        "en": "TP_TIMER Injection"
+      },
+      "description": {
+        "zh": "改写目标 TimerQueue 并用劫持的 IRTimer 触发 TP_TIMER 回调。",
+        "en": "Rewrite the target TimerQueue and fire a TP_TIMER callback via a hijacked IRTimer."
+      },
+      "os": [
+        "windows"
+      ],
+      "arch": [
+        "amd64"
+      ],
+      "artifact": "bin/variant8_tptimer_insertion.x64.o",
+      "fields": [
+        {
+          "name": "pid",
+          "label": {
+            "zh": "目标 PID",
+            "en": "Target PID"
+          },
+          "type": "int32",
+          "placeholder": "1234",
+          "required": true
+        },
+        {
+          "name": "shellcode",
+          "label": {
+            "zh": "Shellcode",
+            "en": "Shellcode"
+          },
+          "type": "file",
+          "accept": ".bin",
+          "required": true,
+          "help": {
+            "zh": "x64 shellcode 的 .bin 文件，空文件或超过 10MB 会被拒绝。",
+            "en": "x64 shellcode .bin. Empty or larger than 10MB is rejected."
+          }
+        }
+      ]
+    }
+  ]
+}

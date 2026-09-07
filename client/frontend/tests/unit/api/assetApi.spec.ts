@@ -62,6 +62,7 @@ describe('file, screenshot, and payload API contracts', () => {
       .mockResolvedValueOnce({ payload: 'AA==', encoding: 'base64', format: 'exe', stage_mode: 'stagerless' })
       .mockResolvedValueOnce({ payload: 'AA==', encoding: 'base64', format: 'macho', stage_mode: 'stagerless' })
       .mockResolvedValueOnce({ shellcode: 'AA==', encoding: 'base64', mode: 'front', size: 1 })
+      .mockResolvedValueOnce({ shellcode: 'AA==', encoding: 'base64', mode: 'post', size: 1 })
 
     await payloadApi.generatePayload({
       listener_id: 'http-1', os: 'linux', arch: 'arm64', format: 'exe', beacon_type: 'go',
@@ -77,6 +78,21 @@ describe('file, screenshot, and payload API contracts', () => {
     await payloadApi.generateShellcode({ mode: 'front', pe_base64: 'PE' })
     expect(httpMocks.request).toHaveBeenNthCalledWith(3, 'POST', '/api/v1/payload/shellcode', {
       mode: 'front', pe_base64: 'PE',
+    })
+
+    await payloadApi.generateShellcode({
+      mode: 'post',
+      pe_base64: 'PE',
+      arch: 'x86',
+      export_name: 'DllInstall',
+      user_data_hex: '6162',
+    })
+    expect(httpMocks.request).toHaveBeenNthCalledWith(4, 'POST', '/api/v1/payload/shellcode', {
+      mode: 'post',
+      pe_base64: 'PE',
+      arch: 'x86',
+      export_name: 'DllInstall',
+      user_data_hex: '6162',
     })
   })
 })
